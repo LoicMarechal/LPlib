@@ -1,0 +1,18 @@
+Building the sample parallel codes is fairly easy:
+
+1 - Open a shell
+2 - "cd lp3/examples"
+3 - "make"
+
+Then you may run:
+"basic_test 1" (serial run) 
+"basic_test n" (replace n with the number threads you want to launch)
+"basic_test"   (launch as many threads as the number of cores of your system)
+
+"indirect_writes 1" (serial run) 
+"indirect_writes n" (replace n with the number threads you want to launch)
+"indirect_writes"   (launch as many threads as the number of cores of your system)
+
+"tetrahedra_neighbours -in tet.meshb -out surface.meshb -nproc 1" (serial run) 
+"tetrahedra_neighbours -in tet.meshb -out surface.meshb -nproc n" (replace n with the number threads you want to launch)
+"tetrahedra_neighbours -in tet.meshb -out surface.meshb"          (launch as many threads as the number of cores of your system)
