@@ -1,1 +1,1126 @@
-/Users/marechal/papers/inria/lplib/lplib3/LPlib3.tex
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{multirow,array}
+\usepackage{graphicx}
+\usepackage{a4wide}
+\newcommand{\HRule}{\rule{\linewidth}{1mm}}
+
+\begin{document}
+
+
+%
+%  TITLE
+%
+
+\begin{titlepage}
+
+\begin{center}
+\huge A parallelization framework\\ for numerical simulation
+\HRule \\
+\medskip
+{\Huge \bfseries The LPlib library} \\
+\HRule
+\end{center}
+
+\vspace*{\stretch{3}}
+
+\begin{figure}[htbp]
+\begin{center}
+\includegraphics[width=12cm]{power7.pdf}
+\end{center}
+\end{figure}
+
+\vspace*{\stretch{1}}
+
+\begin{flushright}
+\Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
+\Large January 2016 \\
+\normalsize Document v1.7
+\end{flushright}
+
+\end{titlepage}
+
+\clearpage
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\vfill
+
+\footnotesize{Cover picture : X ray view of an IBM Power7 octo-core processor.}
+\normalsize
+
+\clearpage
+
+
+%
+%  1 / INTRODUCTION
+%
+
+\section{Introduction}
+
+The purpose of the \emph{LPlib} library (each \emph{italicized} expression is defined in the glossary at the end of this document) is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.
+
+This library is based on posix standard threads (posix-threads \cite{book_pthreads} also known as \emph{pthreads}) thus taking advantage of \emph{multi-core} chips and \emph{shared memory} architectures supported by most platforms (Linux, Mac os X, Unix, Windows).
+
+This document is just about integrating the library into existing programs. Only a slight overview of underlying technologies will be given.
+
+\subsection{Motivation}
+
+The initial motivation was to take advantage of today's ubiquitous multi-core computers.
+
+Since 2004, first Moore's law corollary has plummeted from the 40\% yearly increase in processor frequency, it enjoyed for the last 30 years, to a meager 10\%.
+
+As for now, speed improvement can only be achieved through the multiplications of processors (now called cores) within a single chip.
+
+This adds a new burden to programmers : while speed-increase through higher frequency implied little code modifications (notably cache-miss minimization), multi-core chips require the code to be parallelized, and sometimes, thoroughly rewritten !
+
+\subsection{A.P.I.}
+
+Direct call to pthreads commands is still too tedious and non transparent from a user point of view, so, an encapsulation providing a simplified \emph{A.P.I.} could be helpful.
+
+The \emph{LPlib} allows for easy parallelizing of loops running over tables and structures featuring direct or indirect memory accesses. These account for most of the computing time in numerical simulation softwares dealing with meshes.
+
+A programmer does not need to rewrite his code but only needs to encapsulate loops into independent procedures and briefly describe the data structure they will run over (such as the size of the tables and whether they will be accessed directly or not).
+
+Right now, this library can only be integrated into any C program, but a fortran API is under development.
+
+\subsection{Features}
+
+The \emph{LPlib} main feature is its ability to deal with indirect memory accesses. This kind of memory access is widely used when working on meshes and prevents automatic parallelization capabilities of modern compilers.
+
+The problem is handled through a mesh renumbering scheme using a Peano-Hilbert curve \cite{peano_hilbert} or any renumbering scheme which increases geometric compactness, thus minimizing memory gap between neighboring entities in a mesh. A mesh renumbered through such a curve would feature a much greater intrinsic degree of parallelism.
+
+This library also allows for asynchronous processes to be launched, enabling procedures pipelining, a very useful technic when it comes to input/output or data pre-processing steps independent from each others.
+
+
+%
+%  2 / USAGE
+%
+
+\section{Usage}
+
+\subsection{Installation and compilation}
+
+The \emph{LPlib} may be used from any software written in ANSI C language.
+
+It is made of two files : lplib3.c that has to be compiled and linked along with the calling code, and a header file, lplib3.h, to be included by any source file using \emph{LPlib} commands.
+
+A software environment providing pthreads is needed (most unix-like are compatible). Practically speaking, you only need to locate the files pthreads.h and libpthreads.so and to provide their paths to the compiler and linker.
+
+Use "-I /path\_to\_headers" to tell the compiler were to locate the pthreads.h file and pass "-L /path\_to\_libraries" and -lpthreads options to the linker.
+
+
+\subsection{Initialization}
+
+The \emph{LPlib} must initialized only once before calling any library function. It is easily done by calling the InitParallel command and providing it with the maximum number of processors to be used (this number may be lower or greater than the actual number of physical processors for testing purposes)
+
+\medskip
+\tt{IndexOfInstance = InitParallel(NumberOfProcessors);}
+\normalfont
+\medskip
+
+\noindent Conversely, the \emph{LPlib} should be properly closed at the end of the program :
+
+\medskip
+\tt{StopParallel(IndexOfInstance);}
+\normalfont
+\medskip
+
+\noindent in order to free the library memory and kill all threads.
+
+Since real life examples are more telling than any academic discussion, the way to use \emph{LPlib} will be introduce via three examples of increasing complexity.
+
+\subsection{Example 1 : computing the mean value for each triangle of a mesh}
+
+\subsubsection{Statement}
+
+Let's say we have a $mesh$ stored in a structure of type $MeshStruct$, comprising a table $VerTab$ of $nbv$ vertices and a table $TriTab$ of $nbt$ triangles.
+
+\begin{tt}
+\begin{verbatim}
+typedef struct
+{
+    double coordinates[2];
+    double t; /* temperature */
+    int c;    /* counter */
+    int num;  /* index of vertex in VerTab */
+}VerStruct;
+
+typedef struct
+{
+    VerStruct *VerTab[3];
+    double t; /* temperature */
+}TriStruct;
+
+typedef struct
+{
+    /* global maximum value and a table of local maximums */
+    double maximum, maximums[ NumberOfProcessors ];
+    int nbv, nbt;
+    VerStruct VerTab[ nbv ];
+    TriStruct TriTab[ nbt ];
+}MeshStruct;
+\end{verbatim}
+\end{tt}
+\normalfont
+
+Temperature is stored at each vertex. We wish to compute a triangle temperature as the mean value of its three vertices. The program is going to loop over triangles, reading their vertex temperatures (indirect read access) and writing the resulting value into the triangle structures themselves (direct write access).
+
+Since data is written in the same structure on which the code is looping over, the loop is a direct memory access one.
+
+\subsubsection{Serial program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    for(i=0;i<mesh->nbt;i++)
+    {
+        mesh->TriTab[i]->t = 0;
+
+        for(j=0;j<3;j++)
+            mesh->TriTab[i]->t += mesh->TriTab[i]->VerTab[j]->t;
+
+        mesh->TriTab[i]->t /= 3;
+    }
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+\subsubsection{Parallel program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    /* Initialize LPlib with 4 processors */
+    LibIdx = InitParallel(4);
+
+    /* Declare a new table of nbt triangles */
+    TriType = NewType(LibIdx, mesh->nbt);
+
+    /* Launch the parallelized loop computing the average values */
+    LaunchParallel(LibIdx, TriType, 0, ComputeAverage, (void *)mesh);
+
+    /* Close LPlib */
+    StopParallel(LibIdx);
+}
+
+void ComputeAverage(int begin, int end, int thread, void *arguments)
+{
+    /* Fetch arguments from the single structure */
+
+    MeshStruct *mesh = (MeshStruct *)arguments;
+
+    /* The begining and ending loop indices are imposed by the scheduler.
+       The rest of the loop remains unaffected. */
+
+    for(i=begin; i<end; i++)
+    {
+        mesh->TriTab[i]->t = 0;
+
+        for(j=0;j<3;j++)
+            mesh->TriTab[i]->t += mesh->TriTab[i]->VerTab[j]->t;
+
+        mesh->TriTab[i]->t /= 3;
+    }
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+The LaunchParallel command will launch concurrently four occurrences of the ComputeAverage procedure providing each one with a different set of beginning and ending indices (let's say $nbt = 1000$ in this example) :
+
+\begin{tt}
+\begin{verbatim}
+ComputeAverage(  0, 249, 0, mesh);
+ComputeAverage(250, 499, 1, mesh);
+ComputeAverage(500, 749, 2, mesh);
+ComputeAverage(750, 999, 3, mesh);
+\end{verbatim}
+\end{tt}
+\normalfont
+
+
+\subsection{Example 2 : searching for the maximum value among a set of triangles}
+
+\subsubsection{Statement}
+Now, we would like to find out which triangle has the greatest temperature value.
+
+\subsubsection{Serial program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    mesh->maximum = -273.15;
+
+    for(i=0;i<mesh->nbt;i++)
+        if(mesh->TriTab[i]->t > mesh->maximum)
+            mesh->maximum = mesh->TriTab[i]->t;
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+\subsubsection{Issues}
+
+The parallel version needs special care. If all threads were to write at the same time to a global variable called $maximum$, the memory access conflict would result in a wrong final maximum temperature.
+
+A workaround is to setup a little maximum temperatures table (one entry per thread) where each thread would store its own local maximum value. A final serial loop would eventually compute the global maximum value from local ones (even though this loop is serial, it is only run over the number of threads).
+
+\subsubsection{Parallel program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    /* Launch the parallel part of the code */
+
+    LibIdx = InitParallel(4);
+    TriType = NewType(LibIdx, mesh->nbt);
+    LaunchParallel(LibIdx, TriType, 0, ComputeMaximum, (void *)mesh);
+    StopParallel(LibIdx);
+
+    /* Perform a loop on the table of local average values computed
+       by each thread in order to find the global maximum value. */
+
+    mesh->maximum = -273.15;
+
+    for(i=0;i<4;i++)
+        if(mesh->maximums[i] > mesh->maximum)
+            mesh->maximum = mesh->maximums[i];
+}
+
+void ComputeMaximum(int begin, int end, int thread, void *arguments)
+{
+    MeshStruct *mesh = (MeshStruct *)arguments;
+
+    /* The local maximum value is stored in the maximums' table
+       under the index given by the thread number */
+
+    mesh->maximums[ thread ] = -273.15;
+
+    for(i=begin; i<end; i++)
+        if(mesh->TriTab[i]->t > mesh->maximums[ thread ])
+            mesh->maximums[ thread ] = mesh->TriTab[i]->t;
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+The above code will perfectly work but may get slower and slower as the number of threads increases. So the following modified version should be preferred:
+
+\begin{tt}
+\begin{verbatim}
+void ComputeMaximum(int begin, int end, int thread, void *arguments)
+{
+    MeshStruct *mesh = (MeshStruct *)arguments;
+    double thread_maximum = mesh->maximums[ thread ];
+
+    /* The local maximum value is stored in the maximums' table
+       under the index given by the thread number */
+
+    mesh->maximums[ thread ] = -273.15;
+
+    for(i=begin; i<end; i++)
+        if(mesh->TriTab[i]->t > thread_maximum)
+            thread_maximum = mesh->TriTab[i]->t;
+
+    mesh->maximums[ thread ] = thread_maximum;
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+Why copying each thread maximum value from the globally accessible table maximums[] to a variable local to the thread ? You could do without this copy since each thread would only access its own bucket and no memory write contention should occur.
+But doing so would generate a lot of memory access called "false sharing" that would not jeopardize the result validity but greatly reduce the code efficiency.
+
+Indeed, all table values are stored consecutively in memory and as such, would very likely reside within the same cache line. Each core calculating the maximum value would then have to load this cache line in its own level one cache and each time time it would write a new maximum value, it would have to tell all other cores to reload the full line. This cache reload is indeed useless since a thread would never modify the maximum values of others, but it has no way to know about it. Consequently, each write access to the shared cache line will generate as many cache reload as there are cores, thus the total number of memory access will grow with square of the number of threads !
+
+Dealing with such problem is very straightforward: when computing a thread local vector reduction (sum, maximum or residual value), the right way is to copy the thread's value from the global table to a local variable then perform the reduction loop on the local variable and finally copy the resulting value back to the global table, thus avoiding the false sharing.
+
+\subsection{Example 3 : an indirect memory access loop featuring a cross dependency problem}
+
+\subsubsection{Statement}
+
+Using meshes and matrices in scientific softwares leads inevitably to more complex algorithms where indirect memory accesses are needed.
+
+For example, accessing a vertex structure through a triangle link in the following instruction :
+
+\begin{tt}
+\begin{verbatim}
+TriTab[i]->VerTab[j];
+\end{verbatim}
+\end{tt}
+\normalfont
+
+Such memory access is very common in C, the compiler will first look for triangle $i$, then vertex $j$, thus accessing the data indirectly.
+
+If a loop is done over triangles, adding their temperature to their three vertices' own temperature value, it would lead to a writing conflict. Such algorithm is made of three steps:
+
+\begin{enumerate}
+	\item clear each vertex temperature
+	\item loop over triangles : add each triangle temperature to its three vertices temperature and increment vertices' counter.
+	\item loop over vertices : divide the accumulated temperature value by the number of contributing triangles.
+\end{enumerate}
+
+\subsubsection{Serial program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    /* Clear the temperature and counter associated to each vertex */
+
+    for(i=0;i<nbv;i++)
+    {
+        mesh->VerTab[i]->t = 0;
+        mesh->VerTab[i]->c = 0;
+    }
+
+    /* main loop adding the triangle temperature to each of
+       its vertex temperature and incrementing each vertex counter
+       in order to keep track of the number of triangles contributing
+       to each vertices temperature */
+
+    for(i=0;i<mesh->nbt;i++)
+        for(j=0;j<3;j++)
+        {
+            mesh->TriTab[i]->VerTab[j]->t += mesh->TriTab[i]->t;
+            mesh->TriTab[i]->VerTab[j]->c++;
+        }
+
+    /* divide each vertex temperature by the number
+       of contributing triangles */
+
+    for(i=0;i<nbv;i++)
+        mesh->VerTab[i]->t /= mesh->VerTab[i]->c;
+
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+\subsubsection{Issues}
+
+If no attention is paid to memory conflicts, the \emph{LPlib} partitioner will split the triangle table into four same sized blocks and assign them to four threads :
+
+\begin{tt}
+\begin{verbatim}
+ComputeAverage(  0, 249, 0, mesh);
+ComputeAverage(250, 499, 1, mesh);
+ComputeAverage(500, 749, 2, mesh);
+ComputeAverage(750, 999, 3, mesh);
+\end{verbatim}
+\end{tt}
+\normalfont
+
+Even though, there are no two blocks sharing the same triangles, it is not the case when it comes to vertices. For example, triangle 250 from block 1 and triangle 750 form block 3 may share the same vertex. If the two threads where to process those triangles at the same time, they would write different temperatures at the same memory location, resulting in an undetermined value.
+
+To handle properly such a situation, the \emph{LPlib} must be provided with the mesh connectivity. That is the list of vertices pointed to by triangles. This way, the library will split the triangles table into a greater number of chunks (typically ten blocks per threads), and compute the dependency between those blocks.
+
+The \emph{LPlib} will provide each threads with blocks that not only don't share common triangles, but whose triangles don't share common vertices. Only this way all threads could run together.
+
+\subsubsection{Parallel program}
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    LibIdx = InitParallel(4);
+
+    /* Define types and their dependencies */
+
+    TriType = NewType(LibIdx, mesh->nbt);
+    VerType = NewType(LibIdx, mesh->nbv);
+
+    BeginDependency(LibIdx, TriType, VerType);
+
+    for(i=0;i<mesh->nbt;i++)
+        for(j=0;j<3;j++)
+            AddDependency(LibIdx, i, mesh->TriTab[i]->VerTab[j]->num);
+
+    EndDependency(LibIdx);
+
+    /* Launch all three parallel loops */
+
+    LaunchParallel(LibIdx, VerType,       0, ClearTemperature, (void *)mesh);
+    LaunchParallel(LibIdx, TriType, VerType, AddTemperature,   (void *)mesh);
+    LaunchParallel(LibIdx, VerType,       0, ScaleTemperature, (void *)mesh);
+
+    StopParallel(LibIdx);
+}
+
+/* Loop clearing temperatures and counter in parallel */
+
+void ClearTemperature(int begin, int end, int thread, void *arguments)
+{
+    MeshStruct *mesh = (MeshStruct *)arguments;
+
+    for(i=begin; i<end; i++)
+    {
+        mesh->TriTab[i]->t = 0;
+        mesh->TriTab[i]->c = 0;
+    }
+}
+
+/* Loop adding a triangle temperature to its vertices in parallel */
+
+void AddTemperature(int begin, int end, int thread, void *arguments)
+{
+    MeshStruct *mesh = (MeshStruct *)arguments;
+
+    for(i=begin; i<end; i++)
+        for(j=0;j<3;j++)
+        {
+            mesh->TriTab[i]->VerTab[j]->t += mesh->TriTab[i]->t;
+            mesh->TriTab[i]->VerTab[j]->c++;
+        }
+}
+
+/* Loop dividing vertices temperature by the number
+   of contributing triangles */
+
+void ScaleTemperature(int begin, int end, int thread, void *arguments)
+{
+    MeshStruct *mesh = (MeshStruct *)arguments;
+
+    for(i=begin; i<end; i++)
+        mesh->VerTab[i]->t /= mesh->VerTab[i]->c;
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+
+\subsection{Dynamic data modifications}
+
+Dealing with dynamic data, either topological changes or table growing, is challenging for parallel computing. This problem is partially addressed by the \emph{LPlib} with the following commands: UpdateDependency and ResizeType.
+
+There is no means to remove dependencies on the fly, you can only add up more of them with the command \emph{UpdateDependency}, which can be called only outside a parallel loop. It could be useful when creating new elements with new dependencies, albeit the old ones will remains, thus impeding the parallelism efficiency. When doing heavy topological modifications to a mesh, it is advised to check periodically the dependencies statistics with the \emph{GetDependencyStats} command and to completely free and reallocate the whole mesh data types and dependencies when the average number of collision grows beyond $1/5$ the number of threads.
+
+Likewise, a datatype may be resized outside a parallel loop, but only to make it grow, not to shrink it. Note that due to initial static overallocation, the resized table may not increased more than two fold against its initial size. In such a case, you would have to free and rebuild the whole datatypes and dependencies.
+
+Both methods allow only for lightweight modifications to be applied to the mesh without having to rebuild the whole dependencies between each parallel loops, which can be very costly and may spoil the whole parallelization gain.
+
+
+\subsection{Software pipelining}
+
+So far, we've only used symmetric parallelism, a scheme where every threads are executing the same piece of code but on different sets of data (typically each thread applies the same function to a vector subset).
+
+Asymmetrical parallelism is a complementary technic where processors execute totally different codes working on different and independent data.
+
+Since the main body of most programs runs like this:
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    procedure1(data1);
+    procedure2(data2);
+    procedure3(data3);
+    ...
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+As long as a procedure does not need any data resulting from a previous one, or no data it needs has been modified, it may be launched concurrently without waiting for the completion of former procedures.
+
+In the above example, if procedures 1 and 2 are completely independent from each other, they may be launched concurrently via the LaunchPipeline command:
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    ProcIndex1 = LaunchPipeline(LibIndex, procedure1, data1, 0, NULL);
+    ProcIndex2 = LaunchPipeline(LibIndex, procedure2, data2, 0, NULL);
+    ...
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+Unfortunately, many procedures depend on previous work. Consequently, they cannot be launched this way unless the \emph{LPlib} is told to wait until the needed data is available. When launching a pipeline procedure, one may request the completion of a given list of previously launched procedures before actually running it. For this purpose, a table of dependency procedures can be supplied to the LaunchPipeline command.
+
+Let's say procedures 1 and 2 are independent but procedure 3 needs some results from the first one :
+
+\begin{tt}
+\begin{verbatim}
+main()
+{
+    ProcIndex1 = LaunchPipeline(LibIndex, procedure1, data1, 0, NULL);
+    ProcIndex2 = LaunchPipeline(LibIndex, procedure2, data2, 0, NULL);
+
+    TableOfIndex[0] = ProcIndex1;
+
+    ProcIndex3 = LaunchPipeline(LibIndex, procedure3, data3, 1, TableOfIndex);
+    ...
+}
+\end{verbatim}
+\end{tt}
+\normalfont
+
+This way, procedures 1 and 2 will run concurrently on separate processors and, if 1 completes before 2, procedure 3 will even run concurrently with 2.
+
+
+%
+%  3 / COMMANDS
+%
+
+
+\section{List of commands}
+
+\subsection{AddDependency}
+
+\subsubsection*{Syntax}
+\tt{AddDependency(LibIndex, Element1, Element2);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+Element1   & int    & index of element in the base table (type 1) \\
+\hline
+Element2   & int    & index of element in the dependency table (type 2) \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+Make base table element1 dependent from secondary table element2. This is a one way dependency, if you need a reverse one, you just have to add the opposite link :
+\medskip
+
+\tt{AddDependency(LibIndex, Element2, Element1);}
+\normalfont
+
+\subsubsection*{Example}
+Make every triangles dependent from their own nodes. The table TriTab[ i ][ 0 to 2 ] stores the three nodes of triangle number $i$.
+
+\begin{tt}
+\begin{verbatim}
+for(i=1; i<=NumberOfTriangles; i++);
+    for(j=0; j<3; j++);
+        AddDependency(LibIndex, i, TriTab[i][j]);
+\end{verbatim}
+\end{tt}
+\normalfont
+
+
+\subsection{AddDependencyFast}
+
+\subsubsection*{Syntax}
+\tt{AddDependencyFast(LibIndex, NmbType1, Type1Tab, NmbType2, Type2Tab);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+NmbType1   & int    & number of elements in the base table (type 1) \\
+\hline
+Type1Tab   & int *  & table containing the base elements indices \\
+\hline
+NmbType2   & int    & number of elements in the dependency table (type 2) \\
+\hline
+Type2Tab   & int *  & table containing the dependency elements indices \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+This command works like \emph{AddDependency}, but instead of adding a single dependency from on entity to another, it adds a set of dependencies: all elements in the table Type1Tab[] depend on all elements in table Type2Tab[]. It is useful when setting dependencies from an element like a tetrahedron to all its vertices or face neighbors.
+
+
+\subsection{BeginDependency}
+
+\subsubsection*{Syntax}
+\tt{BeginDependency(LibIndex, type1, type2);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+type1      & int    & index of base type whose elements will depend on those of type 2 \\
+\hline
+type2      & int    & index of secondary type which will be referred to by the base elements \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+Building a dependency between two kind of elements is a three-step process :
+
+\begin{enumerate}
+	\item initialize the dependency with BeginDependency : provide type 1 (base) and type 2 on which type 1 elements depend.
+	\item do as many calls to AddDependency as there are links between elements of type 1 and type 2.
+	\item stop adding new dependencies : EndDependency.
+\end{enumerate}
+
+
+\subsection{EndDependency}
+
+\subsubsection*{Syntax}
+\tt{EndDependency(LibIndex, float StatTab[2]);}
+\normalfont
+
+\subsubsection*{Description}
+\label{collisions}
+
+The ending call to EndDependency triggers the splitting of table 1 into blocks and the building of a compatibility matrix describing potential collisions between those blocks. If two type1 blocks share at least one common element of type2 (dependency type), then they cannot be assigned to concurrent threads.
+
+Information about potential collisions is returned in the StatTab[]. The first scalar contains the average percentage of type1 elements pointing to type2 blocks. The second value gives the highest percentage among type1 blocks.
+
+The lower those percentages are (3\% or less), the easier it will be for the scheduler to find as many independent blocks as there are processors in order to achieve maximum efficiency. Otherwise, the parallelization factor returned by the LaunchParallel command may go down as low as 1 (no parallelism at all) in case every blocks are incompatible with each other.
+
+This seemingly little detail is indeed of the utmost importance since it sets a program overall parallelism capability when working on indirect memory access loops.
+
+Because the average number of block collisions is driven by the node connectivity and numbering, a proper renumbering algorithm must be applied to the whole mesh (nodes and elements all together) prior to running the \emph{LPlib}. Best known algorithms are Peano-Hilbert curve or "Z" curve renumbering (see R.Löhner's book \cite {lohner} for an in-deep view of renumbering schemes).
+
+Note that, without proper renumbering, the intrinsic connectivity featured by meshes coming from methods such as advancing front or Delaunay will prevent any parallelism beyond two threads. Conversely, most octree meshers generate suitable numbering.
+
+
+\subsection{FreeType}
+
+\subsubsection*{Syntax}
+\tt{FreeType(LibIndex, type);}
+\normalfont
+
+\subsubsection*{Description}
+Free memory used by this type data structures as well as the type index number. They may be reused by the next call to NewType.
+
+
+\subsection{GetDependencyStats}
+
+\subsubsection*{Syntax}
+\tt{GetDependencyStats(LibIndex, int Type1, int Type2, float StatTab[2]);}
+\normalfont
+
+\subsubsection*{Description}
+Recall dependencies statistics from Type1 elements pointing to Type2 elements. It is useful when adding dependencies on the fly to check whether the collisions are low enough to allow for good parallelization speedup.
+
+
+\subsection{GetLplibInformation}
+
+\subsubsection*{Syntax}
+\tt{GetLplibInformation(LibIndex, int *NumberOfProcessors, int *NumberOfAllocatedTypes);}
+\normalfont
+
+\subsubsection*{Description}
+Returns the number of threads the \emph{LPlib} was initialized with and the number of data types that have been setup so far.
+
+
+\subsection{GetNumberOfCores}
+
+\subsubsection*{Syntax}
+\tt{GetNumberOfCores();}
+\normalfont
+
+\subsubsection*{Description}
+This command simply returns the system's number of available cores.
+
+\subsection{GetWallClock}
+
+\subsubsection*{Syntax}
+\tt{GetWallClock();}
+\normalfont
+
+\subsubsection*{Description}
+Returns a double that contains the physical time, the so called "wall clock", in seconds.
+
+\subsection{HilbertRenumbering}
+
+\subsubsection*{Syntax}
+\tt{HilbertRenumbering(LibIndex, NmbLin, box, crd, idx);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{3cm}|m{8cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+NmbLin     & int * & number of element to be renumbered \\
+\hline
+box        & double* & pointer to a table of 6 doubles containing the mesh bounding box \\
+\hline
+crd        & double (*)[3] & pointer to the 3D coordinates table \\
+\hline
+idx        & long (*)[2] & pointer to a table containing two entries for each renumbered item: crd[i][1] is the new index of item number i, crd[i][0] is the old index of item i \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+See sample code generate\_hilbert\_curve.c for more information.
+
+
+\subsection{HilbertRenumbering2D}
+
+\subsubsection*{Syntax}
+\tt{HilbertRenumbering2D(LibIndex, NmbLin, box, crd, idx);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{3cm}|m{8cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+NmbLin     & int * & number of element to be renumbered \\
+\hline
+box        & double* & pointer to a table of 4 doubles containing the mesh bounding box \\
+\hline
+crd        & double (*)[2] & pointer to the 2D coordinates table \\
+\hline
+idx        & long (*)[2] & pointer to a table containing two entries for each renumbered item: crd[i][1] is the new index of item number i, crd[i][0] is the old index of item i \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+See sample code generate\_hilbert\_curve.c for more information.
+
+
+\subsection{InitParallel}
+
+\subsubsection*{Syntax}
+\tt{LibIndex = InitParallel(NumberOfProcessors);}
+\normalfont
+
+\subsubsection*{Description}
+Mandatory initialization of \emph{LPlib} library prior to using any command. The sole parameter is the maximum number of processors to be used by the \emph{LPlib}. This number may be greater than the computer's available processors for scalability testing purposes or lower in order to lighten system load (maximum = 128).
+
+
+\subsection{LaunchParallel}
+
+\subsubsection*{Syntax}
+\tt{acceleration = LaunchParallel(LibIndex, type1, type2, procedure, parameters);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+type1      & int    & base type index over which to perform the loop \\
+\hline
+type2      & int    & index of dependency type in case of indirect memory access loop, 0 otherwise \\
+\hline
+procedure  & void * & pointer to a procedure containing the parallelized loop \\
+\hline
+Parameters & void * & pointer to a single structure containing every parameters and data needed by the loop \\
+\hline
+\end{tabular}
+
+\medskip
+
+\noindent
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Return     & type   & description \\
+\hline
+acceleration & float & number of average threads running together during the loop execution \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+In case of a simple direct memory access loop (without dependency type), the acceleration factor is equal to the number of processors.
+
+If the loop has dependencies, the acceleration number will range from 1 (no parallelism because of too many inter-dependencies between blocks) and the number of processors (thanks to a perfect renumbering algorithm).
+
+
+\subsection{LaunchPipeline}
+
+\subsubsection*{Syntax}
+\tt{IndexOfProcedure = LaunchPipeline(LibIndex, procedure, parameters, SizeOfTable, TableOfIndex);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{3cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter    & type   & description \\
+\hline
+LibIndex     & int    & instance number of \emph{LPlib} \\
+\hline
+procedure    & void * & pointer to the procedure to be launched in parallel \\
+\hline
+Parameters   & void * & pointer to a single structure containing every data needed by the procedure \\
+\hline
+SizeOfTable  & int    & number of procedures whose completion must be waited for \\
+\hline
+TableOfIndex & int *  & indices of procedures to wait for before running this one \\
+\hline
+\end{tabular}
+
+\medskip
+
+\noindent
+\begin{tabular}{|m{3cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Return       & type   & description \\
+\hline
+index        & int    & identification index of this procedure \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+The LaunchPipeline command allows for another kind of parallelism called pipelining. It is about launching a procedure without waiting for its completion (like the fork command in unix).
+
+If a procedure A launches procedures B and C in a row via LaunchPipeline, both B and C will start at once and will run concurrently with A.
+
+If, say, C needs the completion of B before running, a dependencies table may be provided when launching C to tell the scheduler to wait for B to complete before running C.
+
+
+\subsection{NewType}
+
+\subsubsection*{Syntax}
+\tt{IndexOfType = NewType(LibIndex, NumberOfLines);}
+\normalfont
+
+\subsubsection*{Description}
+Defining a new table is easy : you just have to tell this procedure the number of lines contained in the table. It will return a unique index that should be provided to any procedure working on this table.
+
+
+\subsection{ParallelMemClear}
+
+\subsubsection*{Syntax}
+\tt{code = ParallelMemClear(LibIndex, table, size);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+table      & void * & pointer to a memory area that will be erased in parallel \\
+\hline
+size       & long   & number of bytes to be cleared \\
+\hline
+\end{tabular}
+
+\medskip
+
+\noindent
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Return     & type   & description \\
+\hline
+code       & int    & error code is 1 if everything went right and 0 otherwise \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+It works similarly to the C library memset command.
+
+Parallel memclear is only useful for \emph{ccNUMA} computers. It may not improve, or even degrade, speed for crossbar systems like most machines under 16 cores.
+
+
+\subsection{ParallelQsort}
+
+\subsubsection*{Syntax}
+\tt{ParallelQsort(LibIndex, base, nel width, compar);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{4cm}|m{8cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+base       & void * & pointer to data to be sorted in parallel \\
+\hline
+nel        & size\_t & number of element to be sorted \\
+\hline
+width      & size\_t & size in bytes of an element \\
+\hline
+compar     & int (*)(const void*, const void*)) & pointer to a function comparing two elements \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+It works similarly to the C library qsort command.
+
+
+\subsection{ResizeType}
+
+\subsubsection*{Syntax}
+\tt{IndexOfType = ResizeType(LibIndex, IndexOfType, NewNumberOfLines);}
+\normalfont
+
+\subsubsection*{Description}
+Increase the number of lines of a previously allocated datatype. This command must be called outside of a running parallel loop and the NewNumberOfLines must respect this condition: $$ InitialNumberOfLines < NewNumberOfLines < 2*InitialNumberOfLines $$
+
+
+\subsection{StopParallel}
+
+\subsubsection*{Syntax}
+\tt{StopParallel(LibIndex);}
+\normalfont
+
+\subsubsection*{Description}
+Free all allocated memory and kill threads.
+
+
+\subsection{UpdateDependency}
+
+\subsubsection*{Syntax}
+\tt{UpdateDependency(LibIndex, Type1, Element1, Type2, Element2);}
+\normalfont
+
+\subsubsection*{Parameters}
+
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+Type1      & int    & type of the base element \\
+\hline
+Element1   & int    & index of the base element \\
+\hline
+Type2      & int    & type of the dependency element \\
+\hline
+Element2   & int    & index of the dependency element \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+Adds a new dependency to a previously defined dependencies set. This command must not be called when a parallel loop is running. Contrary to the \emph{AddDependecy} command, the elements kinds must be provided along with their indices.
+
+
+\subsection{UpdateDependencyFast}
+
+\subsubsection*{Syntax}
+\tt{UpdateDependencyFast(LibIndex, Type1, NmbType1, Type1Tab, Type2, NmbType2, Type2Tab);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+Type1      & int    & type of the base elements \\
+\hline
+NmbType1   & int    & number of base elements \\
+\hline
+Type1Tab   & int *  & table of base elements \\
+\hline
+Type2      & int    & type of the dependencies elements \\
+\hline
+NmbType2   & int    & number of dependencies elements \\
+\hline
+Type2Tab   & int *  & table of dependencies elements \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+Adds new dependencies to a previously defined dependencies set. This command must not be called when a parallel loop is running. All Type1 elements in Type1Tab[] will depend on all Type2 elements in Type2Tab[].
+
+
+\subsection{WaitPipeline}
+
+\subsubsection*{Syntax}
+\tt{WaitPipeline(LibIndex);}
+\normalfont
+
+\subsubsection*{Description}
+Setup a rendezvous point : this procedure will wait for every pipeline procedures to complete.
+
+
+%
+%  4 / GLOSSARY
+%
+
+
+\section{Glossary}
+
+\subsection{A.P.I.}
+Application programming interface, a comprehensive list of every functions provided by a library along with their arguments.
+
+\subsection{ccNUMA}
+Cache coherency non uniform memory access. In such a system, memory requests travel through a network connecting local groups of processors called nodes. Even though throughput is lower and latency higher compared with a \emph{crossbar} architecture, ccNUMA can expand to a greater number of processors (up to 8192 cores sharing the same memory vs. 256 for crossbar machines).
+
+\subsection{Crossbar}
+Memory interconnection matrix. In this architecture $n$ processors are connected to $n$ (more often $2n$ or $4n$ for efficiency reasons) \emph{interleaved memory banks} through a connecting matrix providing each processor with its own dedicated data path. Consequently, throughput and latency are only slightly degraded compared with a single processor system. However, this kind of architecture can accommodate a limited amount of cores (as of today, the biggest systems available features 128 dual-core processors).
+
+\subsection{Distributed memory}
+In such architecture, memory is not addressed as a whole, but located in independent units (such as a cluster computer). Those memory units (or spaces) should be addressed explicitly, making the parallelization of programs much more tedious. However, systems based on this model (mostly clusters) can expand to more than 100,000 processors.
+
+\subsection{Interleaved memory}
+Technic allowing concurrent accesses to a single memory image while keeping full performance. A memory space of size $s$ is split into $n$ chunks of size $s/n$ and addresses are spread across blocks through a modulo operator.
+
+Lets say we have a 4-way interleaved 100 words memory :
+addresses 0, 4 and 80 fall in the same memory block 0 (or bank) because $0 \bmod 4 = 0$, $4 \bmod 4 = 0$ and $80 \bmod 4 = 0$. Likewise, addresses 1 and 17 fall in bank 1 and addresses 22 and 26 in bank 2.
+
+Since each memory bank can serve a processor request concurrently with other banks, such a system can sustain= full access speed to each processor as long as their requests fall into different banks.
+
+Whenever two or more processors request memory from the same bank, access will be serialized, thus greatly degrading the performance. This is why computer designers use two or four times more banks than cores, in order to lower the probability of such conflict.
+
+\subsection{\emph{LPlib}}
+Acronym for Loop Parallelism Version 3, a fancy-less but explicit name.
+
+\subsection{Multi-core}
+A single chip processor hosting several cores.
+
+The word processor may refer to a chip or a core inside a chip. It is important to distinguish between a chip (a single electronic component which may contain one or more processors) and a core (a processor located inside a chip). Consequently, a quadri-processor computer could be made of four single-core chips, two dual-core chips or one quad-core chip.
+
+\subsection{Pthread}
+Posix-thread, a lightweight process conforming to the posix norm.
+
+A pthread is a task launched by a program and run concurrently.
+
+In a multi-processor system, a program may be running on a single processor and may launch several threads anytime. Those threads may be executed by other processors relieving the main program burden. That is what multi-thread programming is about.
+
+\subsection{Shared memory}
+A memory architecture where several processors share the same memory space. Such system facilitate the development of parallel applications since programers don't have to care about their data localization among multiple spaces like in \emph{distributed memory} systems.
+
+However, those systems are more limited in number of processors and more expensive than their distributed memory counterparts.
+
+
+%
+% BIBLIO
+%
+
+\addcontentsline{toc}{section}{Bibliography}
+
+\begin{thebibliography}{99}
+\small
+
+\bibitem{book_pthreads}
+	B. NICHOLS, D. BUTTLAR \& J. PROULX-FARRELL,
+	Pthreads programming,
+	\emph{O'Reilly \& Associates, Inc}.
+
+\bibitem{lohner}
+	R. L\"OHNER,
+	Applied CFD Techniques,
+	\emph{WILEY}.
+
+\bibitem{peano_hilbert}
+	SAGAN,
+	Space-Filling Curves,
+	\emph{Springer Verlag, New York, 1994}.
+
+\end{thebibliography}
+
+\end{document}
