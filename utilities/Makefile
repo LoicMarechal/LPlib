@@ -24,4 +24,4 @@ EXEDIR  = $(HOME)/bin/$(ARCHI)
 
 # Build hilbert
 $(EXEDIR)/hilbert: hilbert.c libmesh6.c libmesh6.h lplib3.c lplib3.h
-	$(CC) hilbert.c libmesh6.c lplib3.c $(LDFLAGS) $(LDFLAGS) -o $@
+	$(CC) hilbert.c libmesh6.c lplib3.c $(CFLAGS) $(LDFLAGS) -o $@
