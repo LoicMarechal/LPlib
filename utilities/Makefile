@@ -23,5 +23,5 @@ LDFLAGS = -lm -lpthread
 EXEDIR  = $(HOME)/bin/$(ARCHI)
 
 # Build hilbert
-$(EXEDIR)/hilbert: hilbert.c libmesh6.c libmesh6.h lplib3.c lplib3.h
-	$(CC) hilbert.c libmesh6.c lplib3.c $(CFLAGS) $(LDFLAGS) -o $@
+$(EXEDIR)/hilbert: hilbert.c libmeshb7.c libmeshb7.h lplib3.c lplib3.h
+	$(CC) hilbert.c libmeshb7.c lplib3.c $(CFLAGS) $(LDFLAGS) -o $@
