@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------*/
 /*															*/
-/*				BASIC PARALLEL TEST USING LP3				*/
+/*				BASIC PARALLEL TEST USING LPLib3			*/
 /*															*/
 /*----------------------------------------------------------*/
 /*															*/
@@ -30,7 +30,7 @@
 /* Defines													*/
 /*----------------------------------------------------------*/
 
-#define size 10000000
+#define size 100000000
 
 
 /*----------------------------------------------------------*/
@@ -59,13 +59,11 @@ void AddVec(int BegIdx, int EndIdx, int PthIdx, AddArgSct *arg)
 	double *vec1, *vec2, *vec3;
 
 	/* Copy arguments in local variables (it may help avoiding some false memory conflicts) */
-
 	vec1 = arg->vec1;
 	vec2 = arg->vec2;
 	vec3 = arg->vec3;
 
 	/* Compute v3 = f(v1) + g(v2) within the given range */
-
 	for(i=BegIdx; i<=EndIdx; i++)
 		vec3[i] = exp(log(acos(cos(vec1[i]+1.)))) + exp(log(acos(cos(vec2[i]+2.))));
 }
@@ -77,19 +75,18 @@ void AddVec(int BegIdx, int EndIdx, int PthIdx, AddArgSct *arg)
 
 int main(int ArgCnt, char **ArgVec)
 {
-	int i, NmbCpu, TypIdx, LibParIdx;
+	int i, NmbCpu, TypIdx;
+    long long LibParIdx;
 	float acc;
 	double *vec1, *vec2, *vec3, tim=0.;
 	AddArgSct arg;
 	struct timeval tp;
 
 	/* Read the command line arguments */
-
 	if(ArgCnt > 1)
 		NmbCpu = atoi(*++ArgVec);
 
 	/* Alloocate and initialize all three vectors */
-
 	vec1 = malloc(size * sizeof(double));
 	vec2 = malloc(size * sizeof(double));
 	vec3 = malloc(size * sizeof(double));
@@ -101,26 +98,23 @@ int main(int ArgCnt, char **ArgVec)
 		vec3[i] = 0;
 	}
 
-	/* Build the arguments structure : it stores only pointers to the three vectors */
-
+	/* Build the arguments structure: it stores only pointers to the three vectors */
 	arg.vec1 = vec1;
 	arg.vec2 = vec2;
 	arg.vec3 = vec3;
 
-	/* Initialize the LP2 : if the return value is 0, something went wrong, otherwise,
+	/* Initialize the LPLib3: if the return value is 0, something went wrong, otherwise,
 		an instanciation index is returned. This index should be provided to any further
 		library function */
-
 	if(!(LibParIdx = InitParallel(NmbCpu)))
 	{
-		puts("Error initializing the LP2.");
+		puts("Error initializing the LPLib3.");
 		exit(1);
 	}
 
-	/* Setup a new data type : provide the instanciation number and the size of the vector.
+	/* Setup a new data type: provide the instanciation number and the size of the vector.
 		The procedure return 0 for a failure and a data type index otherwise. This new index
 		must be provided to launch any parallel loop on this vector */
-
 	if(!(TypIdx = NewType(LibParIdx, size)))
 	{
 		puts("Error while creating new data type.");
@@ -137,7 +131,6 @@ int main(int ArgCnt, char **ArgVec)
 		-pointer to the procedure to be launched in parallel
 		-pointer to arguments structure needed by the loop
 		The return value is 0 is something went wrong or an acceleration factor otherwise */
-
 	if(!(acc = LaunchParallel(LibParIdx, TypIdx, 0, (void *)AddVec, (void *)&arg)))
 	{
 		puts("Error while launching the parallel loop AddVec.");
@@ -149,8 +142,7 @@ int main(int ArgCnt, char **ArgVec)
 
 	printf("Theoretical speedup for loop AddVec = %g, wall clock = %g s\n", acc, tim);
 
-	/* Stop LP2 and free everything */
-
+	/* Stop LPLib3 and free everything */
 	StopParallel(LibParIdx);
 
 	free(vec1);
