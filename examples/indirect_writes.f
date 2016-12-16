@@ -2,21 +2,21 @@
       program indirect_writes
 
 	  include 'lplib3.ins'
-	  include 'libmesh6.ins'
+	  include 'libmeshb7.ins'
 
 	  integer MaxVer,MaxTet,NmbItr
 	  parameter (MaxVer=10000000)
 	  parameter (MaxTet=60000000)
 	  parameter (NmbItr=100)
 
-	  integer i,j,k,NmbCpu,InpMsh,ver,dim,ref,TetTyp,VerTyp,ret
-	  integer NmbVer,NmbTet,VerDeg(MaxVer),TetVer(4,MaxTet)
+	  integer i,j,k,NmbCpu,ver,dim,ref,TetTyp,VerTyp,ret
+	  integer VerDeg(MaxVer),TetVer(4,MaxTet)
 	  integer NmbPth,DepTab(4)
-	  integer*8 ParIdx
+	  integer*8 NmbVer,NmbTet,ParIdx,InpMsh
 	  real*8 VerTem(MaxVer),TetTem(MaxTet),t
 	  real sta(2),acc
 
-	  external vertemp,tettemp,pipef
+	  external vertemp,tettemp
 
 	  InpMsh = gmfopenmesh("tet.meshb", GmfRead,ver,dim)
       if(InpMsh.eq.0) STOP ' cannot open file tet.meshb'
@@ -30,12 +30,11 @@
 	  print*, 'version  = ',ver,   'dimension  = ',dim
 	  print*, 'vertices = ',NmbVer,'tetrahedra = ',NmbTet
 
-	  ret = gmfgotokwd(InpMsh, GmfTetrahedra)
-	  ret = gmfgetblock(InpMsh, GmfTetrahedra,
-     +                  GmfInt, TetVer(1,1), TetVer(1,2),
-     +                  GmfInt, TetVer(2,1), TetVer(2,2),
-     +                  GmfInt, TetVer(3,1), TetVer(3,2),
-     +                  GmfInt, TetVer(4,1), TetVer(4,2),
+	  ret = gmfgetblock(InpMsh,GmfTetrahedra,1,NmbVer,0_8,
+     +                  GmfInt, TetVer(1,1), TetVer(1,NmbVer),
+     +                  GmfInt, TetVer(2,1), TetVer(2,NmbVer),
+     +                  GmfInt, TetVer(3,1), TetVer(3,NmbVer),
+     +                  GmfInt, TetVer(4,1), TetVer(4,NmbVer),
      +                  GmfInt, ref, ref)
 
 	  ret = gmfclosemesh(InpMsh)
@@ -77,32 +76,11 @@
      +                               TetTem,VerTem,VerDeg,TetVer)
 	  end do
 
-c	  DepTab(1) = launchpipeline(ParIdx,0,DepTab,pipef,3,
-c     +                           TetVer,TetTem,VerTem)
-
-c	 call waitpipeline(ParIdx)
-
 	  print*, 'wall time = ', getwallclock() - t, 'accelerate = ',
      +         acc / (NmbItr*2)
 
 	  call stopparallel(ParIdx)
 
-	  end
-
-	  subroutine pipef(TetVer,TetTem,VerTem)
-
-	  integer i,j,TetVer(4,*)
-	  real*8 sum,TetTem(*),VerTem(*)
-
-	  do i = 1,10526832
-		  sum = 0
-		  do j=1,4
-			  sum = sum + VerTem(TetVer(j,i))
-		  end do
-		  TetTem(i) = sum
-	  end do
-
-	  return
 	  end
 
 
