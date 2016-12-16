@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------*/
 /*															*/
-/*						HILBERT V 1.10						*/
+/*						HILBERT V 1.11						*/
 /*															*/
 /*----------------------------------------------------------*/
 /*															*/
 /*	Description:		renumber .meshb files				*/
 /*	Author:				Loic MARECHAL						*/
 /*	Creation date:		mar 11 2010							*/
-/*	Last modification:	nov 09 2015							*/
+/*	Last modification:	dec 16 2016							*/
 /*															*/
 /*----------------------------------------------------------*/
 
@@ -24,7 +24,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/time.h>
-#include "libmesh6.h"
+#include "libmeshb7.h"
 #include "lplib3.h"
 
 
@@ -32,12 +32,10 @@
 /* Defines													*/
 /*----------------------------------------------------------*/
 
-#define MaxItr 21
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#define max(a,b) ((a) > (b) ? (a) : (b))
+#define MAXItr 21
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define BufSiz 250
-#define MinVec 2
-#define MaxVec 64
 
 
 /*----------------------------------------------------------*/
@@ -98,7 +96,7 @@ typedef struct
 typedef struct
 {
 	int tet, nex;
-	char voy, min, mid, max;
+	char voy, MIN, mid, MAX;
 }HshSct;
 
 typedef struct
@@ -138,16 +136,12 @@ int VerTyp, EdgTyp, TriTyp, QadTyp, TetTyp, PyrTyp, PriTyp, HexTyp;
 
 void ScaMsh(char *, MshSct *);
 void RecMsh(char *, MshSct *);
-u64 hilbert(double *, double *, int);
-static void GetTim(double *);
-int CmpFnc(const void *, const void *);
-static void RenVer(int, int, int, MshSct *);
-static void RenEle(int, int, int, MshSct *);
-void PrtSta(MshSct *, int);
-static void SetNgb(MshSct *, int);
-static void ParNgb1(int, int, int, ParSct *);
-static void ParNgb2(int, int, int, ParSct *);
-void VecRen(MshSct *, int);
+u64  hilbert(double *, double *, int);
+void GetTim(double *);
+int  CmpFnc(const void *, const void *);
+void RenVer(int, int, int, MshSct *);
+void RenEle(int, int, int, MshSct *);
+void PrtSta(MshSct *, long long);
 
 
 /*----------------------------------------------------------*/
@@ -157,7 +151,8 @@ void VecRen(MshSct *, int);
 int main(int ArgCnt, char **ArgVec)
 {
 	char *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-	int i, j, LibParIdx, NmbCpu = 0, StaFlg=0, VecSiz=0;
+	int i, j, NmbCpu = 0, StaFlg=0;
+    long long LibParIdx;
 	float flt[3], sta[2];
 	double timer=0;
 	TetSct *tet;
@@ -169,11 +164,10 @@ int main(int ArgCnt, char **ArgVec)
 
 	if(ArgCnt == 1)
 	{
-		puts("\nHILBERT v1.10 nov 09 2015   Loic MARECHAL / INRIA");
+		puts("\nHILBERT v1.11 dec 16 2016   Loic MARECHAL / INRIA");
 		puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
 		puts(" -in name    : name of the input mesh");
 		puts(" -out name   : name of the output renumbered mesh");
-		puts(" -vec size   : optional vector safe post renumbering");
 		puts(" -stats      : print element blocks dependencies stats before and after renumbering");
 		puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)\n");
 		exit(0);
@@ -207,15 +201,6 @@ int main(int ArgCnt, char **ArgVec)
 			continue;
 		}
 
-		if(!strcmp(PtrArg,"-vec"))
-		{
-			VecSiz = atoi(*++ArgVec);
-			VecSiz = max(VecSiz, MinVec);
-			VecSiz = min(VecSiz, MaxVec);
-			ArgCnt--;
-			continue;
-		}
-
 		if(!strcmp(PtrArg,"-stats"))
 		{
 			StaFlg = 1;
@@ -225,8 +210,8 @@ int main(int ArgCnt, char **ArgVec)
 		if(!strcmp(PtrArg,"-nproc"))
 		{
 			NmbCpu = atoi(*++ArgVec);
-			NmbCpu = max(NmbCpu, 1);
-			NmbCpu = min(NmbCpu, 128);
+			NmbCpu = MAX(NmbCpu, 1);
+			NmbCpu = MIN(NmbCpu, 128);
 			ArgCnt--;
 			continue;
 		}
@@ -270,7 +255,7 @@ int main(int ArgCnt, char **ArgVec)
 		PyrTyp = NewType(LibParIdx, msh.NmbPyr);
 		PriTyp = NewType(LibParIdx, msh.NmbPri);
 		HexTyp = NewType(LibParIdx, msh.NmbHex);
-		puts("\nDependencies before renumbering (average / max) :");
+		puts("\nDependencies before renumbering (average / MAX) :");
 		PrtSta(&msh, LibParIdx);
 	}
 
@@ -349,12 +334,6 @@ int main(int ArgCnt, char **ArgVec)
 		ParallelQsort(LibParIdx, &msh.tet[1], msh.NmbTet, sizeof(TetSct), CmpFnc);
 		GetTim(&timer);
 		printf("%g s\n", timer);
-
-		if(VecSiz)
-		{
-			VecRen(&msh, VecSiz);
-			ParallelQsort(LibParIdx, &msh.tet[1], msh.NmbTet, sizeof(TetSct), CmpFnc);
-		}
 	}
 
 	/* Pyramids renumbering */
@@ -406,11 +385,9 @@ int main(int ArgCnt, char **ArgVec)
 
 	if(StaFlg)
 	{
-		puts("\nDependencies after renumbering (average / max) :");
+		puts("\nDependencies after renumbering (average / MAX) :");
 		PrtSta(&msh, LibParIdx);
 	}
-
-//	SetNgb(&msh, LibParIdx);
 
 	StopParallel(LibParIdx);
 
@@ -460,11 +437,11 @@ int main(int ArgCnt, char **ArgVec)
 
 void ScaMsh(char *InpNam, MshSct *msh)
 {
-	int i, j, InpMsh, dim;
+	int i, j, dim;
+    long long InpMsh;
 	float flt[3];
 
 	/* Check mesh format */
-
 	if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &dim)))
 	{
 		printf("Cannot open mesh %s\n", InpNam);
@@ -478,7 +455,6 @@ void ScaMsh(char *InpNam, MshSct *msh)
 	}
 
 	/* Get stats and allocate tables */
-
 	if((msh->NmbVer = GmfStatKwd(InpMsh, GmfVertices)))
 		msh->ver = malloc((msh->NmbVer+1) * sizeof(VerSct));
 	else
@@ -509,15 +485,13 @@ void ScaMsh(char *InpNam, MshSct *msh)
 		msh->hex = malloc((msh->NmbHex+1) * sizeof(HexSct));
 
 	/* Read fields */
-
 	if(msh->NmbVer)
 	{
-		GmfGotoKwd(InpMsh, GmfVertices);
-		GmfGetBlock(InpMsh, GmfVertices, \
-					GmfDouble, &msh->ver[1].crd[0], &msh->ver[2].crd[0], \
-					GmfDouble, &msh->ver[1].crd[1], &msh->ver[2].crd[1], \
-					GmfDouble, &msh->ver[1].crd[2], &msh->ver[2].crd[2], \
-					GmfInt, &msh->ver[1].ref, &msh->ver[2].ref);
+		GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, NULL, \
+					GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+					GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+					GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+					GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
 
 		for(i=1;i<=msh->NmbVer;i++)
 		{
@@ -540,83 +514,76 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
 	if(msh->NmbEdg)
 	{
-		GmfGotoKwd(InpMsh, GmfEdges);
-		GmfGetBlock(InpMsh, GmfEdges, \
-					GmfInt, &msh->edg[1].idx[0], &msh->edg[2].idx[0], \
-					GmfInt, &msh->edg[1].idx[1], &msh->edg[2].idx[1], \
-					GmfInt, &msh->edg[1].ref, &msh->edg[2].ref);
+		GmfGetBlock(InpMsh, GmfEdges, 1, msh->NmbEdg, NULL, \
+					GmfInt, &msh->edg[1].idx[0], &msh->edg[ msh->NmbEdg ].idx[0], \
+					GmfInt, &msh->edg[1].idx[1], &msh->edg[ msh->NmbEdg ].idx[1], \
+					GmfInt, &msh->edg[1].ref,    &msh->edg[ msh->NmbEdg ].ref);
 	}
 
 	if(msh->NmbTri)
 	{
-		GmfGotoKwd(InpMsh, GmfTriangles);
-		GmfGetBlock(InpMsh, GmfTriangles, \
-					GmfInt, &msh->tri[1].idx[0], &msh->tri[2].idx[0], \
-					GmfInt, &msh->tri[1].idx[1], &msh->tri[2].idx[1], \
-					GmfInt, &msh->tri[1].idx[2], &msh->tri[2].idx[2], \
-					GmfInt, &msh->tri[1].ref, &msh->tri[2].ref);
+		GmfGetBlock(InpMsh, GmfTriangles, 1, msh->NmbTri, NULL, \
+					GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
+					GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
+					GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
+					GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
 	}
 
 	if(msh->NmbQad)
 	{
-		GmfGotoKwd(InpMsh, GmfQuadrilaterals);
-		GmfGetBlock(InpMsh, GmfQuadrilaterals, \
-					GmfInt, &msh->qad[1].idx[0], &msh->qad[2].idx[0], \
-					GmfInt, &msh->qad[1].idx[1], &msh->qad[2].idx[1], \
-					GmfInt, &msh->qad[1].idx[2], &msh->qad[2].idx[2], \
-					GmfInt, &msh->qad[1].idx[3], &msh->qad[2].idx[3], \
-					GmfInt, &msh->qad[1].ref, &msh->qad[2].ref);
+		GmfGetBlock(InpMsh, GmfQuadrilaterals, 1, msh->NmbQad, NULL,  \
+					GmfInt, &msh->qad[1].idx[0], &msh->qad[ msh->NmbQad ].idx[0], \
+					GmfInt, &msh->qad[1].idx[1], &msh->qad[ msh->NmbQad ].idx[1], \
+					GmfInt, &msh->qad[1].idx[2], &msh->qad[ msh->NmbQad ].idx[2], \
+					GmfInt, &msh->qad[1].idx[3], &msh->qad[ msh->NmbQad ].idx[3], \
+					GmfInt, &msh->qad[1].ref,    &msh->qad[ msh->NmbQad ].ref);
 	}
 
 	if(msh->NmbTet)
 	{
-		GmfGotoKwd(InpMsh, GmfTetrahedra);
-		GmfGetBlock(InpMsh, GmfTetrahedra, \
-					GmfInt, &msh->tet[1].idx[0], &msh->tet[2].idx[0], \
-					GmfInt, &msh->tet[1].idx[1], &msh->tet[2].idx[1], \
-					GmfInt, &msh->tet[1].idx[2], &msh->tet[2].idx[2], \
-					GmfInt, &msh->tet[1].idx[3], &msh->tet[2].idx[3], \
-					GmfInt, &msh->tet[1].ref, &msh->tet[2].ref);
+		GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, NULL, \
+					GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
+					GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
+					GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
+					GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
+					GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
 	}
 
 	if(msh->NmbPyr)
 	{
-		GmfGotoKwd(InpMsh, GmfPyramids);
-		GmfGetBlock(InpMsh, GmfPyramids, \
-					GmfInt, &msh->pyr[1].idx[0], &msh->pyr[2].idx[0], \
-					GmfInt, &msh->pyr[1].idx[1], &msh->pyr[2].idx[1], \
-					GmfInt, &msh->pyr[1].idx[2], &msh->pyr[2].idx[2], \
-					GmfInt, &msh->pyr[1].idx[3], &msh->pyr[2].idx[3], \
-					GmfInt, &msh->pyr[1].idx[4], &msh->pyr[2].idx[4], \
-					GmfInt, &msh->pyr[1].ref, &msh->pyr[2].ref);
+		GmfGetBlock(InpMsh, GmfPyramids, 1, msh->NmbPyr, NULL, \
+					GmfInt, &msh->pyr[1].idx[0], &msh->pyr[ msh->NmbPyr ].idx[0], \
+					GmfInt, &msh->pyr[1].idx[1], &msh->pyr[ msh->NmbPyr ].idx[1], \
+					GmfInt, &msh->pyr[1].idx[2], &msh->pyr[ msh->NmbPyr ].idx[2], \
+					GmfInt, &msh->pyr[1].idx[3], &msh->pyr[ msh->NmbPyr ].idx[3], \
+					GmfInt, &msh->pyr[1].idx[4], &msh->pyr[ msh->NmbPyr ].idx[4], \
+					GmfInt, &msh->pyr[1].ref,    &msh->pyr[ msh->NmbPyr ].ref);
 	}
 
 	if(msh->NmbPri)
 	{
-		GmfGotoKwd(InpMsh, GmfPrisms);
-		GmfGetBlock(InpMsh, GmfPrisms, \
-					GmfInt, &msh->pri[1].idx[0], &msh->pri[2].idx[0], \
-					GmfInt, &msh->pri[1].idx[1], &msh->pri[2].idx[1], \
-					GmfInt, &msh->pri[1].idx[2], &msh->pri[2].idx[2], \
-					GmfInt, &msh->pri[1].idx[3], &msh->pri[2].idx[3], \
-					GmfInt, &msh->pri[1].idx[4], &msh->pri[2].idx[4], \
-					GmfInt, &msh->pri[1].idx[5], &msh->pri[2].idx[5], \
-					GmfInt, &msh->pri[1].ref, &msh->pri[2].ref);
+		GmfGetBlock(InpMsh, GmfPrisms, 1, msh->NmbPri, NULL, \
+					GmfInt, &msh->pri[1].idx[0], &msh->pri[ msh->NmbPri ].idx[0], \
+					GmfInt, &msh->pri[1].idx[1], &msh->pri[ msh->NmbPri ].idx[1], \
+					GmfInt, &msh->pri[1].idx[2], &msh->pri[ msh->NmbPri ].idx[2], \
+					GmfInt, &msh->pri[1].idx[3], &msh->pri[ msh->NmbPri ].idx[3], \
+					GmfInt, &msh->pri[1].idx[4], &msh->pri[ msh->NmbPri ].idx[4], \
+					GmfInt, &msh->pri[1].idx[5], &msh->pri[ msh->NmbPri ].idx[5], \
+					GmfInt, &msh->pri[1].ref,    &msh->pri[ msh->NmbPri ].ref);
 	}
 
 	if(msh->NmbHex)
 	{
-		GmfGotoKwd(InpMsh, GmfHexahedra);
-		GmfGetBlock(InpMsh, GmfHexahedra, \
-					GmfInt, &msh->hex[1].idx[0], &msh->hex[2].idx[0], \
-					GmfInt, &msh->hex[1].idx[1], &msh->hex[2].idx[1], \
-					GmfInt, &msh->hex[1].idx[2], &msh->hex[2].idx[2], \
-					GmfInt, &msh->hex[1].idx[3], &msh->hex[2].idx[3], \
-					GmfInt, &msh->hex[1].idx[4], &msh->hex[2].idx[4], \
-					GmfInt, &msh->hex[1].idx[5], &msh->hex[2].idx[5], \
-					GmfInt, &msh->hex[1].idx[6], &msh->hex[2].idx[6], \
-					GmfInt, &msh->hex[1].idx[7], &msh->hex[2].idx[7], \
-					GmfInt, &msh->hex[1].ref, &msh->hex[2].ref);
+		GmfGetBlock(InpMsh, GmfHexahedra, 1, msh->NmbHex, NULL, \
+					GmfInt, &msh->hex[1].idx[0], &msh->hex[ msh->NmbHex ].idx[0], \
+					GmfInt, &msh->hex[1].idx[1], &msh->hex[ msh->NmbHex ].idx[1], \
+					GmfInt, &msh->hex[1].idx[2], &msh->hex[ msh->NmbHex ].idx[2], \
+					GmfInt, &msh->hex[1].idx[3], &msh->hex[ msh->NmbHex ].idx[3], \
+					GmfInt, &msh->hex[1].idx[4], &msh->hex[ msh->NmbHex ].idx[4], \
+					GmfInt, &msh->hex[1].idx[5], &msh->hex[ msh->NmbHex ].idx[5], \
+					GmfInt, &msh->hex[1].idx[6], &msh->hex[ msh->NmbHex ].idx[6], \
+					GmfInt, &msh->hex[1].idx[7], &msh->hex[ msh->NmbHex ].idx[7], \
+					GmfInt, &msh->hex[1].ref,    &msh->hex[ msh->NmbHex ].ref);
 	}
 
 	GmfCloseMesh(InpMsh);
@@ -629,7 +596,8 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
 void RecMsh(char *OutNam, MshSct *msh)
 {
-	int i, OutMsh, NewNmbVer;
+	int i, NewNmbVer;
+    long long OutMsh;
 
 	if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, 3)))
 	{
@@ -640,92 +608,92 @@ void RecMsh(char *OutNam, MshSct *msh)
 	if(msh->NmbVer)
 	{
 		GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-		GmfSetBlock(OutMsh, GmfVertices, \
-					GmfDouble, &msh->ver[1].crd[0], &msh->ver[2].crd[0], \
-					GmfDouble, &msh->ver[1].crd[1], &msh->ver[2].crd[1], \
-					GmfDouble, &msh->ver[1].crd[2], &msh->ver[2].crd[2], \
-					GmfInt, &msh->ver[1].ref, &msh->ver[2].ref);
+		GmfSetBlock(OutMsh, GmfVertices, NULL, \
+					GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+					GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+					GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+					GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
 	}
 
 	if(msh->NmbEdg)
 	{
 		GmfSetKwd(OutMsh, GmfEdges, msh->NmbEdg);
-		GmfSetBlock(OutMsh, GmfEdges, \
-					GmfInt, &msh->edg[1].idx[0], &msh->edg[2].idx[0], \
-					GmfInt, &msh->edg[1].idx[1], &msh->edg[2].idx[1], \
-					GmfInt, &msh->edg[1].ref, &msh->edg[2].ref);
+		GmfSetBlock(OutMsh, GmfEdges, NULL, \
+					GmfInt, &msh->edg[1].idx[0], &msh->edg[ msh->NmbEdg ].idx[0], \
+					GmfInt, &msh->edg[1].idx[1], &msh->edg[ msh->NmbEdg ].idx[1], \
+					GmfInt, &msh->edg[1].ref,    &msh->edg[ msh->NmbEdg ].ref);
 	}
 
 	if(msh->NmbTri)
 	{
 		GmfSetKwd(OutMsh, GmfTriangles, msh->NmbTri);
-		GmfSetBlock(OutMsh, GmfTriangles, \
-					GmfInt, &msh->tri[1].idx[0], &msh->tri[2].idx[0], \
-					GmfInt, &msh->tri[1].idx[1], &msh->tri[2].idx[1], \
-					GmfInt, &msh->tri[1].idx[2], &msh->tri[2].idx[2], \
-					GmfInt, &msh->tri[1].ref, &msh->tri[2].ref);
+		GmfSetBlock(OutMsh, GmfTriangles, NULL, \
+					GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
+					GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
+					GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
+					GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
 	}
 
 	if(msh->NmbQad)
 	{
 		GmfSetKwd(OutMsh, GmfQuadrilaterals, msh->NmbQad);
-		GmfSetBlock(OutMsh, GmfQuadrilaterals, \
-					GmfInt, &msh->qad[1].idx[0], &msh->qad[2].idx[0], \
-					GmfInt, &msh->qad[1].idx[1], &msh->qad[2].idx[1], \
-					GmfInt, &msh->qad[1].idx[2], &msh->qad[2].idx[2], \
-					GmfInt, &msh->qad[1].idx[3], &msh->qad[2].idx[3], \
-					GmfInt, &msh->qad[1].ref, &msh->qad[2].ref);
+		GmfSetBlock(OutMsh, GmfQuadrilaterals, NULL, \
+					GmfInt, &msh->qad[1].idx[0], &msh->qad[ msh->NmbQad ].idx[0], \
+					GmfInt, &msh->qad[1].idx[1], &msh->qad[ msh->NmbQad ].idx[1], \
+					GmfInt, &msh->qad[1].idx[2], &msh->qad[ msh->NmbQad ].idx[2], \
+					GmfInt, &msh->qad[1].idx[3], &msh->qad[ msh->NmbQad ].idx[3], \
+					GmfInt, &msh->qad[1].ref,    &msh->qad[ msh->NmbQad ].ref);
 	}
 
 	if(msh->NmbTet)
 	{
 		GmfSetKwd(OutMsh, GmfTetrahedra, msh->NmbTet);
-		GmfSetBlock(OutMsh, GmfTetrahedra, \
-					GmfInt, &msh->tet[1].idx[0], &msh->tet[2].idx[0], \
-					GmfInt, &msh->tet[1].idx[1], &msh->tet[2].idx[1], \
-					GmfInt, &msh->tet[1].idx[2], &msh->tet[2].idx[2], \
-					GmfInt, &msh->tet[1].idx[3], &msh->tet[2].idx[3], \
-					GmfInt, &msh->tet[1].ref, &msh->tet[2].ref);
+		GmfSetBlock(OutMsh, GmfTetrahedra, NULL, \
+					GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
+					GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
+					GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
+					GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
+					GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
 	}
 
 	if(msh->NmbPyr)
 	{
 		GmfSetKwd(OutMsh, GmfPyramids, msh->NmbPyr);
-		GmfSetBlock(OutMsh, GmfPyramids, \
-					GmfInt, &msh->pyr[1].idx[0], &msh->pyr[2].idx[0], \
-					GmfInt, &msh->pyr[1].idx[1], &msh->pyr[2].idx[1], \
-					GmfInt, &msh->pyr[1].idx[2], &msh->pyr[2].idx[2], \
-					GmfInt, &msh->pyr[1].idx[3], &msh->pyr[2].idx[3], \
-					GmfInt, &msh->pyr[1].idx[4], &msh->pyr[2].idx[4], \
-					GmfInt, &msh->pyr[1].ref, &msh->pyr[2].ref);
+		GmfSetBlock(OutMsh, GmfPyramids, NULL, \
+					GmfInt, &msh->pyr[1].idx[0], &msh->pyr[ msh->NmbPyr ].idx[0], \
+					GmfInt, &msh->pyr[1].idx[1], &msh->pyr[ msh->NmbPyr ].idx[1], \
+					GmfInt, &msh->pyr[1].idx[2], &msh->pyr[ msh->NmbPyr ].idx[2], \
+					GmfInt, &msh->pyr[1].idx[3], &msh->pyr[ msh->NmbPyr ].idx[3], \
+					GmfInt, &msh->pyr[1].idx[4], &msh->pyr[ msh->NmbPyr ].idx[4], \
+					GmfInt, &msh->pyr[1].ref,    &msh->pyr[ msh->NmbPyr ].ref);
 	}
 
 	if(msh->NmbPri)
 	{
 		GmfSetKwd(OutMsh, GmfPrisms, msh->NmbPri);
-		GmfSetBlock(OutMsh, GmfPrisms, \
-					GmfInt, &msh->pri[1].idx[0], &msh->pri[2].idx[0], \
-					GmfInt, &msh->pri[1].idx[1], &msh->pri[2].idx[1], \
-					GmfInt, &msh->pri[1].idx[2], &msh->pri[2].idx[2], \
-					GmfInt, &msh->pri[1].idx[3], &msh->pri[2].idx[3], \
-					GmfInt, &msh->pri[1].idx[4], &msh->pri[2].idx[4], \
-					GmfInt, &msh->pri[1].idx[5], &msh->pri[2].idx[5], \
-					GmfInt, &msh->pri[1].ref, &msh->pri[2].ref);
+		GmfSetBlock(OutMsh, GmfPrisms, NULL, \
+					GmfInt, &msh->pri[1].idx[0], &msh->pri[ msh->NmbPri ].idx[0], \
+					GmfInt, &msh->pri[1].idx[1], &msh->pri[ msh->NmbPri ].idx[1], \
+					GmfInt, &msh->pri[1].idx[2], &msh->pri[ msh->NmbPri ].idx[2], \
+					GmfInt, &msh->pri[1].idx[3], &msh->pri[ msh->NmbPri ].idx[3], \
+					GmfInt, &msh->pri[1].idx[4], &msh->pri[ msh->NmbPri ].idx[4], \
+					GmfInt, &msh->pri[1].idx[5], &msh->pri[ msh->NmbPri ].idx[5], \
+					GmfInt, &msh->pri[1].ref,    &msh->pri[ msh->NmbPri ].ref);
 	}
 
 	if(msh->NmbHex)
 	{
 		GmfSetKwd(OutMsh, GmfHexahedra, msh->NmbHex);
-		GmfSetBlock(OutMsh, GmfHexahedra, \
-					GmfInt, &msh->hex[1].idx[0], &msh->hex[2].idx[0], \
-					GmfInt, &msh->hex[1].idx[1], &msh->hex[2].idx[1], \
-					GmfInt, &msh->hex[1].idx[2], &msh->hex[2].idx[2], \
-					GmfInt, &msh->hex[1].idx[3], &msh->hex[2].idx[3], \
-					GmfInt, &msh->hex[1].idx[4], &msh->hex[2].idx[4], \
-					GmfInt, &msh->hex[1].idx[5], &msh->hex[2].idx[5], \
-					GmfInt, &msh->hex[1].idx[6], &msh->hex[2].idx[6], \
-					GmfInt, &msh->hex[1].idx[7], &msh->hex[2].idx[7], \
-					GmfInt, &msh->hex[1].ref, &msh->hex[2].ref);
+		GmfSetBlock(OutMsh, GmfHexahedra, NULL, \
+					GmfInt, &msh->hex[1].idx[0], &msh->hex[ msh->NmbHex ].idx[0], \
+					GmfInt, &msh->hex[1].idx[1], &msh->hex[ msh->NmbHex ].idx[1], \
+					GmfInt, &msh->hex[1].idx[2], &msh->hex[ msh->NmbHex ].idx[2], \
+					GmfInt, &msh->hex[1].idx[3], &msh->hex[ msh->NmbHex ].idx[3], \
+					GmfInt, &msh->hex[1].idx[4], &msh->hex[ msh->NmbHex ].idx[4], \
+					GmfInt, &msh->hex[1].idx[5], &msh->hex[ msh->NmbHex ].idx[5], \
+					GmfInt, &msh->hex[1].idx[6], &msh->hex[ msh->NmbHex ].idx[6], \
+					GmfInt, &msh->hex[1].idx[7], &msh->hex[ msh->NmbHex ].idx[7], \
+					GmfInt, &msh->hex[1].ref,    &msh->hex[ msh->NmbHex ].ref);
 	}
 
 	GmfCloseMesh(OutMsh);
@@ -789,7 +757,7 @@ u64 hilbert(double crd[3], double box[6], int itr)
 /* Wall clock timer											*/
 /*----------------------------------------------------------*/
 
-static void GetTim(double *timer)
+void GetTim(double *timer)
 {
 	gettimeofday(&tp, NULL);
 	*timer = tp.tv_sec + tp.tv_usec / 1000000. - *timer;
@@ -815,16 +783,16 @@ int CmpFnc(const void *a, const void *b)
 /* Parallel loop renumbering vertices						*/
 /*----------------------------------------------------------*/
 
-static void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
+void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
 	int i;
 
 	for(i=BegIdx; i<=EndIdx; i++)
-		msh->ver[i].cod = hilbert(msh->ver[i].crd, msh->box, MaxItr);
+		msh->ver[i].cod = hilbert(msh->ver[i].crd, msh->box, MAXItr);
 }
 
 
-static void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
+void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
 {
 	int i;
 
@@ -832,7 +800,7 @@ static void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
 		IdxTab[i] = Old2New[ IdxTab[i] ];
 }
 
-static void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
+void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 {
 	int i, j;
 
@@ -852,7 +820,7 @@ static void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 /* Parallel loop renumbering tets							*/
 /*----------------------------------------------------------*/
 
-static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
+void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
 	int i, j;
 	double crd[3];
@@ -865,7 +833,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(2, msh->edg[i].idx, msh->Old2New);
 				SetMidCrd(2, msh->edg[i].idx, msh, crd);
-				msh->edg[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->edg[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -875,7 +843,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(3, msh->tri[i].idx, msh->Old2New);
 				SetMidCrd(3, msh->tri[i].idx, msh, crd);
-				msh->tri[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->tri[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -885,7 +853,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(4, msh->qad[i].idx, msh->Old2New);
 				SetMidCrd(4, msh->qad[i].idx, msh, crd);
-				msh->qad[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->qad[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -895,7 +863,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(4, msh->tet[i].idx, msh->Old2New);
 				SetMidCrd(4, msh->tet[i].idx, msh, crd);
-				msh->tet[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->tet[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -905,7 +873,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(5, msh->pyr[i].idx, msh->Old2New);
 				SetMidCrd(5, msh->pyr[i].idx, msh, crd);
-				msh->pyr[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->pyr[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -915,7 +883,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(6, msh->pri[i].idx, msh->Old2New);
 				SetMidCrd(6, msh->pri[i].idx, msh, crd);
-				msh->pri[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->pri[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -925,7 +893,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 			{
 				SetNewIdx(8, msh->hex[i].idx, msh->Old2New);
 				SetMidCrd(8, msh->hex[i].idx, msh, crd);
-				msh->hex[i].cod = hilbert(crd, msh->box, MaxItr);
+				msh->hex[i].cod = hilbert(crd, msh->box, MAXItr);
 			}
 		}break;
 
@@ -937,7 +905,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 /* Compute and print elements / vertices dependencies stats	*/
 /*----------------------------------------------------------*/
 
-void PrtSta(MshSct *msh, int LibParIdx)
+void PrtSta(MshSct *msh, long long LibParIdx)
 {
 	int i, j, k, l, NmbLin, AvgLin, NewLin, NewHit, NmbHit, buf[ BufSiz ][8], lin[8], idx;
 	float  sta[2];
@@ -1020,265 +988,4 @@ void PrtSta(MshSct *msh, int LibParIdx)
 	}
 
 	puts("");
-}
-
-
-/*----------------------------------------------------------*/
-/* Parallel neighbours between tets							*/
-/*----------------------------------------------------------*/
-
-static void SetNgb(MshSct *msh, int LibParIdx)
-{
-	char *FlgTab;
-	int i, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];
-	double timer;
-	HshSct *tab;
-
-	printf("Tet neighbours        : ");
-	timer = 0.;
-	GetTim(&timer);
-
-	GetLplibInformation(LibParIdx, &NmbCpu, &NmbTyp);
-	HshSiz =  (msh->NmbTet * 2)  / NmbCpu;
-	MshSiz =  msh->NmbTet / NmbCpu;
-	FlgTab = calloc( (msh->NmbTet+1), sizeof(char) );
-	NgbTab = calloc( (msh->NmbTet+1), 4 * sizeof(int) );
-	ParSct par[ NmbCpu ];
-
-	for(i=0;i<NmbCpu;i++)
-	{
-		par[i].beg = i * MshSiz + 1;
-		par[i].end = (i+1) * MshSiz;
-		par[i].HshSiz = HshSiz;
-		par[i].ColPos = HshSiz;
-		par[i].msh = msh;
-		par[i].FlgTab = FlgTab;
-		par[i].NmbCpu = NmbCpu;
-		par[i].NgbTab = NgbTab;
-	}
-
-	par[ NmbCpu-1 ].end = msh->NmbTet;
-
-	LaunchParallel(LibParIdx, TetTyp, 0, (void *)ParNgb1, (void *)par);
-
-	if(NmbCpu > 1)
-		LaunchParallel(LibParIdx, TetTyp, 0, (void *)ParNgb2, (void *)par);
-
-	free(tab);
-	free(NgbTab);
-	free(FlgTab);
-
-	GetTim(&timer);
-	printf("%g s\n", timer);
-}
-
-
-/*----------------------------------------------------------*/
-/* The first scatter pass setups local links				*/
-/*----------------------------------------------------------*/
-
-static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
-{
-	char *FlgTab = par[c].FlgTab;
-	int i, j, k, key, (*NgbTab)[4] = par[c].NgbTab;
-	unsigned int min, mid, max;
-	TetSct *tet, *ngb;
-	MshSct *msh = par[c].msh;
-	HshSct *tab = par[c].tab = calloc(2 * par[c].HshSiz, sizeof(HshSct));
-
-	for(i=par[c].beg; i<=par[c].end; i++)
-	{
-		tet = &msh->tet[i];
-    
-		for(j=0;j<4;j++)
-		{
-			min = max = (j+1)%4;
-    
-			for(k=0;k<4;k++)
-				if(k != j)
-				{
-					if(tet->idx[k] < tet->idx[ min ])
-						min = k;
-					else if(tet->idx[k] > tet->idx[ max ])
-						max = k;
-				}
-    
-			mid = 6 - min - max - j;
-			key = (3 * tet->idx[ min ] + 5 * tet->idx[ mid ] + 7 * tet->idx[ max ]) % par[c].HshSiz;
-    
-			if(!tab[ key ].tet)
-			{
-				tab[ key ].tet = i;
-				tab[ key ].voy = j;
-				tab[ key ].min = min;
-				tab[ key ].mid = mid;
-				tab[ key ].max = max;
-				continue;
-			}
-    
-			do
-			{
-				ngb = &msh->tet[ tab[ key ].tet ];
-    
-				if( (ngb->idx[ tab[ key ].min ] == tet->idx[ min ]) \
-				&& 	(ngb->idx[ tab[ key ].mid ] == tet->idx[ mid ]) \
-				&& 	(ngb->idx[ tab[ key ].max ] == tet->idx[ max ]) )
-				{
-					NgbTab[i][j] = tab[ key ].tet;
-					FlgTab[i]++;
-					NgbTab[ tab[ key ].tet ][ tab[ key ].voy ] = i;
-					FlgTab[ tab[ key ].tet ]++;
-					break;
-				}
-    
-				if(tab[ key ].nex)
-					key = tab[ key ].nex;
-				else
-				{
-					tab[ key ].nex = par[c].ColPos;
-					key = par[c].ColPos++;
-					tab[ key ].tet = i;
-					tab[ key ].voy = j;
-					tab[ key ].min = min;
-					tab[ key ].mid = mid;
-					tab[ key ].max = max;
-					break;
-				}
-			}while(1);
-		}
-	}
-}
-
-
-/*----------------------------------------------------------*/
-/* The second gather pass setups missing globak links		*/
-/*----------------------------------------------------------*/
-
-static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
-{
-	int n, i, j, k, key, BasKey, flg, (*NgbTab)[4] = par[c].NgbTab;
-	unsigned int min, mid, max;
-	TetSct *tet, *ngb;
-	HshSct *tab;
-	MshSct *msh = par[c].msh;
-
-	for(i=par[c].beg; i<=par[c].end; i++)
-	{
-		if(par[c].FlgTab[i] == 4)
-			continue;
-
-		tet = &msh->tet[i];
-
-		for(j=0;j<4;j++)
-		{
-			if(NgbTab[i][j])
-				continue;
-    
-			min = max = (j+1)%4;
-    
-			for(k=0;k<4;k++)
-				if(k != j)
-				{
-					if(tet->idx[k] < tet->idx[ min ])
-						min = k;
-					else if(tet->idx[k] > tet->idx[ max ])
-						max = k;
-				}
-    
-			mid = 6 - min - max - j;
-			flg = 0;
-			BasKey = (3 * tet->idx[ min ] + 5 * tet->idx[ mid ] + 7 * tet->idx[ max ]) % par[c].HshSiz;
-    
-			for(n=0; n<par[c].NmbCpu; n++)
-			{
-				if(n == c)
-					continue;
-
-				tab = par[n].tab;
-				key = BasKey;
-    
-				do
-				{
-					ngb = &msh->tet[ tab[ key ].tet ];
-    
-					if( (ngb->idx[ tab[ key ].min ] == tet->idx[ min ]) \
-					&& 	(ngb->idx[ tab[ key ].mid ] == tet->idx[ mid ]) \
-					&& 	(ngb->idx[ tab[ key ].max ] == tet->idx[ max ]) )
-					{
-						NgbTab[i][j] = tab[ key ].tet;
-						flg = 1;
-						break;
-					}
-    
-					if(tab[ key ].nex)
-						key = tab[ key ].nex;
-					else
-						break;
-				}while(1);
-
-				if(flg)
-					break;
-			}
-		}
-	}
-}
-
-
-/*----------------------------------------------------------*/
-/* Vector safe tet renumbering								*/
-/*----------------------------------------------------------*/
-
-void VecRen(MshSct *msh, int VecSiz)
-{
-	int i, j, k, TetBlk = 0, BlkSiz, VecEnd = 0;
-	TetSct *tet, *tet2;
-
-	for(i=1;i<=msh->NmbVer;i++)
-		msh->ver[i].cod = 0;
-
-	for(i=1;i<=msh->NmbTet;i++)
-		msh->tet[i].cod = 0;
-
-	for(i=1;i<=msh->NmbTet;i++)
-	{
-		tet = &msh->tet[i];
-
-		if(tet->cod)
-			continue;
-
-		tet->cod = ++TetBlk;
-		BlkSiz = 1;
-
-		for(k=0;k<4;k++)
-			msh->ver[ tet->idx[k] ].cod = TetBlk;
-
-		for(j=i+1;j<=msh->NmbTet;j++)
-		{
-			tet2 = &msh->tet[j];
-
-			if(tet2->cod \
-			|| (msh->ver[ tet2->idx[0] ].cod == TetBlk) \
-			|| (msh->ver[ tet2->idx[1] ].cod == TetBlk) \
-			|| (msh->ver[ tet2->idx[2] ].cod == TetBlk) \
-			|| (msh->ver[ tet2->idx[3] ].cod == TetBlk) )
-			{
-				continue;
-			}
-
-			tet2->cod = TetBlk;
-
-			for(k=0;k<4;k++)
-				msh->ver[ tet2->idx[k] ].cod = TetBlk;
-
-			BlkSiz++;
-
-			if(BlkSiz == VecSiz)
-				break;
-		}
-
-		if(!VecEnd && (BlkSiz < VecSiz))
-			VecEnd = msh->NmbTet - i;
-	}
-
-	printf("Vector renumbering    : %d vec%d and %d last tets partially vectorized\n", TetBlk, VecSiz, VecEnd);
 }
