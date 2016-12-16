@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh		*/
 /*	Author:				Loic MARECHAL						*/
 /*	Creation date:		mar 11 2010							*/
-/*	Last modification:	jan 21 2015							*/
+/*	Last modification:	dec 16 2016							*/
 /*															*/
 /*----------------------------------------------------------*/
 
@@ -25,7 +25,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/time.h>
-#include "libmesh6.h"
+#include "libmeshb7.h"
 #include "lplib3.h"
 
 
@@ -95,7 +95,7 @@ int VerTyp, TriTyp, TetTyp;
 static void ScaMsh(char *, MshSct *);
 static void RecMsh(char *, MshSct *);
 static void GetTim(double *);
-static void SetNgb(MshSct *, int);
+static void SetNgb(MshSct *, long long);
 static void ParNgb1(int, int, int, ParSct *);
 static void ParNgb2(int, int, int, ParSct *);
 
@@ -107,7 +107,8 @@ static void ParNgb2(int, int, int, ParSct *);
 int main(int ArgCnt, char **ArgVec)
 {
 	char *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-	int i, j, LibParIdx, NmbCpu = 0;
+	int i, j, NmbCpu = 0;
+    long long LibParIdx;
 	double timer=0;
 	TetSct *tet;
 	MshSct msh;
@@ -233,11 +234,11 @@ static void GetTim(double *timer)
 
 static void ScaMsh(char *InpNam, MshSct *msh)
 {
-	int i, j, InpMsh, dim;
+	int i, j, dim;
+    long long InpMsh;
 	float flt[3];
 
 	/* Check mesh format */
-
 	if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &dim)))
 	{
 		printf("Cannot open mesh %s\n", InpNam);
@@ -251,7 +252,6 @@ static void ScaMsh(char *InpNam, MshSct *msh)
 	}
 
 	/* Get stats and allocate tables */
-
 	if((msh->NmbVer = GmfStatKwd(InpMsh, GmfVertices)))
 		msh->ver = malloc((msh->NmbVer+1) * sizeof(VerSct));
 	else
@@ -264,28 +264,24 @@ static void ScaMsh(char *InpNam, MshSct *msh)
 		msh->tet = malloc((msh->NmbTet+1) * sizeof(TetSct));
 
 	/* Read vertices */
-
 	if(msh->NmbVer)
 	{
-		GmfGotoKwd(InpMsh, GmfVertices);
-		GmfGetBlock(InpMsh, GmfVertices, \
-					GmfDouble, &msh->ver[1].crd[0], &msh->ver[2].crd[0], \
-					GmfDouble, &msh->ver[1].crd[1], &msh->ver[2].crd[1], \
-					GmfDouble, &msh->ver[1].crd[2], &msh->ver[2].crd[2], \
-					GmfInt, &msh->ver[1].ref, &msh->ver[2].ref);
+		GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, NULL, \
+					GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+					GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+					GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+					GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
 	}
 
 	/* Read tetrahedra */
-
 	if(msh->NmbTet)
 	{
-		GmfGotoKwd(InpMsh, GmfTetrahedra);
-		GmfGetBlock(InpMsh, GmfTetrahedra, \
-					GmfInt, &msh->tet[1].idx[0], &msh->tet[2].idx[0], \
-					GmfInt, &msh->tet[1].idx[1], &msh->tet[2].idx[1], \
-					GmfInt, &msh->tet[1].idx[2], &msh->tet[2].idx[2], \
-					GmfInt, &msh->tet[1].idx[3], &msh->tet[2].idx[3], \
-					GmfInt, &msh->tet[1].ref, &msh->tet[2].ref);
+		GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, NULL, \
+					GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
+					GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
+					GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
+					GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
+					GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
 	}
 
 	GmfCloseMesh(InpMsh);
@@ -298,7 +294,8 @@ static void ScaMsh(char *InpNam, MshSct *msh)
 
 static void RecMsh(char *OutNam, MshSct *msh)
 {
-	int i, OutMsh;
+	int i;
+    long long OutMsh;
 
 	/* Create the output mesh */
 
@@ -309,42 +306,37 @@ static void RecMsh(char *OutNam, MshSct *msh)
 	}
 
 	/* Save the vertices from the input mesh */
-	//puts("1");
 	if(msh->NmbVer)
 	{
 		GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-		GmfSetBlock(OutMsh, GmfVertices, \
-					GmfDouble, &msh->ver[1].crd[0], &msh->ver[2].crd[0], \
-					GmfDouble, &msh->ver[1].crd[1], &msh->ver[2].crd[1], \
-					GmfDouble, &msh->ver[1].crd[2], &msh->ver[2].crd[2], \
-					GmfInt, &msh->ver[1].ref, &msh->ver[2].ref);
+		GmfSetBlock(OutMsh, GmfVertices, NULL, \
+					GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+					GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+					GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+					GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
 	}
 
 	/* Save the extracted triangles */
-
-	//puts("2");
 	if(msh->NmbTri)
 	{
 		GmfSetKwd(OutMsh, GmfTriangles, msh->NmbTri);
-		GmfSetBlock(OutMsh, GmfTriangles, \
-					GmfInt, &msh->tri[1].idx[0], &msh->tri[2].idx[0], \
-					GmfInt, &msh->tri[1].idx[1], &msh->tri[2].idx[1], \
-					GmfInt, &msh->tri[1].idx[2], &msh->tri[2].idx[2], \
-					GmfInt, &msh->tri[1].ref, &msh->tri[2].ref);
+		GmfSetBlock(OutMsh, GmfTriangles, NULL, \
+					GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
+					GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
+					GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
+					GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
 	}
 
 	/* Save the tetrahedra from the input mesh */
-
-	//puts("3");
 	if(msh->NmbTet)
 	{
 		GmfSetKwd(OutMsh, GmfTetrahedra, msh->NmbTet);
-		GmfSetBlock(OutMsh, GmfTetrahedra, \
-					GmfInt, &msh->tet[1].idx[0], &msh->tet[2].idx[0], \
-					GmfInt, &msh->tet[1].idx[1], &msh->tet[2].idx[1], \
-					GmfInt, &msh->tet[1].idx[2], &msh->tet[2].idx[2], \
-					GmfInt, &msh->tet[1].idx[3], &msh->tet[2].idx[3], \
-					GmfInt, &msh->tet[1].ref, &msh->tet[2].ref);
+		GmfSetBlock(OutMsh, GmfTetrahedra, NULL, \
+					GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
+					GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
+					GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
+					GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
+					GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
 	}
 
 	GmfCloseMesh(OutMsh);
@@ -355,7 +347,7 @@ static void RecMsh(char *OutNam, MshSct *msh)
 /* Parallel neighbours between tets							*/
 /*----------------------------------------------------------*/
 
-static void SetNgb(MshSct *msh, int LibParIdx)
+static void SetNgb(MshSct *msh, long long LibParIdx)
 {
 	char *FlgTab;
 	int i, j, k, NgbIdx, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];
@@ -408,8 +400,11 @@ static void SetNgb(MshSct *msh, int LibParIdx)
 
 	for(i=1;i<=msh->NmbTet;i++)
 		for(j=0;j<4;j++)
-			if( !(NgbIdx = NgbTab[i][j]) || ( (msh->tet[i].ref != msh->tet[ NgbIdx ].ref) && (i > NgbIdx) ) )
+			if( !(NgbIdx = NgbTab[i][j]) \
+            ||  ( (msh->tet[i].ref != msh->tet[ NgbIdx ].ref) && (i > NgbIdx) ) )
+            {
 				msh->NmbTri++;
+            }
 
 	/* Add a triangle table to the mesh */
 
@@ -420,7 +415,8 @@ static void SetNgb(MshSct *msh, int LibParIdx)
 
 	for(i=1;i<=msh->NmbTet;i++)
 		for(j=0;j<4;j++)
-			if( !(NgbIdx = NgbTab[i][j]) || ( (msh->tet[i].ref != msh->tet[ NgbIdx ].ref) && (i > NgbIdx) ) )
+			if( !(NgbIdx = NgbTab[i][j]) \
+            ||  ( (msh->tet[i].ref != msh->tet[ NgbIdx ].ref) && (i > NgbIdx) ) )
 			{
 				msh->NmbTri++;
 
@@ -555,7 +551,8 @@ static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
 
 		for(j=0;j<4;j++)
 		{
-			/* If there is no neighbour through this face, try to find on among other subdomains local hash tables */
+			/* If there is no neighbour through this face,
+                try to find on among other subdomains local hash tables */
 
 			if(NgbTab[i][j])
 				continue;
