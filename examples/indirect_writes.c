@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------*/
 /*															*/
-/*		PARALLEL INDIRECT MEMORY WRITES USING LP3			*/
+/*		PARALLEL INDIRECT MEMORY WRITES USING LPlib			*/
 /*															*/
 /*----------------------------------------------------------*/
 /*															*/
 /*	Description:		direct and indirect memory writes	*/
 /*	Author:				Loic MARECHAL						*/
 /*	Creation date:		jan 15 2015							*/
-/*	Last modification:	jan 15 2015							*/
+/*	Last modification:	dec 16 2016							*/
 /*															*/
 /*----------------------------------------------------------*/
 
@@ -23,7 +23,7 @@
 #include <float.h>
 #include <sys/time.h>
 #include "lplib3.h"
-#include "libmesh6.h"
+#include "libmeshb7.h"
 
 
 /*----------------------------------------------------------*/
@@ -32,7 +32,8 @@
 
 typedef struct
 {
-	int ParIdx, TetTyp, VerTyp, NmbVer, NmbTet, (*TetVer)[4], *VerDeg;
+	int TetTyp, VerTyp, NmbVer, NmbTet, (*TetVer)[4], *VerDeg;
+    long long ParIdx;
 	double *VerTem, *TetTem;
 }MshSct;
 
@@ -87,12 +88,13 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 
 /*----------------------------------------------------------*/
-/* Setup LP3 lib and launch 100 temperature soomthing steps	*/
+/* Setup LPlib and launch 100 temperature soomthing steps	*/
 /*----------------------------------------------------------*/
 
 int main(int ArgCnt, char **ArgVec)
 {
-	int i, j, NmbCpu=GetNumberOfCores(), InpMsh, ver, dim, ref, NmbItr=100;
+	int i, j, NmbCpu=GetNumberOfCores(), ver, dim, ref, NmbItr=100;
+    long long InpMsh;
 	float sta[2], acc=0;
 	double tim=0;
 	MshSct msh;
@@ -129,15 +131,16 @@ int main(int ArgCnt, char **ArgVec)
 	GmfGotoKwd(InpMsh, GmfTetrahedra);
 
 	for(i=1;i<=msh.NmbTet;i++)
-		GmfGetLin(InpMsh, GmfTetrahedra, &msh.TetVer[i][0],&msh.TetVer[i][1], &msh.TetVer[i][2], &msh.TetVer[i][3], &ref);
+		GmfGetLin(  InpMsh, GmfTetrahedra, &msh.TetVer[i][0],&msh.TetVer[i][1], \
+                    &msh.TetVer[i][2], &msh.TetVer[i][3], &ref );
 
 	GmfCloseMesh(InpMsh);
 
-	/* Initialize the LP3 and setup the data types */
+	/* Initialize the LPlib and setup the data types */
 
 	if(!(msh.ParIdx = InitParallel(NmbCpu)))
 	{
-		puts("Error initializing the LP3.");
+		puts("Error initializing the LPlib.");
 		exit(1);
 	}
 
@@ -154,7 +157,7 @@ int main(int ArgCnt, char **ArgVec)
 	}
 
 	puts("");
-	printf("LP3 idx = %d, TetTyp = %d, VerTyp = %d, NmbCpu = %d\n", msh.ParIdx, msh.TetTyp, msh.VerTyp, NmbCpu);
+	printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n", msh.TetTyp, msh.VerTyp, NmbCpu);
 
 	/* Setup dependencies between tets and vertices and compute vertices' degree on the flight */
 
