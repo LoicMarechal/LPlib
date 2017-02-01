@@ -11,11 +11,11 @@ Handles transparently concurrent indirect memory writes and dynamics data struct
 
 # Build
 Simply follow these steps:
--unarchive the ZIP file
--cd LPlib-master
--cmake .
--make
--make install
+- unarchive the ZIP file
+- cd LPlib-master
+- cmake .
+- make
+- make install
 
 # Usage
 It is made of a single ANSI C file and a header file to be compiled and linked alongside the calling program.  
