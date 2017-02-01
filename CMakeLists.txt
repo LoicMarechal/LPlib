@@ -12,6 +12,7 @@ set (CMAKE_Fortran_FLAGS "-O3")
 set (CMAKE_INSTALL_PREFIX "/opt/LPlib")
 find_library (MESHB_LIB Meshb.7 PATHS /opt/libMeshb/lib)
 find_library (MESHBF_LIB Meshbf.7 PATHS /opt/libMeshb/lib)
+find_path (MESHB_INC libmeshb7.h PATHS /opt/libMeshb/include)
 
 
 #######################################
