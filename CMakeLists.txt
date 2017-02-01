@@ -19,7 +19,7 @@ find_path (MESHB_INC libmeshb7.h PATHS /opt/libMeshb/include)
 # SET FILES AND DIRECTORIES TO BE BUILT
 #######################################
 
-include_directories ("${PROJECT_SOURCE_DIR}/sources, ${MESHB_INC}")
+include_directories ("${PROJECT_SOURCE_DIR}/sources ${MESHB_INC}")
 add_subdirectory (sources)
 add_subdirectory (examples)
 add_subdirectory (utilities)
