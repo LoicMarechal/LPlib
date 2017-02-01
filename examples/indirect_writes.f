@@ -18,7 +18,8 @@
 
       external vertemp,tettemp
 
-      InpMsh = gmfopenmesh("tet.meshb", GmfRead,ver,dim)
+      InpMsh = gmfopenmesh("../sample_meshes/tet.meshb"
+     +,GmfRead,ver,dim)
       if(InpMsh.eq.0) STOP ' cannot open file tet.meshb'
 
       NmbVer = gmfstatkwd(InpMsh, GmfVertices)

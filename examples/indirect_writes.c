@@ -9,7 +9,7 @@
 /*   Description:       direct and indirect memory writes                     */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     jan 15 2015                                           */
-/*   Last modification: dec 21 2016                                           */
+/*   Last modification: feb 01 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -106,7 +106,7 @@ int main(int ArgCnt, char **ArgVec)
       NmbCpu = atoi(*++ArgVec);
 
    // Open the input mesh
-   if(!(InpMsh = GmfOpenMesh("tet.meshb", GmfRead, &ver, &dim)))
+   if(!(InpMsh = GmfOpenMesh("../sample_meshes/tet.meshb", GmfRead, &ver, &dim)))
       return(1);
 
    puts("");
