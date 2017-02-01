@@ -9,7 +9,15 @@ A serial program can be easily parallelized step by step.
 It requires no knowledge on parallel programing.  
 Handles transparently concurrent indirect memory writes and dynamics data structures.
 
-#Build and use
+# Build
+Simply follow these steps:
+-unarchive the ZIP file
+-cd LPlib-master
+-cmake .
+-make
+-make install
+
+# Usage
 It is made of a single ANSI C file and a header file to be compiled and linked alongside the calling program.  
 It may be used in C, C++, Fortran 77 and 90 programs.  
 Tested on Linux, Mac OS X, and Windows 7-10.
