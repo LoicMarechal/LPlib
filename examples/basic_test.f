@@ -1,10 +1,10 @@
 
       include 'lplib3.ins'
 	  integer*8 li
-	  integer i,ti,n
+	  integer*4 i,ti,n
 	  parameter (n=100000000)
       real*8 t,v1(n),v2(n),v3(n)
-	  real acc
+	  real*4 acc
 	  external addvec
 
 	  li = initparallel(0)

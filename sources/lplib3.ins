@@ -1,44 +1,43 @@
 
 
 C----------------------------------------------------------
-C															
-C			LPLIB	V3.51						
-C															
+C
+C            LPLIB    V3.52                        
+C 
 C----------------------------------------------------------
-C															
-C	Description:		prototypes of procedures			
-C										
-C	Author:			Loic MARECHAL						
-C	Creation date:		feb 25 2008							
-C	Last modification:	dec 03 2015							
-C															
+C
+C    Description:        prototypes of procedures
+C
+C    Author:             Loic MARECHAL
+C    Creation date:      feb 25 2008
+C    Last modification:  jan 04 2017
+C
 C----------------------------------------------------------
 
-      external initparallel
-      external newtype
-      external begindependency
-      external launchpipeline
-      external launchparallel
-      external stopparallel
-      external freetype
       external adddependency
+      external begindependency
       external enddependency
-      external parallelmemclear
+      external freetype
       external getlplibinformation
-      external waitpipeline
+      external getnumberofcores
+      external getwallclock
       external hilbertrenumbering
       external hilbertrenumbering2d
-	  external getwallclock
-	  external getnumberofcores
+      external initparallel
+      external launchpipeline
+      external launchparallel
+      external newtype
+      external parallelmemclear
+      external stopparallel
+      external waitpipeline
 
+      integer*4 adddependency
+      integer*4 begindependency
+      integer*4 enddependency
+      integer*4 getnumberofcores
+      real*8    getwallclock
+      integer*4 hilbertrenumbering
       integer*8 initparallel
-      integer newtype
-      integer begindependency
-      integer adddependency
-      integer enddependency
-      integer launchpipeline
-      integer hilbertrenumbering
-	  integer getnumberofcores
-
-      real launchparallel
-	  real*8 getwallclock
+      real*4    launchparallel
+      integer*4 launchpipeline
+      integer*4 newtype

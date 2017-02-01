@@ -1,57 +1,63 @@
 
 
-/*----------------------------------------------------------*/
-/*															*/
-/*						LPLIB	V3.51						*/
-/*															*/
-/*----------------------------------------------------------*/
-/*															*/
-/*	Description:		Handles threads, scheduling			*/
-/*						& dependencies						*/
-/*	Author:				Loic MARECHAL						*/
-/*	Creation date:		feb 25 2008							*/
-/*	Last modification:	dec 04 2015							*/
-/*															*/
-/*----------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+/*                                                                            */
+/*                               LPlib V3.52                                  */
+/*                                                                            */
+/*----------------------------------------------------------------------------*/
+/*                                                                            */
+/*   Description:       Handles threads, scheduling                           */
+/*                      & dependencies                                        */
+/*   Author:            Loic MARECHAL                                         */
+/*   Creation date:     feb 25 2008                                           */
+/*   Last modification: jan 04 2017                                           */
+/*                                                                            */
+/*----------------------------------------------------------------------------*/
 
+
+/*----------------------------------------------------------------------------*/
+/* Types definitions                                                          */
+/*----------------------------------------------------------------------------*/
 
 #ifdef INT64
-#define LplInt long long
+#define LplInt int64_t
 #else
 #define LplInt int
 #endif
 
-
-/*----------------------------------------------------------*/
-/* User available procedures' prototypes					*/
-/*----------------------------------------------------------*/
-
-long long InitParallel(LplInt);
-void StopParallel(long long);
-LplInt NewType(long long, LplInt);
-LplInt ResizeType(long long, LplInt, LplInt);
-void FreeType(long long, LplInt);
-LplInt BeginDependency(long long, LplInt, LplInt);
-LplInt AddDependency(long long, LplInt, LplInt);
-void AddDependencyFast(long long, LplInt, LplInt *, LplInt, LplInt *);
-LplInt UpdateDependency(long long, LplInt, LplInt, LplInt, LplInt);
-void UpdateDependencyFast(long long, LplInt, LplInt, LplInt *, LplInt, LplInt, LplInt *);
-LplInt EndDependency(long long, float [2]);
-void GetDependencyStats(long long, LplInt, LplInt, float [2]);
-float LaunchParallel(long long, LplInt, LplInt, void *, void *);
-LplInt LaunchPipeline(long long, void *, void *, LplInt, LplInt *);
-void WaitPipeline(long long);
-LplInt ParallelMemClear(long long , void *, size_t);
-void ParallelQsort(long long, void *, size_t, size_t, int (*)(const void *, const void *));
-LplInt HilbertRenumbering(long long, LplInt, double [6], double (*)[3], unsigned long long (*)[2]);
-LplInt HilbertRenumbering2D(long long, LplInt, double [4], double (*)[2], unsigned long long (*)[2]);
-void GetLplibInformation(long long, LplInt *, LplInt *);
-LplInt GetNumberOfCores();
-double GetWallClock();
+#include <stdint.h>
 
 
-/*----------------------------------------------------------*/
-/* Public defines											*/
-/*----------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+/* User available procedures' prototypes                                      */
+/*----------------------------------------------------------------------------*/
+
+int      AddDependency(int64_t, LplInt, LplInt);
+void     AddDependencyFast(int64_t, int, LplInt *, int, LplInt *);
+int      BeginDependency(int64_t, int, int);
+int      EndDependency(int64_t, float [2]);
+void     FreeType(int64_t, int);
+void     GetDependencyStats(int64_t, int, int, float [2]);
+void     GetLplibInformation(int64_t, int *, int *);
+int      GetNumberOfCores();
+double   GetWallClock();
+int      HilbertRenumbering(int64_t, LplInt, double [6], double (*)[3], uint64_t (*)[2]);
+int      HilbertRenumbering2D(int64_t, LplInt, double [4], double (*)[2], uint64_t (*)[2]);
+int64_t  InitParallel(int);
+float    LaunchParallel(int64_t, int, int, void *, void *);
+int      LaunchPipeline(int64_t, void *, void *, int, int *);
+int      NewType(int64_t, LplInt);
+int      ParallelMemClear(int64_t , void *, size_t);
+void     ParallelQsort(int64_t, void *, size_t, size_t, int (*)(const void *, const void *));
+int      ResizeType(int64_t, int, LplInt);
+void     StopParallel(int64_t);
+int      UpdateDependency(int64_t, int, int, LplInt, LplInt);
+void     UpdateDependencyFast(int64_t, int, int, LplInt *, int, int, LplInt *);
+void     WaitPipeline(int64_t);
+
+
+/*----------------------------------------------------------------------------*/
+/* Public defines                                                             */
+/*----------------------------------------------------------------------------*/
 
 #define MaxPth 128
