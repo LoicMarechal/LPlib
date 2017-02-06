@@ -3,7 +3,7 @@ A parallelization framework for numerical simulation
 
 #Overview
 The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
-This library is based on *posix* standard threads, also known as pthreads, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (Linux, Mac OS X, Unix, Windows).  
+This library is based on posix standard threads, also known as *pthreads*, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (*Linux*, *macOS*, *Windows*).  
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
 A serial program can be easily parallelized step by step.  
 It requires no knowledge on parallel programing.  
@@ -27,7 +27,7 @@ Optionally, you may download some sample meshes to run the examples:
 # Usage
 It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  
 It may be used in C, C++, Fortran 77 and 90 programs.  
-Tested on Linux, Mac OS X, and Windows 7-10.
+Tested on *Linux*, *macOS*, and *Windows 7->10*.
 
 Running a parallel loop is pretty easy.  
 Let's say that you have a mesh made of vertices and triangles.  
@@ -62,10 +62,8 @@ main()
    LaunchParallel(LibIdx, TriIdx, VerIdx, AddSomeValue, Mesh);
 }
 
-void AddSomeValue(int begin, int end, int thread, void *Arguments)
+void AddSomeValue(int begin, int end, int thread, MeshStruct *Mesh)
 {
-   MeshStruct *Mesh = (MeshStruct *)Arguments;
-
    // Loop over a subset of triangles
    for(i=begin; i<end; i++)
       for(j=0;j<3;j++)
