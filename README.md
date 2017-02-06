@@ -60,10 +60,10 @@ main()
 
    // Now you can safely launch the parallel loop on triangles
    // telling the library to take care about vertex dependencies
-   LaunchParallel(LibIdx, TriIdx, VerIdx, AddSomeValue, Mesh);
+   LaunchParallel(LibIdx, TriIdx, VerIdx, AddSomeValues, Mesh);
 }
 
-void AddSomeValue(int begin, int end, int thread, MeshStruct *Mesh)
+void AddSomeValues(int begin, int end, int thread, MeshStruct *Mesh)
 {
    // Loop over a subset of triangles
    for(i=begin; i<end; i++)
