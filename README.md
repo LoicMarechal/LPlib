@@ -52,6 +52,7 @@ main()
    VerIdx = NewType(LibIdx, NmbVertices);
 
    // Link triangles and their three vertices
+   BeginDependency(LibIdx, TriIdx, VerIdx);
    for(i=1;i<=NmbTriangles;i++)
       for(j=0;j<3;j++)
          AddDependency(LibIdx, i, Mesh->Triangles[i][j])
