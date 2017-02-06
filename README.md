@@ -40,7 +40,7 @@ You may also resort to the old "scatter/gather" technic which also slows the exe
 
 Le **LPlib** can handle very efficiently this kind of configuration:
 
-```C
+```C++
 main()
    // Initialize the library with 4 threads
    LibIdx = InitParallel(4);
