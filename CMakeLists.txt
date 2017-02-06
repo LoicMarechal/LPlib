@@ -6,15 +6,11 @@
 cmake_minimum_required (VERSION 3.0.1)
 set (LPlib_VERSION_MAJOR 3)
 set (LPlib_VERSION_MINOR 5)
-project (LPlib
-  VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR}
-  LANGUAGES C)
+project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 set (CMAKE_C_FLAGS "-O3")
 set (CMAKE_Fortran_FLAGS "-O3")
-
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set (CMAKE_INSTALL_PREFIX "/opt/LPlib" CACHE PATH
-       "Default LPlib install path" FORCE)
+  set (CMAKE_INSTALL_PREFIX "/opt/LPlib" CACHE PATH "Default LPlib install path" FORCE)
 endif()
 
 

@@ -28,3 +28,54 @@ Optionally, you may download some sample meshes to run the examples:
 It is made of a single ANSI C file and a header file to be compiled and linked alongside the calling program.  
 It may be used in C, C++, Fortran 77 and 90 programs.  
 Tested on Linux, Mac OS X, and Windows 7-10.
+
+Running a parallel loop is pretty easy.
+Let's say that you have a mesh made of vertices and triangles.
+You would like to perform a parallel loop on triangle that would write some data on their three vertices.
+
+Such loop has a _memory race_ since two different threads may process triangles that share a common vertex and write to the same memory location, leading to a wrong result.
+
+Such memory race can be handled by OpenMP with the help of critical sections that you slow down the execution.
+You may also resort to the old "scatter/gather" technic which also slows the execution on top of consuming a lot of extra memory.
+
+Le **LPlib** can handle very efficiently this kind of configuration:
+
+```
+main()
+   // Initialize the library with 4 threads
+   LibIdx = InitParallel(4);
+
+   // Set the number of triangles
+   TriIdx = NewType(LibIdx, NmbTriangles);
+
+   // Set the number of vertices
+   VerIdx = NewType(LibIdx, NmbVertices);
+
+   // Link triangles and their three vertices
+   for(i=1;i<=NmbTriangles;i++)
+      for(j=0;j<3;j++)
+         AddDependency(LibIdx, i, Mesh->Triangles[i][j])
+   EndDependency(LibIdx);
+
+   // Now you can safely launch the parallel loop on triangles
+   // telling the library to take care about vertex dependencies
+   LaunchParallel(LibIdx, TriIdx, VerIdx, AddSomeValue, Mesh);
+}
+
+void AddSomeValue(int begin, int end, int thread, void *Arguments)
+{
+   MeshStruct *Mesh = (MeshStruct *)Arguments;
+
+   // Loop over a subset of triangles
+   for(i=begin; i<end; i++)
+      for(j=0;j<3;j++)
+      {
+         // Get the vertex index
+         VerIdx = Mesh->Triangles[i][j];
+
+         // Modify some vertex' data
+         Mesh->vertices[ VerIdx ]->Value += Mesh->Triangle[i]->Value;
+         Mesh->vertices[ VerIdx ]->Counter++;
+      }
+}
+```
