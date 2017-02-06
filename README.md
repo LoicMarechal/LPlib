@@ -12,10 +12,16 @@ Handles transparently concurrent indirect memory writes and dynamics data struct
 # Build
 Simply follow these steps:
 - unarchive the ZIP file
-- cd LPlib-master
-- cmake .
-- make
-- make install
+- `cd LPlib-master`
+- `cmake .`
+- `make`
+- `make install`
+
+Optionally, you may download some sample meshes to run the examples:
+- manually download files from the *Git LFS* repository: [sample files](https://github.com/LoicMarechal/LPlib/tree/master/sample_meshes)
+- move them into /opt/LPlib/sample_meshes/
+- uncompress them `lzip -d *.meshb.lz`
+- you may now enter /opt/LPlib/examples directory and run the various examples
 
 # Usage
 It is made of a single ANSI C file and a header file to be compiled and linked alongside the calling program.  
