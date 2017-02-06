@@ -20,10 +20,19 @@ find_path (MESHB_INC libmeshb7.h PATHS /opt/libMeshb/include)
 #######################################
 
 include_directories ("${PROJECT_SOURCE_DIR}/sources")
-include_directories ("${MESHB_INC}")
 add_subdirectory (sources)
-add_subdirectory (examples)
-add_subdirectory (utilities)
+
+if(MESHB_LIB AND MESHBF_LIB AND MESHB_INC)
+   include_directories ("${MESHB_INC}")
+   add_subdirectory (examples)
+   add_subdirectory (utilities)
+else()
+   message (WARNING "
+   libMeshb.7 could not be found.
+   Consequently, examples and utilities will not be built.
+   You can download it from GitHUB at https://github.com/LoicMarechal/libMeshb")
+endif()
+
 install (FILES LICENSE copyright.txt DESTINATION share/LPlib)
 install (DIRECTORY sample_meshes DESTINATION share/LPlib)
 
