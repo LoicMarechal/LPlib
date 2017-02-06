@@ -2,8 +2,8 @@
 A parallelization framework for numerical simulation
 
 #Overview
-The purpose of the LPlib is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
-This library is based on posix standard threads, also known as pthreads, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (Linux, Mac OS X, Unix, Windows).  
+The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
+This library is based on *posix* standard threads, also known as pthreads, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (Linux, Mac OS X, Unix, Windows).  
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
 A serial program can be easily parallelized step by step.  
 It requires no knowledge on parallel programing.  
@@ -25,22 +25,22 @@ Optionally, you may download some sample meshes to run the examples:
 - you may now enter /opt/LPlib/examples directory and run the various examples
 
 # Usage
-It is made of a single ANSI C file and a header file to be compiled and linked alongside the calling program.  
+It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  
 It may be used in C, C++, Fortran 77 and 90 programs.  
 Tested on Linux, Mac OS X, and Windows 7-10.
 
-Running a parallel loop is pretty easy.
-Let's say that you have a mesh made of vertices and triangles.
+Running a parallel loop is pretty easy.  
+Let's say that you have a mesh made of vertices and triangles.  
 You would like to perform a parallel loop on triangle that would write some data on their three vertices.
 
 Such loop has a _memory race_ since two different threads may process triangles that share a common vertex and write to the same memory location, leading to a wrong result.
 
-Such memory race can be handled by OpenMP with the help of critical sections that you slow down the execution.
+Such memory race can be handled by OpenMP with the help of critical sections that you slow down the execution.  
 You may also resort to the old "scatter/gather" technic which also slows the execution on top of consuming a lot of extra memory.
 
 Le **LPlib** can handle very efficiently this kind of configuration:
 
-```
+```C
 main()
    // Initialize the library with 4 threads
    LibIdx = InitParallel(4);
