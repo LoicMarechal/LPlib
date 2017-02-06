@@ -55,7 +55,7 @@ main()
    BeginDependency(LibIdx, TriIdx, VerIdx);
    for(i=1;i<=NmbTriangles;i++)
       for(j=0;j<3;j++)
-         AddDependency(LibIdx, i, Mesh->Triangles[i][j])
+         AddDependency(LibIdx, i, Mesh->Triangles[i][j]);
    EndDependency(LibIdx);
 
    // Now you can safely launch the parallel loop on triangles
