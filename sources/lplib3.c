@@ -54,7 +54,6 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 #include <math.h>
 #include <assert.h>
 #include <errno.h>
-#include <unistd.h>
 
 
 /*----------------------------------------------------------------------------*/
