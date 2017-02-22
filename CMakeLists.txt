@@ -6,11 +6,24 @@
 cmake_minimum_required (VERSION 3.0.1)
 set (LPlib_VERSION_MAJOR 3)
 set (LPlib_VERSION_MINOR 5)
+
+if (WIN32)
+   set (CMAKE_C_FLAGS "-DWIN32")
+   set (CMAKE_CONFIGURATION_TYPES "Release")
+else ()
+   set (CMAKE_C_FLAGS "-O3")
+   set (CMAKE_Fortran_FLAGS "-O3")
+   if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+     set (CMAKE_INSTALL_PREFIX "/opt/LPlib" CACHE PATH "Default LPlib install path" FORCE)
+   endif()
+endif()
+
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
-set (CMAKE_C_FLAGS "-O3")
-set (CMAKE_Fortran_FLAGS "-O3")
-if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set (CMAKE_INSTALL_PREFIX "/opt/LPlib" CACHE PATH "Default LPlib install path" FORCE)
+
+include (CheckLanguage)
+check_language (Fortran)
+if(CMAKE_Fortran_COMPILER)
+  enable_language(Fortran)
 endif()
 
 

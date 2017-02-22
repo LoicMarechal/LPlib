@@ -20,12 +20,14 @@ install (TARGETS indirect_writes DESTINATION share/LPlib/examples COMPONENT exam
 # BUILD FORTRAN EXAMPLES
 ########################
 
-enable_language (Fortran)
+if (CMAKE_Fortran_COMPILER)
+   set (CMAKE_Fortran_FLAGS "-O3")
 
-add_executable(basic_test_f77 basic_test.f)
-target_link_libraries(basic_test_f77 LP.3 ${MESHBF_LIB})
-install (TARGETS basic_test_f77 DESTINATION share/LPlib/examples COMPONENT examples)
+   add_executable(basic_test_f77 basic_test.f)
+   target_link_libraries(basic_test_f77 LP.3 ${MESHBF_LIB})
+   install (TARGETS basic_test_f77 DESTINATION share/LPlib/examples COMPONENT examples)
 
-add_executable(indirect_writes_f77 indirect_writes.f)
-target_link_libraries(indirect_writes_f77 LP.3 ${MESHBF_LIB})
-install (TARGETS indirect_writes_f77 DESTINATION share/LPlib/examples COMPONENT examples)
+   add_executable(indirect_writes_f77 indirect_writes.f)
+   target_link_libraries(indirect_writes_f77 LP.3 ${MESHBF_LIB})
+   install (TARGETS indirect_writes_f77 DESTINATION share/LPlib/examples COMPONENT examples)
+endif ()
