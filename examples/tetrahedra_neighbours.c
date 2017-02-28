@@ -279,9 +279,6 @@ static void ScaMsh(char *InpNam, MshSct *msh)
                   GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
                   GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
                   GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
-
-      for(int i=1; i<=msh->NmbTet; i++)
-         msh->tet[i].ref = 0;
    }
 
    GmfCloseMesh(InpMsh);
