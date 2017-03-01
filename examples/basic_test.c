@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <float.h>
 #include <math.h>
-#include <sys/time.h>
 #include "lplib3.h"
 
 
@@ -82,7 +81,6 @@ int main(int ArgCnt, char **ArgVec)
     float acc;
     double *vec1, *vec2, *vec3, tim=0.;
     AddArgSct arg;
-    struct timeval tp;
 
     // Read the command line arguments
     if(ArgCnt > 1)
@@ -127,8 +125,7 @@ int main(int ArgCnt, char **ArgVec)
         exit(1);
     }
 
-    gettimeofday(&tp, NULL);
-    tim = tp.tv_sec + tp.tv_usec / 1000000.;
+    tim = GetWallClock();
 
     /* Launch the parallel loop computing v3 = f(v1) + g(v2) 
        with the following arguments :
@@ -146,8 +143,7 @@ int main(int ArgCnt, char **ArgVec)
         exit(1);
     }
 
-    gettimeofday(&tp, NULL);
-    tim = tp.tv_sec + tp.tv_usec / 1000000. - tim;
+    tim = GetWallClock() - tim;
 
     printf("Theoretical speedup for loop AddVec = %g, wall clock = %g s\n", acc, tim);
 

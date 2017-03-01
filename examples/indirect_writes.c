@@ -21,7 +21,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
-#include <sys/time.h>
 #include "lplib3.h"
 #include "libmeshb7.h"
 
@@ -179,8 +178,7 @@ int main(int ArgCnt, char **ArgVec)
       msh.VerTem[i] = random();
 
    // Perform temperature smoothing steps
-   gettimeofday(&tp, NULL);
-   tim = tp.tv_sec + tp.tv_usec / 1000000.;
+   tim = GetWallClock();
 
    puts("");
    for(i=1;i<=NmbItr;i++)
@@ -200,8 +198,7 @@ int main(int ArgCnt, char **ArgVec)
       }
    }
 
-   gettimeofday(&tp, NULL);
-   tim = tp.tv_sec + tp.tv_usec / 1000000. - tim;
+   tim = GetWallClock() - tim;
 
    printf(" %d steps, average concurency = %g, // running time = %gs\n", \
          NmbItr, acc / (2 * NmbItr), tim);

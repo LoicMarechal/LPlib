@@ -24,7 +24,6 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
-#include <sys/time.h>
 #include "libmeshb7.h"
 #include "lplib3.h"
 
@@ -95,7 +94,7 @@ int VerTyp, TriTyp, TetTyp;
 static void ScaMsh(char *, MshSct *);
 static void RecMsh(char *, MshSct *);
 static void GetTim(double *);
-static void SetNgb(MshSct *, long long);
+static void SetNgb(MshSct *, int64_t);
 static void ParNgb1(int, int, int, ParSct *);
 static void ParNgb2(int, int, int, ParSct *);
 
@@ -108,7 +107,7 @@ int main(int ArgCnt, char **ArgVec)
 {
    char *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
    int i, NmbCpu = 0;
-   long long LibParIdx;
+   int64_t LibParIdx;
    double timer=0;
    MshSct msh;
 
@@ -221,8 +220,7 @@ int main(int ArgCnt, char **ArgVec)
 
 static void GetTim(double *timer)
 {
-   gettimeofday(&tp, NULL);
-   *timer = tp.tv_sec + tp.tv_usec / 1000000. - *timer;
+   *timer = GetWallClock() - *timer;
 }
 
 
@@ -233,7 +231,7 @@ static void GetTim(double *timer)
 static void ScaMsh(char *InpNam, MshSct *msh)
 {
    int dim;
-   long long InpMsh;
+   int64_t InpMsh;
 
    // Check mesh format
    if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &dim)))
@@ -291,7 +289,7 @@ static void ScaMsh(char *InpNam, MshSct *msh)
 
 static void RecMsh(char *OutNam, MshSct *msh)
 {
-   long long OutMsh;
+   int64_t OutMsh;
 
    // Create the output mesh
    if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, 3)))
@@ -342,7 +340,7 @@ static void RecMsh(char *OutNam, MshSct *msh)
 /* Parallel neighbours between tets                                           */
 /*----------------------------------------------------------------------------*/
 
-static void SetNgb(MshSct *msh, long long LibParIdx)
+static void SetNgb(MshSct *msh, int64_t LibParIdx)
 {
    char *FlgTab;
    int i, j, k, NgbIdx, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];

@@ -24,8 +24,7 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
-#include <sys/time.h>
-#include "libmesh6.h"
+#include "libmeshb7.h"
 #include "lplib3.h"
 
 
@@ -38,7 +37,7 @@
 #define MaxEdg 1000
 
 #ifdef i8
-#define lng long long
+#define lng int64_t
 #define LngTyp GmfLong
 #else
 #define lng int
@@ -551,9 +550,7 @@ void ParEdg2(lng BegIdx, lng EndIdx, int PthIdx, ParSct *par)
 
 void GetTim(double *timer)
 {
-   struct timeval tp;
-   gettimeofday(&tp, NULL);
-   *timer = tp.tv_sec + tp.tv_usec / 1000000. - *timer;
+   *timer = GetWallClock() - *timer;
 }
 
 
@@ -563,7 +560,8 @@ void GetTim(double *timer)
 
 void ScaMsh(char *InpNam, MshSct *msh)
 {
-   int InpMsh, dim, ref;
+   int dim, ref;
+   int64_t InpMsh;
    float flt[3];
    double timer = 0.;
 
@@ -646,7 +644,8 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
 void RecMsh(char *OutNam, MshSct *msh)
 {
-   int OutMsh, ref=0;
+   int ref=0;
+   int64_t OutMsh;
    double timer = 0.;
 
    printf("Writing mesh          : ");

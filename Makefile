@@ -1,18 +1,17 @@
 
 
-#-----------------------------------------------------------#
-#															#
-#			LoopParallelism Library	V3.0					#
-#															#
-#-----------------------------------------------------------#
-#															#
-#	Description:		Handles threads, scheduling			#
-#						& dependencies						#
-#	Author:				Loic MARECHAL						#
-#	Creation date:		feb 25 2008							#
-#	Last modification:	mar 12 2010							#
-#															#
-#-----------------------------------------------------------#
+#-----------------------------------------------------------------------------#
+#                                                                             #
+#                    Loop Parallelism Library V3.52                           #
+#                                                                             #
+#-----------------------------------------------------------------------------#
+#                                                                             #
+#	Description:         Handles threads, scheduling & dependencies            #
+#	Author:              Loic MARECHAL                                         #
+#	Creation date:       feb 25 2008                                           #
+#	Last modification:   mar 01 2017                                           #
+#                                                                             #
+#-----------------------------------------------------------------------------#
 
 
 CC     = /usr/bin/gcc
