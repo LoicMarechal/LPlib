@@ -9,7 +9,7 @@
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   feb 01 2017                                           */
+/* Last modification:   mar 02 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -125,7 +125,6 @@ typedef struct
 /* Global variables                                                           */
 /*----------------------------------------------------------------------------*/
 
-struct timeval tp;
 int VerTyp, EdgTyp, TriTyp, QadTyp, TetTyp, PyrTyp, PriTyp, HexTyp;
 
 
@@ -756,8 +755,7 @@ uint64_t hilbert(double crd[3], double box[6], int itr)
 
 void GetTim(double *timer)
 {
-   gettimeofday(&tp, NULL);
-   *timer = tp.tv_sec + tp.tv_usec / 1000000. - *timer;
+   *timer = GetWallClock() - *timer;
 }
 
 

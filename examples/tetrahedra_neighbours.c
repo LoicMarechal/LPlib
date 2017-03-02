@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: dec 21 2016                                           */
+/*   Last modification: mar 02 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,7 +83,6 @@ typedef struct
 /* Global variables                                                           */
 /*----------------------------------------------------------------------------*/
 
-struct timeval tp;
 int VerTyp, TriTyp, TetTyp;
 
 

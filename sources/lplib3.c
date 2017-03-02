@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: feb 16 2017                                           */
+/*   Last modification: mar 02 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -23,6 +23,7 @@
 
 #ifdef WIN32
 #include <windows.h>
+#include <sys/timeb.h>
 #include "winpthreads.h"
 #else
 #include <sys/time.h>

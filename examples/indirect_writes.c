@@ -98,7 +98,6 @@ int main(int ArgCnt, char **ArgVec)
    float sta[2], acc=0;
    double tim=0;
    MshSct msh;
-   struct timeval tp;
 
    // Read the number of threads to launch from the command line argument
    if(ArgCnt > 1)
