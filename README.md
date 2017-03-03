@@ -13,7 +13,9 @@ Handles transparently concurrent indirect memory writes and dynamics data struct
 Simply follow these steps:
 - unarchive the ZIP file
 - `cd LPlib-master`
-- `cmake .`
+- `mkdir build`
+- `cd build`
+- `cmake -DCMAKE_INSTALL_PREFIX=$HOME/local ../`
 - `make`
 - `make install`
 
@@ -25,7 +27,7 @@ Simply follow these steps:
 - `cd LPlib-master`
 - `mkdir build`
 - `cd build`
-- `cmake -DCMAKE_INSTALL_PREFIX=%HOMEPATH%\local -DLIBMESHB=%HOMEPATH%\local ..\`
+- `cmake -DCMAKE_INSTALL_PREFIX=%HOMEPATH%\local ..\`
 - `cmake --build . --config Release --target INSTALL`
 
 Optionally, you may download some sample meshes to run the examples:
