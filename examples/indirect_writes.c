@@ -174,7 +174,11 @@ int main(int ArgCnt, char **ArgVec)
 
    // Initialize the vertices' temperature with some crap values
    for(i=1;i<=msh.NmbVer;i++)
+#ifdef WIN32
+      msh.VerTem[i] = rand();
+#else
       msh.VerTem[i] = random();
+#endif
 
    // Perform temperature smoothing steps
    tim = GetWallClock();

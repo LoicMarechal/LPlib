@@ -23,7 +23,6 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
-#include <sys/time.h>
 #include "libmeshb7.h"
 #include "lplib3.h"
 
