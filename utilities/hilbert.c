@@ -9,7 +9,7 @@
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   mar 02 2017                                           */
+/* Last modification:   mar 08 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -605,7 +605,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbVer)
    {
       GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-      GmfSetBlock(OutMsh, GmfVertices, NULL, \
+      GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
                   GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
                   GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
                   GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
@@ -615,7 +615,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbEdg)
    {
       GmfSetKwd(OutMsh, GmfEdges, msh->NmbEdg);
-      GmfSetBlock(OutMsh, GmfEdges, NULL, \
+      GmfSetBlock(OutMsh, GmfEdges, 1, msh->NmbEdg, 0, NULL, NULL, \
                   GmfInt, &msh->edg[1].idx[0], &msh->edg[ msh->NmbEdg ].idx[0], \
                   GmfInt, &msh->edg[1].idx[1], &msh->edg[ msh->NmbEdg ].idx[1], \
                   GmfInt, &msh->edg[1].ref,    &msh->edg[ msh->NmbEdg ].ref);
@@ -624,7 +624,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbTri)
    {
       GmfSetKwd(OutMsh, GmfTriangles, msh->NmbTri);
-      GmfSetBlock(OutMsh, GmfTriangles, NULL, \
+      GmfSetBlock(OutMsh, GmfTriangles, 1, msh->NmbTri, 0, NULL, NULL, \
                   GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
                   GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
                   GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
@@ -634,7 +634,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbQad)
    {
       GmfSetKwd(OutMsh, GmfQuadrilaterals, msh->NmbQad);
-      GmfSetBlock(OutMsh, GmfQuadrilaterals, NULL, \
+      GmfSetBlock(OutMsh, GmfQuadrilaterals, 1, msh->NmbQad, 0, NULL, NULL, \
                   GmfInt, &msh->qad[1].idx[0], &msh->qad[ msh->NmbQad ].idx[0], \
                   GmfInt, &msh->qad[1].idx[1], &msh->qad[ msh->NmbQad ].idx[1], \
                   GmfInt, &msh->qad[1].idx[2], &msh->qad[ msh->NmbQad ].idx[2], \
@@ -645,7 +645,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbTet)
    {
       GmfSetKwd(OutMsh, GmfTetrahedra, msh->NmbTet);
-      GmfSetBlock(OutMsh, GmfTetrahedra, NULL, \
+      GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL, \
                   GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
                   GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
                   GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
@@ -656,7 +656,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbPyr)
    {
       GmfSetKwd(OutMsh, GmfPyramids, msh->NmbPyr);
-      GmfSetBlock(OutMsh, GmfPyramids, NULL, \
+      GmfSetBlock(OutMsh, GmfPyramids, 1, msh->NmbPyr, 0, NULL, NULL, \
                   GmfInt, &msh->pyr[1].idx[0], &msh->pyr[ msh->NmbPyr ].idx[0], \
                   GmfInt, &msh->pyr[1].idx[1], &msh->pyr[ msh->NmbPyr ].idx[1], \
                   GmfInt, &msh->pyr[1].idx[2], &msh->pyr[ msh->NmbPyr ].idx[2], \
@@ -668,7 +668,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbPri)
    {
       GmfSetKwd(OutMsh, GmfPrisms, msh->NmbPri);
-      GmfSetBlock(OutMsh, GmfPrisms, NULL, \
+      GmfSetBlock(OutMsh, GmfPrisms, 1, msh->NmbPri, 0, NULL, NULL, \
                   GmfInt, &msh->pri[1].idx[0], &msh->pri[ msh->NmbPri ].idx[0], \
                   GmfInt, &msh->pri[1].idx[1], &msh->pri[ msh->NmbPri ].idx[1], \
                   GmfInt, &msh->pri[1].idx[2], &msh->pri[ msh->NmbPri ].idx[2], \
@@ -681,7 +681,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbHex)
    {
       GmfSetKwd(OutMsh, GmfHexahedra, msh->NmbHex);
-      GmfSetBlock(OutMsh, GmfHexahedra, NULL, \
+      GmfSetBlock(OutMsh, GmfHexahedra, 1, msh->NmbHex, 0, NULL, NULL, \
                   GmfInt, &msh->hex[1].idx[0], &msh->hex[ msh->NmbHex ].idx[0], \
                   GmfInt, &msh->hex[1].idx[1], &msh->hex[ msh->NmbHex ].idx[1], \
                   GmfInt, &msh->hex[1].idx[2], &msh->hex[ msh->NmbHex ].idx[2], \

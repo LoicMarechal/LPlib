@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 13 2015                                           */
-/*   Last modification: feb 18 2015                                           */
+/*   Last modification: mar 08 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -661,7 +661,7 @@ void RecMsh(char *OutNam, MshSct *msh)
 
    // Save the vertices from the input mesh
    GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-   GmfSetBlock(OutMsh, GmfVertices, \
+   GmfSetBlock(OutMsh, GmfVertices, 1, GmfVertices, 0, NULL, NULL, 
                GmfDouble, &msh->ver[1].crd[0], &msh->ver[2].crd[0], \
                GmfDouble, &msh->ver[1].crd[1], &msh->ver[2].crd[1], \
                GmfDouble, &msh->ver[1].crd[2], &msh->ver[2].crd[2], \
@@ -669,14 +669,14 @@ void RecMsh(char *OutNam, MshSct *msh)
 
    // Save the extracted edges
    GmfSetKwd(OutMsh, GmfEdges, msh->NmbEdg);
-   GmfSetBlock(OutMsh, GmfEdges, \
+   GmfSetBlock(OutMsh, GmfEdges,  1, GmfEdges, 0, NULL, NULL, \
                LngTyp, &msh->edg[1].idx[0], &msh->edg[2].idx[0], \
                LngTyp, &msh->edg[1].idx[1], &msh->edg[2].idx[1], \
                GmfInt, &ref, &ref);
 
    // Save the triangles from the input mesh
    GmfSetKwd(OutMsh, GmfTriangles, msh->NmbTri);
-   GmfSetBlock(OutMsh, GmfTriangles, \
+   GmfSetBlock(OutMsh, GmfTriangles, 1, GmfTriangles, 0, NULL, NULL, \
                LngTyp, &msh->tri[1].idx[0], &msh->tri[2].idx[0], \
                LngTyp, &msh->tri[1].idx[1], &msh->tri[2].idx[1], \
                LngTyp, &msh->tri[1].idx[2], &msh->tri[2].idx[2], \
@@ -684,7 +684,7 @@ void RecMsh(char *OutNam, MshSct *msh)
 
    // Save the tetrahedra from the input mesh
    GmfSetKwd(OutMsh, GmfTetrahedra, msh->NmbTet);
-   GmfSetBlock(OutMsh, GmfTetrahedra, \
+   GmfSetBlock(OutMsh, GmfTetrahedra, 1, GmfTetrahedra, 0, NULL, NULL,  \
                LngTyp, &msh->tet[1].idx[0], &msh->tet[2].idx[0], \
                LngTyp, &msh->tet[1].idx[1], &msh->tet[2].idx[1], \
                LngTyp, &msh->tet[1].idx[2], &msh->tet[2].idx[2], \

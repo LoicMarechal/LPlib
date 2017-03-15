@@ -7,15 +7,6 @@ cmake_minimum_required (VERSION 3.0.1)
 set (LPlib_VERSION_MAJOR 3)
 set (LPlib_VERSION_MINOR 5)
 
-if (WIN32)
-   set (CMAKE_C_FLAGS "-DWIN32")
-   set (CMAKE_CONFIGURATION_TYPES "Release")
-else ()
-   set (CMAKE_C_FLAGS "-O3")
-   set (CMAKE_Fortran_FLAGS "-O3")
-   set (LINK_LIBRARIES "m")
-endif()
-
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
 include (CheckLanguage)
@@ -24,19 +15,28 @@ if(CMAKE_Fortran_COMPILER)
   enable_language(Fortran)
 endif()
 
+if (WIN32)
+   set (CMAKE_C_FLAGS -DWIN32)
+   set (CMAKE_CONFIGURATION_TYPES Release)
+else ()
+   set (CMAKE_C_FLAGS -O3)
+   set (CMAKE_Fortran_FLAGS -O3)
+   set (LINK_LIBRARIES m)
+endif()
+
 
 #######################################
 # SET FILES AND DIRECTORIES TO BE BUILT
 #######################################
 
-include_directories ("${PROJECT_SOURCE_DIR}/sources")
+include_directories (${PROJECT_SOURCE_DIR}/sources)
 add_subdirectory (sources)
 
 find_package(Threads)
 find_package(libMeshb 7)
 
-if(libMeshb_INCLUDE_DIR)
-   include_directories ("${libMeshb_INCLUDE_DIR}")
+if(libMeshb_FOUND)
+   include_directories (${libMeshb_INCLUDE_DIRS})
    add_subdirectory (examples)
    add_subdirectory (utilities)
 else()
@@ -55,10 +55,10 @@ install (DIRECTORY sample_meshes DESTINATION share/LPlib)
 ######################################
 
 include (InstallRequiredSystemLibraries)
-set (CPACK_GENERATOR "TGZ")
-set (CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/copyright.txt")
-set (CPACK_PACKAGE_VERSION_MAJOR "${LPlib_VERSION_MAJOR}")
-set (CPACK_PACKAGE_VERSION_MINOR "${LPlib_VERSION_MINOR}")
+set (CPACK_GENERATOR TXZ)
+set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/copyright.txt)
+set (CPACK_PACKAGE_VERSION_MAJOR ${LPlib_VERSION_MAJOR})
+set (CPACK_PACKAGE_VERSION_MINOR ${LPlib_VERSION_MINOR})
 set(CPACK_COMPONENTS_ALL applications examples libraries headers)
 include (CPack)
 
@@ -69,8 +69,11 @@ include (CPack)
 
 include(CMakePackageConfigHelpers)
 file(WRITE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
-"set(LPlib_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
-set(LPlib_LIBRARY ${CMAKE_INSTALL_PREFIX}/lib/LPlib.${LPlib_VERSION_MAJOR}.a)
+"include(\${CMAKE_CURRENT_LIST_DIR}/LPlib-target.cmake)
+find_package(Threads)
+set(LPlib_INCLUDE_DIRS ${CMAKE_INSTALL_PREFIX}/include)
+set(LPlib_LIBRARIES LP.3 ${CMAKE_THREAD_LIBS_INIT})
+set(LPlib_FOUND TRUE)
 ")
 write_basic_package_version_file(
    "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
