@@ -1,7 +1,7 @@
-#LPlib  version 3.51
+# LPlib  version 3.51
 A parallelization framework for numerical simulation
 
-#Overview
+# Overview
 The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
 This library is based on posix standard threads, also known as *pthreads*, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (*Linux*, *macOS*, *Windows*).  
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
