@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 1.11                               */
+/*                               HILBERT V 1.12                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   mar 08 2017                                           */
+/* Last modification:   jul 19 2017                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -63,6 +63,12 @@ typedef struct
 typedef struct
 {
    uint64_t cod;
+   int idx[6], ref;
+}TriP2Sct;
+
+typedef struct
+{
+   uint64_t cod;
    int idx[4], ref;
 }QadSct;
 
@@ -98,12 +104,13 @@ typedef struct
 
 typedef struct
 {
-   int NmbVer, NmbEdg, NmbTri, NmbQad, NmbTet, NmbPyr;
-   int NmbPri, NmbHex, *Old2New, MshVer, EleTyp;
+   int NmbVer, NmbEdg, NmbTri, NmbTriP2, NmbQad, NmbTet, NmbPyr;
+   int NmbPri, NmbHex, *Old2New, MshVer, EleTyp, dim;
    double box[6];
    VerSct *ver;
    EdgSct *edg;
    TriSct *tri;
+   TriP2Sct *triP2;
    QadSct *qad;
    TetSct *tet;
    PyrSct *pyr;
@@ -124,7 +131,7 @@ typedef struct
 /* Global variables                                                           */
 /*----------------------------------------------------------------------------*/
 
-int VerTyp, EdgTyp, TriTyp, QadTyp, TetTyp, PyrTyp, PriTyp, HexTyp;
+int VerTyp, EdgTyp, TriTyp, TriP2Typ, QadTyp, TetTyp, PyrTyp, PriTyp, HexTyp;
 
 
 /*----------------------------------------------------------------------------*/
@@ -235,8 +242,8 @@ int main(int ArgCnt, char **ArgVec)
    GetTim(&timer);
    printf("%g s\n", timer);
 
-   printf("\nInput mesh : version = %d, %d vertices, %d edges, %d triangles, %d quads, %d tets, %d hexes\n",
-          msh.MshVer, msh.NmbVer, msh.NmbEdg, msh.NmbTri, msh.NmbQad, msh.NmbTet, msh.NmbHex);
+   printf("\nInput mesh : version = %d, %d vertices, %d edges, %d triangles, %d triangles P2, %d quads, %d tets, %d hexes\n",
+          msh.MshVer, msh.NmbVer, msh.NmbEdg, msh.NmbTri, msh.NmbTriP2, msh.NmbQad, msh.NmbTet, msh.NmbHex);
 
    /* Compute initial stats */
 
@@ -247,6 +254,7 @@ int main(int ArgCnt, char **ArgVec)
       VerTyp = NewType(LibParIdx, msh.NmbVer);
       EdgTyp = NewType(LibParIdx, msh.NmbEdg);
       TriTyp = NewType(LibParIdx, msh.NmbTri);
+      TriP2Typ = NewType(LibParIdx, msh.NmbTriP2);
       QadTyp = NewType(LibParIdx, msh.NmbQad);
       TetTyp = NewType(LibParIdx, msh.NmbTet);
       PyrTyp = NewType(LibParIdx, msh.NmbPyr);
@@ -299,6 +307,21 @@ int main(int ArgCnt, char **ArgVec)
       msh.EleTyp = GmfTriangles;
       LaunchParallel(LibParIdx, TriTyp, 0, (void *)RenEle, (void *)&msh);
       ParallelQsort(LibParIdx, &msh.tri[1], msh.NmbTri, sizeof(TriSct), CmpFnc);
+      GetTim(&timer);
+      printf("%g s\n", timer);
+   }
+
+   /* Triangles P2 renumbering */
+
+   if(msh.NmbTriP2)
+   {
+      printf("Renumbering triangles P2: ");
+      timer = 0.;
+      GetTim(&timer);
+      TriP2Typ = NewType(LibParIdx, msh.NmbTriP2);
+      msh.EleTyp = GmfTrianglesP2;
+      LaunchParallel(LibParIdx, TriP2Typ, 0, (void *)RenEle, (void *)&msh);
+      ParallelQsort(LibParIdx, &msh.triP2[1], msh.NmbTriP2, sizeof(TriP2Sct), CmpFnc);
       GetTim(&timer);
       printf("%g s\n", timer);
    }
@@ -408,6 +431,9 @@ int main(int ArgCnt, char **ArgVec)
    if(msh.tri)
       free(msh.tri);
 
+   if(msh.triP2)
+      free(msh.triP2);
+
    if(msh.qad)
       free(msh.qad);
 
@@ -434,23 +460,23 @@ int main(int ArgCnt, char **ArgVec)
 
 void ScaMsh(char *InpNam, MshSct *msh)
 {
-   int i, j, dim;
+   int i, j;
    int64_t InpMsh;
    float flt[3];
 
    // Check mesh format
-   if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &dim)))
+   if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &msh->dim)))
    {
       printf("Cannot open mesh %s\n", InpNam);
       exit(1);
    }
-
+   /*
    if(dim != 3)
    {
       puts("Can only handle 3D meshes\n");
       exit(1);
    }
-
+*/
    // Get stats and allocate tables
    if((msh->NmbVer = GmfStatKwd(InpMsh, GmfVertices)))
       msh->ver = malloc((msh->NmbVer+1) * sizeof(VerSct));
@@ -465,6 +491,9 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if((msh->NmbTri = GmfStatKwd(InpMsh, GmfTriangles)))
       msh->tri = malloc((msh->NmbTri+1) * sizeof(TriSct));
+
+   if((msh->NmbTriP2 = GmfStatKwd(InpMsh, GmfTrianglesP2)))
+      msh->triP2 = malloc((msh->NmbTriP2+1) * sizeof(TriP2Sct));
 
    if((msh->NmbQad = GmfStatKwd(InpMsh, GmfQuadrilaterals)))
       msh->qad = malloc((msh->NmbQad+1) * sizeof(QadSct));
@@ -484,15 +513,28 @@ void ScaMsh(char *InpNam, MshSct *msh)
    // Read fields
    if(msh->NmbVer)
    {
-      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, NULL, \
-                  GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                  GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                  GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                  GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      if(msh->dim == 2)
+      {
+         GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
+                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      }
+      else
+      {
+         GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
+                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+                     GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      }
 
       for(i=1;i<=msh->NmbVer;i++)
       {
          msh->ver[i].idx = i;
+
+         if(msh->dim == 2)
+            msh->ver[i].crd[2] = 0.;
 
          if(i==1)
             for(j=0;j<3;j++)
@@ -511,7 +553,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbEdg)
    {
-      GmfGetBlock(InpMsh, GmfEdges, 1, msh->NmbEdg, NULL, \
+      GmfGetBlock(InpMsh, GmfEdges, 1, msh->NmbEdg, 0, NULL, NULL, \
                   GmfInt, &msh->edg[1].idx[0], &msh->edg[ msh->NmbEdg ].idx[0], \
                   GmfInt, &msh->edg[1].idx[1], &msh->edg[ msh->NmbEdg ].idx[1], \
                   GmfInt, &msh->edg[1].ref,    &msh->edg[ msh->NmbEdg ].ref);
@@ -519,16 +561,28 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbTri)
    {
-      GmfGetBlock(InpMsh, GmfTriangles, 1, msh->NmbTri, NULL, \
+      GmfGetBlock(InpMsh, GmfTriangles, 1, msh->NmbTri, 0, NULL, NULL, \
                   GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
                   GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
                   GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
                   GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
    }
 
+   if(msh->NmbTriP2)
+   {
+      GmfGetBlock(InpMsh, GmfTrianglesP2, 1, msh->NmbTriP2, 0, NULL, NULL, \
+                  GmfInt, &msh->triP2[1].idx[0], &msh->triP2[ msh->NmbTriP2 ].idx[0], \
+                  GmfInt, &msh->triP2[1].idx[1], &msh->triP2[ msh->NmbTriP2 ].idx[1], \
+                  GmfInt, &msh->triP2[1].idx[2], &msh->triP2[ msh->NmbTriP2 ].idx[2], \
+                  GmfInt, &msh->triP2[1].idx[3], &msh->triP2[ msh->NmbTriP2 ].idx[3], \
+                  GmfInt, &msh->triP2[1].idx[4], &msh->triP2[ msh->NmbTriP2 ].idx[4], \
+                  GmfInt, &msh->triP2[1].idx[5], &msh->triP2[ msh->NmbTriP2 ].idx[5], \
+                  GmfInt, &msh->triP2[1].ref,    &msh->triP2[ msh->NmbTriP2 ].ref);
+   }
+
    if(msh->NmbQad)
    {
-      GmfGetBlock(InpMsh, GmfQuadrilaterals, 1, msh->NmbQad, NULL,  \
+      GmfGetBlock(InpMsh, GmfQuadrilaterals, 1, msh->NmbQad, 0, NULL, NULL,  \
                   GmfInt, &msh->qad[1].idx[0], &msh->qad[ msh->NmbQad ].idx[0], \
                   GmfInt, &msh->qad[1].idx[1], &msh->qad[ msh->NmbQad ].idx[1], \
                   GmfInt, &msh->qad[1].idx[2], &msh->qad[ msh->NmbQad ].idx[2], \
@@ -538,7 +592,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbTet)
    {
-      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, NULL, \
+      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL, \
                   GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
                   GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
                   GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
@@ -548,7 +602,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbPyr)
    {
-      GmfGetBlock(InpMsh, GmfPyramids, 1, msh->NmbPyr, NULL, \
+      GmfGetBlock(InpMsh, GmfPyramids, 1, msh->NmbPyr, 0, NULL, NULL, \
                   GmfInt, &msh->pyr[1].idx[0], &msh->pyr[ msh->NmbPyr ].idx[0], \
                   GmfInt, &msh->pyr[1].idx[1], &msh->pyr[ msh->NmbPyr ].idx[1], \
                   GmfInt, &msh->pyr[1].idx[2], &msh->pyr[ msh->NmbPyr ].idx[2], \
@@ -559,7 +613,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbPri)
    {
-      GmfGetBlock(InpMsh, GmfPrisms, 1, msh->NmbPri, NULL, \
+      GmfGetBlock(InpMsh, GmfPrisms, 1, msh->NmbPri, 0, NULL, NULL, \
                   GmfInt, &msh->pri[1].idx[0], &msh->pri[ msh->NmbPri ].idx[0], \
                   GmfInt, &msh->pri[1].idx[1], &msh->pri[ msh->NmbPri ].idx[1], \
                   GmfInt, &msh->pri[1].idx[2], &msh->pri[ msh->NmbPri ].idx[2], \
@@ -571,7 +625,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
    if(msh->NmbHex)
    {
-      GmfGetBlock(InpMsh, GmfHexahedra, 1, msh->NmbHex, NULL, \
+      GmfGetBlock(InpMsh, GmfHexahedra, 1, msh->NmbHex, 0, NULL, NULL, \
                   GmfInt, &msh->hex[1].idx[0], &msh->hex[ msh->NmbHex ].idx[0], \
                   GmfInt, &msh->hex[1].idx[1], &msh->hex[ msh->NmbHex ].idx[1], \
                   GmfInt, &msh->hex[1].idx[2], &msh->hex[ msh->NmbHex ].idx[2], \
@@ -596,7 +650,7 @@ void RecMsh(char *OutNam, MshSct *msh)
    int i, NewNmbVer;
     int64_t OutMsh;
 
-   if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, 3)))
+   if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, msh->dim)))
    {
       printf("Cannot create mesh %s\n", OutNam);
       exit(1);
@@ -605,11 +659,22 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbVer)
    {
       GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-      GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                  GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                  GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                  GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                  GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+
+      if(msh->dim == 2)
+      {
+         GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
+                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      }
+      else
+      {
+         GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
+                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
+                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
+                     GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
+                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      }
    }
 
    if(msh->NmbEdg)
@@ -629,6 +694,19 @@ void RecMsh(char *OutNam, MshSct *msh)
                   GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
                   GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
                   GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
+   }
+
+   if(msh->NmbTriP2)
+   {
+      GmfSetKwd(OutMsh, GmfTrianglesP2, msh->NmbTriP2);
+      GmfSetBlock(OutMsh, GmfTrianglesP2, 1, msh->NmbTriP2, 0, NULL, NULL, \
+                  GmfInt, &msh->triP2[1].idx[0], &msh->triP2[ msh->NmbTriP2 ].idx[0], \
+                  GmfInt, &msh->triP2[1].idx[1], &msh->triP2[ msh->NmbTriP2 ].idx[1], \
+                  GmfInt, &msh->triP2[1].idx[2], &msh->triP2[ msh->NmbTriP2 ].idx[2], \
+                  GmfInt, &msh->triP2[1].idx[3], &msh->triP2[ msh->NmbTriP2 ].idx[3], \
+                  GmfInt, &msh->triP2[1].idx[4], &msh->triP2[ msh->NmbTriP2 ].idx[4], \
+                  GmfInt, &msh->triP2[1].idx[5], &msh->triP2[ msh->NmbTriP2 ].idx[5], \
+                  GmfInt, &msh->triP2[1].ref,    &msh->triP2[ msh->NmbTriP2 ].ref);
    }
 
    if(msh->NmbQad)
@@ -841,6 +919,16 @@ void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
          }
       }break;
 
+      case GmfTrianglesP2 :
+      {
+         for(i=BegIdx; i<=EndIdx; i++)
+         {
+            SetNewIdx(6, msh->triP2[i].idx, msh->Old2New);
+            SetMidCrd(6, msh->triP2[i].idx, msh, crd);
+            msh->triP2[i].cod = hilbert(crd, msh->box, MAXItr);
+         }
+      }break;
+
       case GmfQuadrilaterals :
       {
          for(i=BegIdx; i<=EndIdx; i++)
@@ -924,6 +1012,17 @@ void PrtSta(MshSct *msh, int64_t LibParIdx)
 
       EndDependency(LibParIdx, sta);
       printf(" triangles : %3.2f%% / %3.2f%%\n",sta[0],sta[1]);
+   }
+
+   if(msh->NmbTriP2)
+   {
+      BeginDependency(LibParIdx, TriP2Typ, VerTyp);
+
+      for(i=1;i<=msh->NmbTriP2;i++)
+         AddDependencyFast(LibParIdx, 1, &i, 3, msh->triP2[i].idx);
+
+      EndDependency(LibParIdx, sta);
+      printf(" triangles P2: %3.2f%% / %3.2f%%\n",sta[0],sta[1]);
    }
 
    if(msh->NmbQad)
