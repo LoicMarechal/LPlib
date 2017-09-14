@@ -1,0 +1,10 @@
+
+PRIORITÉ NORMALE :
+
+-files et piles // dans la lplib pour paralléliser
+ les parcours de type coloriages dans hexotic.
+
+RÉALISÉ :
+
+-int64
+-ajout launch // et pipe avec nombre variable d'arguments
