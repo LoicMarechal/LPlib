@@ -962,7 +962,7 @@ int UpdateDependency(int64_t ParIdx, int TypIdx1, int TypIdx2,
 /* Same as above, without any pre-checking of data                            */
 /*----------------------------------------------------------------------------*/
 
-void UpdateDependencyFast( int64_t ParIdx, int TypIdx1, int NmbTyp1,
+void UpdateDependencyFast( int64_t ParIdx,  int TypIdx1, int NmbTyp1,
                            LplInt *TabIdx1, int TypIdx2, int NmbTyp2,
                            LplInt *TabIdx2 )
 {
@@ -970,6 +970,7 @@ void UpdateDependencyFast( int64_t ParIdx, int TypIdx1, int NmbTyp1,
    ParSct *par = (ParSct *)ParIdx;
    TypSct *typ1 = &par->TypTab[ TypIdx1 ];
    WrkSct *wrk;
+   (void)(TypIdx2);
 
    for(i=0;i<NmbTyp1;i++)
    {
@@ -1418,6 +1419,7 @@ void GetLplibInformation(int64_t ParIdx, int *NmbCpu, int *NmbTyp)
 void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
                      int (*compar)(const void *, const void *) )
 {
+   (void)(ParIdx);
    qsort(base, nel, width, compar);
 }
 
@@ -1438,6 +1440,7 @@ static void RenPrc(LplInt BegIdx, LplInt EndIdx, int PthIdx, ArgSct *arg)
       {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
       {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7},
       {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7} };
+   (void)(PthIdx);
 
    for(i=BegIdx; i<=EndIdx; i++)
    {
@@ -1623,6 +1626,7 @@ static void RenPrc2D(LplInt BegIdx, LplInt EndIdx, int PthIdx, ArgSct *arg)
    double dbl;
    int rot[4], GeoCod[4]={1,2,0,3};
    int HilCod[4][4] = {{0,3,2,1}, {0,1,2,3}, {0,1,2,3}, {2,1,0,3}};
+   (void)(PthIdx);
 
    for(i=BegIdx; i<=EndIdx; i++)
    {

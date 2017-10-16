@@ -15,7 +15,7 @@
 
 
 CC     = gcc
-CFLAGS = -O3 -Wsign-compare -Wuninitialized -Wunused -Wall
+CFLAGS = -O3 -Wunused-parameter -Wsign-compare -Wuninitialized -Wunused -Wall
 
 
 # Working directories
