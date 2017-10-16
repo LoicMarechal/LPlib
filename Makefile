@@ -14,8 +14,8 @@
 #-----------------------------------------------------------------------------#
 
 
-CC     = /usr/bin/gcc
-CFLAGS =  -O3
+CC     = gcc
+CFLAGS = -O3 -Wsign-compare -Wuninitialized -Wunused -Wall
 
 
 # Working directories

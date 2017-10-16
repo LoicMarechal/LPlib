@@ -260,7 +260,7 @@ static void ScaMsh(char *InpNam, MshSct *msh)
    // Read the vertices
    if(msh->NmbVer)
    {
-      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, NULL, \
+      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
                   GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
                   GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
                   GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
@@ -270,7 +270,7 @@ static void ScaMsh(char *InpNam, MshSct *msh)
    // Read the tetrahedra
    if(msh->NmbTet)
    {
-      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, NULL, \
+      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL, \
                   GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
                   GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
                   GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
