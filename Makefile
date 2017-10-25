@@ -34,7 +34,7 @@ VPATH   = $(SRCSDIR)
 SRCS = $(wildcard $(SRCSDIR)/*.c)
 HDRS = $(wildcard $(SRCSDIR)/*.h)
 OBJS = $(patsubst $(SRCSDIR)%, $(OBJSDIR)%, $(SRCS:.c=.o))
-LIB = lplib3.a
+LIB = libLP3.a
 
 
 # Definition of the compiling implicit rule
