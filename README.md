@@ -9,7 +9,7 @@ A serial program can be easily parallelized step by step.
 It requires no knowledge on parallel programing.  
 Handles transparently concurrent indirect memory writes and dynamics data structures.
 
-# Build
+# Build for *Linux* or *macOS*
 Simply follow these steps:
 - unarchive the ZIP file
 - `cd LPlib-master`
