@@ -35,6 +35,9 @@
 #define MAXELE 14
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define HILMOD 0
+#define OCTMOD 1
+#define RNDMOD 2
 
 
 /*----------------------------------------------------------------------------*/
@@ -56,7 +59,7 @@ typedef struct
 
 typedef struct
 {
-   int NmbVer, *Old2New, MshVer, dim, TypIdx, VerTyp;
+   int NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp;
    int NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
    double box[6];
    VerSct *ver;
@@ -107,7 +110,7 @@ char *EleNam[ MAXELE ] = {
 
 void     ScaMsh(char *, MshSct *);
 void     RecMsh(char *, MshSct *);
-uint64_t hilbert(double *, double *, int);
+uint64_t hilbert(double *, double *, int, int);
 void     GetTim(double *);
 int      CmpFnc(const void *, const void *);
 void     RenVer(int, int, int, MshSct *);
@@ -133,11 +136,12 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v1.11 dec 16 2016   Loic MARECHAL / INRIA");
+      puts("\nHILBERT v1.12 march 21 2018   Loic MARECHAL / INRIA");
       puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
       puts(" -in name    : name of the input mesh");
       puts(" -out name   : name of the output renumbered mesh");
       puts(" -stats      : print element blocks dependencies stats before and after renumbering");
+      puts(" -scheme n   : renumbering scheme: 0 = Hilbert,  1 = Z curve,  2 = random,  (default = 0)");
       puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)\n");
       exit(0);
    }
@@ -173,6 +177,15 @@ int main(int ArgCnt, char **ArgVec)
       if(!strcmp(PtrArg,"-stats"))
       {
          StaFlg = 1;
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-scheme"))
+      {
+         msh.mod = atoi(*++ArgVec);
+         msh.mod = MAX(msh.mod, 0);
+         msh.mod = MIN(msh.mod, 2);
+         ArgCnt--;
          continue;
       }
 
@@ -734,14 +747,19 @@ void RecMsh(char *OutNam, MshSct *msh)
 /* Compute the hilbert code from 3d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
-uint64_t hilbert(double crd[3], double box[6], int itr)
+uint64_t hilbert(double crd[3], double box[6], int itr, int mod)
 {
    uint64_t IntCrd[3], m=1LL<<63, cod;
    int i, j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
    double TmpCrd[3];
-   int rot[8], GeoCod[8]={0,3,7,4,1,2,6,5};  /* Z curve = {5,4,7,6,1,0,3,2} */
-   int HilCod[8][8] = {{0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1}, {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},\
-                  {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7}, {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7}};
+   int rot[8], GeoCod[8]={0,3,7,4,1,2,6,5}; // Hilbert
+   int OctCod[8] = {5,4,7,6,1,0,3,2}; // octree or Z curve
+   int HilCod[8][8] = {
+      {0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1}, {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
+      {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7}, {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7}};
+
+   if(mod == RNDMOD)
+      return(rand());
 
    // Convert double precision coordinates to integers
    for(j=0;j<3;j++)
@@ -749,32 +767,38 @@ uint64_t hilbert(double crd[3], double box[6], int itr)
       TmpCrd[j] = (crd[j] - box[j]) * box[j+3];
       IntCrd[j] = TmpCrd[j];
    }
-    
+
    // Binary hilbert renumbering loop
    cod = 0;
-    
+
    for(j=0;j<8;j++)
       rot[j] = GeoCod[j];
-    
+
    for(b=0;b<itr;b++)
    {
       GeoWrd = 0;
-    
+
       for(j=0;j<3;j++)
       {
          if(IntCrd[j] & m)
             GeoWrd |= BitTab[j];
-    
+
          IntCrd[j] = IntCrd[j]<<1;
       }
-    
-      NewWrd = rot[ GeoWrd ];
-    
-      cod = cod<<3 | NewWrd;
-    
-      for(j=0;j<8;j++)
-         rot[j] = HilCod[ NewWrd ][ rot[j] ];
-    
+
+      if(mod == OCTMOD)
+      {
+         NewWrd = OctCod[ GeoWrd ];
+         cod = cod<<3 | NewWrd;
+      }
+      else
+      {
+         NewWrd = rot[ GeoWrd ];
+         cod = cod<<3 | NewWrd;
+
+         for(j=0;j<8;j++)
+            rot[j] = HilCod[ NewWrd ][ rot[j] ];
+      }
    }
 
    return(cod);
@@ -815,7 +839,7 @@ void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
    int i;
 
    for(i=BegIdx; i<=EndIdx; i++)
-      msh->ver[i].cod = hilbert(msh->ver[i].crd, msh->box, MAXITR);
+      msh->ver[i].cod = hilbert(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
 }
 
 
@@ -856,7 +880,7 @@ void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
     {
        SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
        SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-       msh->ele[ msh->TypIdx ][i].cod = hilbert(crd, msh->box, MAXITR);
+       msh->ele[ msh->TypIdx ][i].cod = hilbert(crd, msh->box, MAXITR, msh->mod);
     }
 }
 
