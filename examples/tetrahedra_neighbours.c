@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: mar 08 2017                                           */
+/*   Last modification: mar 21 2018                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -438,7 +438,7 @@ static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
    unsigned int min, mid, max;
    TetSct *tet, *ngb;
    MshSct *msh = par[c].msh;
-   HshSct *tab = par[c].tab = calloc(2 * par[c].HshSiz, sizeof(HshSct));
+   HshSct *tab = par[c].tab = calloc(5 * par[c].HshSiz, sizeof(HshSct));
 
    // Allocate a local hash table and loop over the local elements
    for(i=par[c].beg; i<=par[c].end; i++)
