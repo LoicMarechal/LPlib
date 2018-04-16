@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 16 2017                                           */
+/*   Last modification: mar 29 2018                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1534,7 +1534,7 @@ int HilbertRenumbering( int64_t ParIdx, LplInt NmbLin, double box[6],
 
    if(NmbLin < 10000)
    {
-      ParallelQsort(ParIdx, &idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
+      qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
 
       for(i=1;i<=NmbLin;i++)
          idx[ idx[i][1] ][0] = i;
