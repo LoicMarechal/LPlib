@@ -6,6 +6,7 @@ PRIORITÉ NORMALE :
 -local scheduling : associer une liste de small WP à chaque thread et ne choisir que dans cette liste.
  Les WP doivent être ventilé selon 8 couleurs selon un latice.
  Cela permettra d'être déterministe tout en gardant du dynamic scheduling limité.
+-ajouter une commande pour tuer un pipe en cours de route
 
 RÉALISÉ :
 
