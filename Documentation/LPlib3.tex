@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large January 2016 \\
-\normalsize Document v1.7
+\Large December 2018 \\
+\normalsize Document v1.71
 \end{flushright}
 
 \end{titlepage}
@@ -83,7 +83,12 @@ The \emph{LPlib} allows for easy parallelizing of loops running over tables and 
 
 A programmer does not need to rewrite his code but only needs to encapsulate loops into independent procedures and briefly describe the data structure they will run over (such as the size of the tables and whether they will be accessed directly or not).
 
-Right now, this library can only be integrated into any C program, but a Fortran API is under development.
+A full Fortran 77 interface is provided in the library file, you only need to include the lplib3.ins.
+
+CAUTION: some Fortran compilers allocate local procedure variables globally, so these procedures are not thread safe and cannot be called from the LPlib.
+You need to force the compiler to allocate local variables on the stack to make them thread-safe.
+
+With Intel IFC, add the "-recursive" option, with Gfortran use "-frecursive ".
 
 \subsection{Features}
 
