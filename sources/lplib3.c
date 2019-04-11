@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.53                                  */
+/*                               LPlib V3.60                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 29 2018                                           */
+/*   Last modification: apr 11 2019                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -36,15 +36,15 @@
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
 
-#define MaxLibPar    10
-#define MaxTyp       100
-#define DefNmbSmlBlk 64
-#define DefNmbDepBlk 256
-#define MaxTotPip    65536
-#define MaxPipDep    100
-#define MaxHsh       10
-#define HshBit       16
-#define MaxF77Arg    100
+#define MaxLibPar 10
+#define MaxTyp    100
+#define NmbSmlBlk 128
+#define NmbDepBlk 512
+#define MaxTotPip 65536
+#define MaxPipDep 100
+#define MaxHsh    10
+#define HshBit    16
+#define MaxF77Arg 100
 
 enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
@@ -64,64 +64,64 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   LplInt BegIdx, EndIdx;
-   int NmbDep, *DepWrdTab;
-   struct WrkSct *pre, *nex;
+   LplInt   BegIdx, EndIdx;
+   int      NmbDep, *DepWrdTab;
+   struct   WrkSct *pre, *nex;
 }WrkSct;
 
 typedef struct
 {
-   LplInt NmbLin, MaxNmbLin;
-   int NmbSmlWrk, NmbBigWrk, SmlWrkSiz, BigWrkSiz, DepWrkSiz;
-   int NmbDepWrd, *DepWrdMat, *RunDepTab;
-   WrkSct *SmlWrkTab, *BigWrkTab;
+   LplInt   NmbLin, MaxNmbLin;
+   int      NmbSmlWrk, NmbBigWrk, SmlWrkSiz, BigWrkSiz, DepWrkSiz;
+   int      NmbDepWrd, *DepWrdMat, *RunDepTab;
+   WrkSct   *SmlWrkTab, *BigWrkTab;
 }TypSct;
 
 typedef struct
 {
-   int idx;
-   char *ClrAdr;
-   WrkSct *wrk;
-   pthread_mutex_t mtx;
-   pthread_cond_t cnd;
-   pthread_t pth;
-   struct ParSct *par;
+   int      idx;
+   char     *ClrAdr;
+   WrkSct   *wrk;
+   pthread_mutex_t   mtx;
+   pthread_cond_t    cnd;
+   pthread_t         pth;
+   struct   ParSct *par;
 }PthSct;
 
 typedef struct PipSct
 {
-   int idx, NmbDep, DepTab[ MaxPipDep ];
-   void *prc, *arg;
+   int      idx, NmbDep, DepTab[ MaxPipDep ];
+   void     *prc, *arg;
    pthread_t pth;
-   struct ParSct *par;
+   struct   ParSct *par;
 }PipSct;
 
 typedef struct ParSct
 {
-   int NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
-   int req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
-   void *F77ArgTab[ MaxF77Arg ];
-   float sta[2];
-   void (*prc)(LplInt, LplInt, LplInt, void *), *arg;
+   int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
+   int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   void     *F77ArgTab[ MaxF77Arg ];
+   float    sta[2];
+   void     (*prc)(LplInt, LplInt, LplInt, void *), *arg;
    pthread_cond_t ParCnd, PipCnd;
    pthread_mutex_t ParMtx, PipMtx;
    pthread_t PipPth;
-   PthSct *PthTab;
-   TypSct *TypTab, *CurTyp, *DepTyp, *typ1, *typ2;
-   WrkSct *NexWrk, *BufWrk[ MaxPth / 4 ];
+   PthSct   *PthTab;
+   TypSct   *TypTab, *CurTyp, *DepTyp, *typ1, *typ2;
+   WrkSct   *NexWrk, *BufWrk[ MaxPth / 4 ];
 }ParSct;
 
 typedef struct
 {
    uint64_t (*idx)[2];
-   double box[6], (*crd)[3], (*crd2)[2];
+   double   box[6], (*crd)[3], (*crd2)[2];
 }ArgSct;
 
 typedef struct
 {
-   void *base;
-   size_t nel, width;
-   int (*compar)(const void *, const void *);
+   void     *base;
+   size_t   nel, width;
+   int      (*compar)(const void *, const void *);
 }PipArgSct;
 
 
@@ -646,9 +646,9 @@ int NewType(int64_t ParIdx, LplInt NmbLin)
    typ->MaxNmbLin = NmbLin * par->SizMul;
 
    // Compute the size of small work-packages
-   if(NmbLin >= DefNmbSmlBlk * par->NmbCpu)
+   if(NmbLin >= NmbSmlBlk * par->NmbCpu)
    {
-      typ->SmlWrkSiz = NmbLin / (DefNmbSmlBlk * par->NmbCpu);
+      typ->SmlWrkSiz = NmbLin / (NmbSmlBlk * par->NmbCpu);
       typ->NmbSmlWrk = NmbLin / typ->SmlWrkSiz;
 
       if(NmbLin != typ->NmbSmlWrk * typ->SmlWrkSiz)
@@ -833,10 +833,10 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
    }
 
    // Compute dependency table's size
-   if( (typ2->NmbLin >= DefNmbDepBlk * par->NmbCpu)
+   if( (typ2->NmbLin >= NmbDepBlk * par->NmbCpu)
    &&  (typ2->NmbLin >= typ1->DepWrkSiz * 32) )
    {
-      typ1->DepWrkSiz = typ2->NmbLin / (DefNmbDepBlk * par->NmbCpu);
+      typ1->DepWrkSiz = typ2->NmbLin / (NmbDepBlk * par->NmbCpu);
       typ1->NmbDepWrd = typ2->NmbLin / (typ1->DepWrkSiz * 32);
 
       if(typ2->NmbLin != typ1->NmbDepWrd * typ1->DepWrkSiz * 32)
@@ -1094,6 +1094,43 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
 
    DepSta[0] = 100 * DepSta[0] / (typ1->NmbSmlWrk * NmbDepBit);
    DepSta[1] = 100 * DepSta[1] / NmbDepBit;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Return the block ID containing the giver element ID                        */
+/*----------------------------------------------------------------------------*/
+
+int GetBlkIdx(int64_t ParIdx, int typ, int idx)
+{
+   ParSct *par = (ParSct *)ParIdx;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(-1);
+
+   return( (idx - 1) / par->TypTab[ typ ].SmlWrkSiz );
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Check whether two blocks are dependant or not from each others             */
+/*----------------------------------------------------------------------------*/
+
+int ChkBlkDep(int64_t ParIdx, int TypIdx, int blk1, int blk2)
+{
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *typ;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(-1);
+
+   typ = &par->TypTab[ TypIdx ];
+
+   return(AndWrd( typ->NmbDepWrd,
+                  typ->SmlWrkTab[ blk1 ].DepWrdTab,
+                  typ->SmlWrkTab[ blk2 ].DepWrdTab ));
 }
 
 

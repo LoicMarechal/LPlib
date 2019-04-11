@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.53                                  */
+/*                               LPlib V3.60                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 07 2017                                           */
+/*   Last modification: apr 11 2019                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -56,10 +56,12 @@ void     StopParallel            (int64_t);
 int      UpdateDependency        (int64_t, int, int, LplInt, LplInt);
 void     UpdateDependencyFast    (int64_t, int, int, LplInt *, int, int, LplInt *);
 void     WaitPipeline            (int64_t);
+int      GetBlkIdx               (int64_t, int, int);
+int      ChkBlkDep               (int64_t, int, int, int);
 
 
 /*----------------------------------------------------------------------------*/
 /* Public defines                                                             */
 /*----------------------------------------------------------------------------*/
 
-#define MaxPth 128
+#define MaxPth 1024
