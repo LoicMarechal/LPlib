@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: apr 11 2019                                           */
+/*   Last modification: jun 25 2019                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -64,14 +64,14 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   LplInt   BegIdx, EndIdx;
+   itg      BegIdx, EndIdx;
    int      NmbDep, *DepWrdTab;
    struct   WrkSct *pre, *nex;
 }WrkSct;
 
 typedef struct
 {
-   LplInt   NmbLin, MaxNmbLin;
+   itg      NmbLin, MaxNmbLin;
    int      NmbSmlWrk, NmbBigWrk, SmlWrkSiz, BigWrkSiz, DepWrkSiz;
    int      NmbDepWrd, *DepWrdMat, *RunDepTab;
    WrkSct   *SmlWrkTab, *BigWrkTab;
@@ -102,7 +102,7 @@ typedef struct ParSct
    int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
-   void     (*prc)(LplInt, LplInt, LplInt, void *), *arg;
+   void     (*prc)(itg, itg, itg, void *), *arg;
    pthread_cond_t ParCnd, PipCnd;
    pthread_mutex_t ParMtx, PipMtx;
    pthread_t PipPth;
@@ -140,9 +140,9 @@ static void *  PipHdl      (void *);
 static void *  PthHdl      (void *);
 static WrkSct *NexWrk      (ParSct *, int);
 void           PipSrt      (PipArgSct *);
-static void    CalF77Prc   (LplInt, LplInt, int, ParSct *);
+static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (ParSct *, void *);
-static void    CalVarArgPrc(LplInt, LplInt, int, ParSct *);
+static void    CalVarArgPrc(itg, itg, int, ParSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -282,7 +282,7 @@ int GetNumberOfCores()
    return(info.dwNumberOfProcessors);
 #else
 #ifdef _SC_NPROCESSORS_ONLN
-   return((LplInt)sysconf(_SC_NPROCESSORS_ONLN));
+   return((itg)sysconf(_SC_NPROCESSORS_ONLN));
 #else
    return(1);
 #endif
@@ -321,7 +321,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunSmlWrk;
-      par->prc = (void (*)(LplInt, LplInt, LplInt, void *))prc;
+      par->prc = (void (*)(itg, itg, itg, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = typ2 = &par->TypTab[ TypIdx2 ];
@@ -392,7 +392,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunBigWrk;
-      par->prc = (void (*)(LplInt, LplInt, LplInt, void *))prc;
+      par->prc = (void (*)(itg, itg, itg, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = NULL;
@@ -617,7 +617,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 /* Allocate a new kind of elements and set work-packages                      */
 /*----------------------------------------------------------------------------*/
 
-int NewType(int64_t ParIdx, LplInt NmbLin)
+int NewType(int64_t ParIdx, itg NmbLin)
 {
    int i, TypIdx=0, idx;
    TypSct *typ;
@@ -710,7 +710,7 @@ int NewType(int64_t ParIdx, LplInt NmbLin)
 /* Resize a data type up to a two fold increase                               */
 /*----------------------------------------------------------------------------*/
 
-int ResizeType(int64_t ParIdx, int TypIdx, LplInt NmbLin)
+int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
    int i, idx;
    TypSct *typ;
@@ -875,7 +875,7 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
 /* Type1 element idx1 depends on type2 element idx2                           */
 /*----------------------------------------------------------------------------*/
 
-int AddDependency(int64_t ParIdx, LplInt idx1, LplInt idx2)
+int AddDependency(int64_t ParIdx, itg idx1, itg idx2)
 {
    WrkSct *wrk;
    ParSct *par = (ParSct *)ParIdx;
@@ -903,8 +903,8 @@ int AddDependency(int64_t ParIdx, LplInt idx1, LplInt idx2)
 /* Set all to all dependencies without any pre-checking                       */
 /*----------------------------------------------------------------------------*/
 
-void AddDependencyFast( int64_t ParIdx, int NmbTyp1, LplInt *TabIdx1,
-                        int NmbTyp2, LplInt *TabIdx2 )
+void AddDependencyFast( int64_t ParIdx, int NmbTyp1, itg *TabIdx1,
+                        int NmbTyp2, itg *TabIdx2 )
 {
    int i, j;
    ParSct *par = (ParSct *)ParIdx;
@@ -926,7 +926,7 @@ void AddDependencyFast( int64_t ParIdx, int NmbTyp1, LplInt *TabIdx1,
 /*----------------------------------------------------------------------------*/
 
 int UpdateDependency(int64_t ParIdx, int TypIdx1, int TypIdx2,
-                     LplInt idx1, LplInt idx2 )
+                     itg idx1, itg idx2 )
 {
    WrkSct *wrk;
    ParSct *par = (ParSct *)ParIdx;
@@ -963,8 +963,8 @@ int UpdateDependency(int64_t ParIdx, int TypIdx1, int TypIdx2,
 /*----------------------------------------------------------------------------*/
 
 void UpdateDependencyFast( int64_t ParIdx,  int TypIdx1, int NmbTyp1,
-                           LplInt *TabIdx1, int TypIdx2, int NmbTyp2,
-                           LplInt *TabIdx2 )
+                           itg *TabIdx1, int TypIdx2, int NmbTyp2,
+                           itg *TabIdx2 )
 {
    int i, j;
    ParSct *par = (ParSct *)ParIdx;
@@ -1465,10 +1465,10 @@ void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
 /* Compute the hilbert code from 3d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
-static void RenPrc(LplInt BegIdx, LplInt EndIdx, int PthIdx, ArgSct *arg)
+static void RenPrc(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
 {
    uint64_t IntCrd[3], m=1ULL<<63, cod;
-   LplInt i;
+   itg i;
    int j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
    double dbl;
    int rot[8], GeoCod[8]={0,3,7,4,1,2,6,5};  // Z curve = {5,4,7,6,1,0,3,2}
@@ -1539,10 +1539,10 @@ void PipSrt(PipArgSct *arg)
 /* Renumber a set of coordinates through a Hilbert SFC                        */
 /*----------------------------------------------------------------------------*/
 
-int HilbertRenumbering( int64_t ParIdx, LplInt NmbLin, double box[6],
+int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                         double (*crd)[3], uint64_t (*idx)[2] )
 {
-   LplInt i;
+   itg i;
    int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip, sum;
    uint64_t bound[ MaxPth ][2], cpt, (*tab)[2];
    size_t NmbByt;
@@ -1655,10 +1655,10 @@ int HilbertRenumbering( int64_t ParIdx, LplInt NmbLin, double box[6],
 /* Compute the hilbert code from 2d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
-static void RenPrc2D(LplInt BegIdx, LplInt EndIdx, int PthIdx, ArgSct *arg)
+static void RenPrc2D(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
 {
    uint64_t IntCrd[2], m=1ULL<<62, cod;
-   LplInt i;
+   itg i;
    int j, b, GeoWrd, NewWrd, BitTab[2] = {1,2};
    double dbl;
    int rot[4], GeoCod[4]={1,2,0,3};
@@ -1709,10 +1709,10 @@ static void RenPrc2D(LplInt BegIdx, LplInt EndIdx, int PthIdx, ArgSct *arg)
 /* Renumber a set of 2D coordinates through a Hilbert SFC                     */
 /*----------------------------------------------------------------------------*/
 
-int HilbertRenumbering2D(  int64_t ParIdx, LplInt NmbLin, double box[4],
+int HilbertRenumbering2D(  int64_t ParIdx, itg NmbLin, double box[4],
                            double (*crd)[2], uint64_t (*idx)[2] )
 {
-   LplInt i;
+   itg i;
    int NewTyp;
    double len = pow(2,62);
    ArgSct arg;
@@ -1811,147 +1811,147 @@ double GetWallClock()
 /* Call a fortran thread with 1 to 20 arguments                               */
 /*----------------------------------------------------------------------------*/
 
-static void CalF77Prc(LplInt BegIdx, LplInt EndIdx, int PthIdx, ParSct *par)
+static void CalF77Prc(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 {
    switch(par->NmbF77Arg)
    {
       case 1 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 1)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 1)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 1)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 1)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 1));
       }break;
 
       case 2 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 2)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 2)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 2)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 2)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 2));
       }break;
 
       case 3 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 3)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 3)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 3)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 3)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 3));
       }break;
 
       case 4 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 4)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 4)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 4)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 4)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 4));
       }break;
 
       case 5 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 5)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 5)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 5)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 5)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 5));
       }break;
 
       case 6 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 6)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 6)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 6)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 6)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 6));
       }break;
 
       case 7 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 7)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 7)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 7)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 7)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 7));
       }break;
 
       case 8 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 8)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 8)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 8)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 8)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 8));
       }break;
 
       case 9 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 9)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 9)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 9)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 9)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 9));
       }break;
 
       case 10 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 10)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 10)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 10)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 10)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 10));
       }break;
 
       case 11 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 11)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 11)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 11)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 11)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 11));
       }break;
 
       case 12 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 12)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 12)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 12)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 12)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 12));
       }break;
 
       case 13 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 13)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 13)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 13)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 13)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 13));
       }break;
 
       case 14 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 14)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 14)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 14)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 14)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 14));
       }break;
 
       case 15 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 15)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 15)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 15)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 15)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 15));
       }break;
 
       case 16 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 16)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 16)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 16)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 16)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 16));
       }break;
 
       case 17 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 17)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 17)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 17)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 17)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 17));
       }break;
 
       case 18 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 18)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 18)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 18)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 18)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 18));
       }break;
 
       case 19 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 19)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 19)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 19)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 19)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 19));
       }break;
 
       case 20 :
       {
-         void (*prc1)(LplInt *, LplInt *, int *, DUP(void *, 20)) =
-            (void (*)(LplInt *, LplInt *, int *, DUP(void *, 20)))par->prc;
+         void (*prc1)(itg *, itg *, int *, DUP(void *, 20)) =
+            (void (*)(itg *, itg *, int *, DUP(void *, 20)))par->prc;
          prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 20));
       }break;
    }
@@ -1962,147 +1962,147 @@ static void CalF77Prc(LplInt BegIdx, LplInt EndIdx, int PthIdx, ParSct *par)
 /* Call a C thread with 1 to 20 arguments                                     */
 /*----------------------------------------------------------------------------*/
 
-static void CalVarArgPrc(LplInt BegIdx, LplInt EndIdx, int PthIdx, ParSct *par)
+static void CalVarArgPrc(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 {
    switch(par->NmbVarArg)
    {
       case 1 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 1)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 1)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 1)) =
+            (void (*)(itg, itg, int, DUP(void *, 1)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 1));
       }break;
 
       case 2 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 2)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 2)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 2)) =
+            (void (*)(itg, itg, int, DUP(void *, 2)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 2));
       }break;
 
       case 3 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 3)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 3)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 3)) =
+            (void (*)(itg, itg, int, DUP(void *, 3)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 3));
       }break;
 
       case 4 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 4)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 4)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 4)) =
+            (void (*)(itg, itg, int, DUP(void *, 4)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 4));
       }break;
 
       case 5 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 5)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 5)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 5)) =
+            (void (*)(itg, itg, int, DUP(void *, 5)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 5));
       }break;
 
       case 6 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 6)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 6)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 6)) =
+            (void (*)(itg, itg, int, DUP(void *, 6)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 6));
       }break;
 
       case 7 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 7)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 7)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 7)) =
+            (void (*)(itg, itg, int, DUP(void *, 7)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 7));
       }break;
 
       case 8 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 8)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 8)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 8)) =
+            (void (*)(itg, itg, int, DUP(void *, 8)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 8));
       }break;
 
       case 9 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 9)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 9)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 9)) =
+            (void (*)(itg, itg, int, DUP(void *, 9)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 9));
       }break;
 
       case 10 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 10)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 10)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 10)) =
+            (void (*)(itg, itg, int, DUP(void *, 10)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 10));
       }break;
 
       case 11 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 11)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 11)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 11)) =
+            (void (*)(itg, itg, int, DUP(void *, 11)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 11));
       }break;
 
       case 12 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 12)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 12)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 12)) =
+            (void (*)(itg, itg, int, DUP(void *, 12)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 12));
       }break;
 
       case 13 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 13)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 13)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 13)) =
+            (void (*)(itg, itg, int, DUP(void *, 13)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 13));
       }break;
 
       case 14 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 14)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 14)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 14)) =
+            (void (*)(itg, itg, int, DUP(void *, 14)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 14));
       }break;
 
       case 15 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 15)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 15)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 15)) =
+            (void (*)(itg, itg, int, DUP(void *, 15)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 15));
       }break;
 
       case 16 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 16)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 16)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 16)) =
+            (void (*)(itg, itg, int, DUP(void *, 16)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 16));
       }break;
 
       case 17 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 17)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 17)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 17)) =
+            (void (*)(itg, itg, int, DUP(void *, 17)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 17));
       }break;
 
       case 18 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 18)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 18)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 18)) =
+            (void (*)(itg, itg, int, DUP(void *, 18)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 18));
       }break;
 
       case 19 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 19)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 19)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 19)) =
+            (void (*)(itg, itg, int, DUP(void *, 19)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 19));
       }break;
 
       case 20 :
       {
-         void (*prc1)(LplInt, LplInt, int, DUP(void *, 20)) =
-            (void (*)(LplInt, LplInt, int, DUP(void *, 20)))par->prc;
+         void (*prc1)(itg, itg, int, DUP(void *, 20)) =
+            (void (*)(itg, itg, int, DUP(void *, 20)))par->prc;
          prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 20));
       }break;
    }
@@ -2262,7 +2262,7 @@ void call(stopparallel)(int64_t *ParIdx)
    StopParallel(*ParIdx);
 }
 
-int call(newtype)(int64_t *ParIdx, LplInt *NmbLin)
+int call(newtype)(int64_t *ParIdx, itg *NmbLin)
 {
    return(NewType(*ParIdx, *NmbLin));
 }
@@ -2278,7 +2278,7 @@ int call(begindependency)(int64_t *ParIdx, int *TypIdx1, int *TypIdx2)
 }
 
 
-void call(adddependency)(int64_t *ParIdx, LplInt *idx1, LplInt *idx2)
+void call(adddependency)(int64_t *ParIdx, itg *idx1, itg *idx2)
 {
    AddDependency(*ParIdx, *idx1, *idx2);
 }
@@ -2347,7 +2347,7 @@ void call(waitpipeline)(int64_t *ParIdx)
    WaitPipeline(*ParIdx);
 }
 
-double call(hilbertrenumbering)( int64_t *ParIdx, LplInt *NmbLin, double box[6],
+double call(hilbertrenumbering)( int64_t *ParIdx, itg *NmbLin, double box[6],
                                  double (*crd)[3], uint64_t *Old2New)
 {
    int i;
@@ -2370,7 +2370,7 @@ double call(hilbertrenumbering)( int64_t *ParIdx, LplInt *NmbLin, double box[6],
    return(1.);
 }
 
-void call(hilbertrenumbering2d)( int64_t *ParIdx, LplInt *NmbLin, double box[4],
+void call(hilbertrenumbering2d)( int64_t *ParIdx, itg *NmbLin, double box[4],
                                  double (*crd)[2], uint64_t (*idx)[2])
 {
    HilbertRenumbering2D(*ParIdx, *NmbLin, box, &crd[-1], &idx[-1]);
