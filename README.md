@@ -1,7 +1,7 @@
-# LPlib  version 3.51
+## LPlib  version 3.51
 A parallelization framework for numerical simulation
 
-# Overview
+## Overview
 The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
 This library is based on posix standard threads, also known as *pthreads*, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (*Linux*, *macOS*, *Windows*).  
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
@@ -9,7 +9,7 @@ A serial program can be easily parallelized step by step.
 It requires no knowledge on parallel programing.  
 Handles transparently concurrent indirect memory writes and dynamics data structures.
 
-# Build for *Linux* or *macOS*
+## Build for *Linux* or *macOS*
 Simply follow these steps:
 - unarchive the ZIP file
 - `cd LPlib-master`
@@ -19,7 +19,7 @@ Simply follow these steps:
 - `make`
 - `make install`
 
-# Build for *Windows*
+## Build for *Windows*
 - You first need to install [CMake](https://cmake.org/files/v3.7/cmake-3.7.2-win64-x64.msi). Do not forget to choose "add cmake to the path for all users", from the install panel.
 - Then you need a valid C compiler like the free [Visual Studio Express 2015](https://www.visualstudio.com/vs/visual-studio-express/)
 - unarchive the ZIP file
@@ -37,7 +37,7 @@ Optionally, you may download some sample meshes to run the examples:
 - uncompress them with `lzip -d *.meshb.lz`
 - you may now enter /opt/LPlib/examples directory and run the various examples
 
-# Usage
+## Usage
 It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  
 It may be used in C, C++, Fortran 77 and 90 programs.  
 Tested on *Linux*, *macOS*, and *Windows 7->10*.
