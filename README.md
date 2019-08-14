@@ -1,4 +1,4 @@
-## LPlib  version 3.51
+## LPlib  version 3.60
 A parallelization framework for numerical simulation
 
 ## Overview
@@ -21,7 +21,7 @@ Simply follow these steps:
 
 ## Build for *Windows*
 - You first need to install [CMake](https://cmake.org/files/v3.7/cmake-3.7.2-win64-x64.msi). Do not forget to choose "add cmake to the path for all users", from the install panel.
-- Then you need a valid C compiler like the free [Visual Studio Express 2015](https://www.visualstudio.com/vs/visual-studio-express/)
+- Then you need a valid C compiler like the free [Visual Studio Community 2019](https://www.visualstudio.com/vs/visual-studio-express/)
 - unarchive the ZIP file
 - open the windows shell
 - `cd LPlib-master`

@@ -5,7 +5,7 @@
 
 cmake_minimum_required (VERSION 3.0.1)
 set (LPlib_VERSION_MAJOR 3)
-set (LPlib_VERSION_MINOR 5)
+set (LPlib_VERSION_MINOR 60)
 
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
