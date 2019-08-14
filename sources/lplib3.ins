@@ -2,7 +2,7 @@
 
 C----------------------------------------------------------
 C
-C            LPLIB    V3.52                        
+C            LPLIB    V3.60                        
 C 
 C----------------------------------------------------------
 C
@@ -10,7 +10,7 @@ C    Description:        prototypes of procedures
 C
 C    Author:             Loic MARECHAL
 C    Creation date:      feb 25 2008
-C    Last modification:  jan 04 2017
+C    Last modification:  apr 11 2019
 C
 C----------------------------------------------------------
 
@@ -41,3 +41,6 @@ C----------------------------------------------------------
       real*4    launchparallel
       integer*4 launchpipeline
       integer*4 newtype
+      integer   maxpth    
+
+      parameter (maxpth=1024)

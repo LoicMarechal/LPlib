@@ -9,7 +9,7 @@
 #	Description:         Handles threads, scheduling & dependencies            #
 #	Author:              Loic MARECHAL                                         #
 #	Creation date:       feb 25 2008                                           #
-#	Last modification:   mar 14 2018                                           #
+#	Last modification:   jun 19 2019                                           #
 #                                                                             #
 #-----------------------------------------------------------------------------#
 
@@ -17,6 +17,10 @@
 # Set compiler and flags
 CC       = gcc
 CFLAGS   = -O3 -Wunused-parameter -Wsign-compare -Wuninitialized -Wunused -Wall
+
+ifeq ($(int), 64)
+   CFLAGS   += -DINT64
+endif
 
 
 # Working directories
