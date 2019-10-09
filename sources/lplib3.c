@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 25 2019                                           */
+/*   Last modification: oct 08 2019                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1140,8 +1140,8 @@ int ChkBlkDep(int64_t ParIdx, int TypIdx, int blk1, int blk2)
 
 static int SetBit(int *tab, int idx)
 {
-   int res = ( tab[ idx >> 5 ] & (1 << (idx & 31)) );
-   tab[ idx >> 5 ] |= 1 << (idx & 31);
+   int res = ( tab[ idx >> 5 ] & (1UL << (idx & 31)) );
+   tab[ idx >> 5 ] |= 1UL << (idx & 31);
    return(res);
 }
 
@@ -1152,7 +1152,7 @@ static int SetBit(int *tab, int idx)
 
 static int GetBit(int *tab, int idx)
 {
-   return( tab[ idx >> 5 ] & (1 << (idx & 31)) );
+   return( tab[ idx >> 5 ] & (1UL << (idx & 31)) );
 }
 
 
