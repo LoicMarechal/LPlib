@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.01                               */
+/*                               HILBERT V 2.10                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -59,7 +59,7 @@ typedef struct
 
 typedef struct
 {
-   int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp;
+   int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp, GmlMod;
    int      NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
    double   box[6];
    VerSct   *ver;
@@ -117,6 +117,7 @@ void     RenVer(int, int, int, MshSct *);
 void     RenEle(int, int, int, MshSct *);
 void     PrtSta(MshSct *, int64_t);
 void     SwpMem(MshSct *, int);
+void     GmlSrt(MshSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -126,10 +127,10 @@ void     SwpMem(MshSct *, int);
 int main(int ArgCnt, char **ArgVec)
 {
    char     *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-   int      i, j, t, NmbCpu = 0, StaFlg=0;
+   int      i, j, t, NmbCpu = 0, StaFlg = 0;
    int64_t  LibParIdx;
    float    flt[3], sta[2];
-   double   timer=0;
+   double   timer = 0.;
    MshSct   msh;
 
    // Command line parsing
@@ -137,12 +138,13 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v2.01 february 05 2020   Loic MARECHAL / INRIA");
+      puts("\nHILBERT v2.10 february 05 2020   Loic MARECHAL / INRIA");
       puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
       puts(" -in name    : name of the input mesh");
       puts(" -out name   : name of the output renumbered mesh");
       puts(" -stats      : print element blocks dependencies stats before and after renumbering");
       puts(" -scheme n   : renumbering scheme: 0 = Hilbert,  1 = Z curve,  2 = random,  (default = 0)");
+      puts(" -gmlib      : special sorting to make the mesh fit for the GMlib");
       puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)\n");
       exit(0);
    }
@@ -178,6 +180,12 @@ int main(int ArgCnt, char **ArgVec)
       if(!strcmp(PtrArg,"-stats"))
       {
          StaFlg = 1;
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-gmlib"))
+      {
+         msh.GmlMod = 1;
          continue;
       }
 
@@ -243,6 +251,10 @@ int main(int ArgCnt, char **ArgVec)
       puts("\nDependencies before renumbering (average / MAX) :");
       PrtSta(&msh, LibParIdx);
    }
+
+   // Prepare references and degree related data for the GMlib modified sort
+   if(msh.GmlMod)
+      GmlSrt(&msh);
 
    // Vertices renumbering
    printf("Renumbering vertices         : ");
@@ -331,9 +343,6 @@ static void SetBndBox(int64_t BegIdx, int64_t EndIdx, MshSct *msh)
             else if(msh->ver[i].crd[j] > msh->box[j+3])
                msh->box[j+3] = msh->ver[i].crd[j];
    }
-
-   for(j=0;j<3;j++)
-      msh->box[j+3] = pow(2,64) / (msh->box[j+3] - msh->box[j]);
 }
 
 
@@ -369,6 +378,10 @@ void ScaMsh(char *InpNam, MshSct *msh)
       GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, SetBndBox, msh,
                   GmfDoubleVec, msh->dim, msh->ver[1].crd,  msh->ver[ msh->NmbVer ].crd,
                   GmfInt,                &msh->ver[1].ref, &msh->ver[ msh->NmbVer ].ref);
+
+      // normalize the bounding box to map the geometry on a 64 bit cube
+      for(j=0;j<3;j++)
+         msh->box[j+3] = pow(2,64) / (msh->box[j+3] - msh->box[j]);
    }
 
    // Allocate and read elements
@@ -568,6 +581,7 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 
 }
 
+
 /*----------------------------------------------------------------------------*/
 /* Parallel loop renumbering any kind of element                              */
 /*----------------------------------------------------------------------------*/
@@ -575,13 +589,19 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
    int      i;
+   uint64_t cod;
    double   crd[3];
 
     for(i=BegIdx; i<=EndIdx; i++)
     {
        SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
        SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-       msh->ele[ msh->TypIdx ][i].cod = HilCod(crd, msh->box, MAXITR, msh->mod);
+       cod = HilCod(crd, msh->box, MAXITR, msh->mod);
+
+       if(msh->GmlMod)
+          msh->ele[ msh->TypIdx ][i].cod |= cod >> 10;
+       else
+          msh->ele[ msh->TypIdx ][i].cod = cod;
     }
 }
 
@@ -617,22 +637,47 @@ void PrtSta(MshSct *msh, int64_t LibParIdx)
 
 void SwpMem(MshSct *msh, int typ)
 {
-   int i, *IdxTab, *PtrIdx;
+   int i, *IdxTab, siz = EleTab[ typ ][0];
 
    // Allocate the new table
-   IdxTab = malloc( (msh->NmbEle[ typ ] + 1) * EleTab[ typ ][0] * sizeof(int));
-   PtrIdx = IdxTab;
+   IdxTab = malloc( (msh->NmbEle[ typ ] + 1) * siz * sizeof(int));
 
    // Copy the old indices to the new table
-   // and save the new pointer to each elements index adress
+   // and save the new pointer to each elements index address
    for(i=1;i<=msh->NmbEle[ typ ];i++)
    {
-      memcpy(PtrIdx, msh->ele[ typ ][i].idx, EleTab[ typ ][0] * sizeof(int));
-      msh->ele[ typ ][i].idx = PtrIdx;
-      PtrIdx += EleTab[ typ ][0];
+      memcpy(&IdxTab[ i * siz ], msh->ele[ typ ][i].idx, siz * sizeof(int));
+      msh->ele[ typ ][i].idx = &IdxTab[ i * siz ];
    }
 
    // Free the old table and set the element type pointer with the new one
    free(msh->IdxTab[ typ ]);
    msh->IdxTab[ typ ] = IdxTab;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set the code 10 upper bit with a hash key based on element's ref           */
+/*----------------------------------------------------------------------------*/
+
+void GmlSrt(MshSct *msh)
+{
+   char *BytPtr;
+   int i, t;
+   uint64_t cod;
+   EleSct *ele;
+
+   for(t=0;t<MAXELE;t++)
+   {
+      if(!msh->EleTyp[t])
+         continue;
+
+      for(i=1;i<=msh->NmbEle[t];i++)
+      {
+         ele = &msh->ele[t][i];
+         BytPtr = (char *)&ele->ref;
+         cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+         ele->cod = cod << 54;
+      }
+   }
 }
