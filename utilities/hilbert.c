@@ -61,6 +61,7 @@ typedef struct
 {
    int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp, GmlMod;
    int      NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
+   int      MaxDeg[ MAXELE ], DegVec[ MAXELE ], HghDeg, OvrDeg;
    double   box[6];
    VerSct   *ver;
    EleSct   *ele[ MAXELE ];
@@ -102,6 +103,22 @@ char *EleNam[ MAXELE ] = {
    "PyramidsP2      ",
    "PrismsP2        ",
    "HexahedraQ2     " };
+
+int MaxDeg[ MAXELE ][2] = {
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32},
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32} };
 
 
 /*----------------------------------------------------------------------------*/
@@ -254,7 +271,25 @@ int main(int ArgCnt, char **ArgVec)
 
    // Prepare references and degree related data for the GMlib modified sort
    if(msh.GmlMod)
+   {
       GmlSrt(&msh);
+
+      if(StaFlg)
+      {
+         printf(  "High-connected vertices      : %3.6f%%\n",
+                  (100. * (float)msh.HghDeg) / (float)msh.NmbVer );
+
+         printf(  "Over-connected vertices      : %3.6f%%\n",
+                  (100. * (float)msh.OvrDeg) / (float)msh.NmbVer );
+
+         for(j=0;j<MAXELE;j++)
+            if(msh.MaxDeg[j])
+               printf(  "Ball of %s     : max deg = %3d, vec size = %3d\n",
+                        EleNam[j], msh.MaxDeg[j],  msh.DegVec[j] );
+
+         puts("");
+      }
+   }
 
    // Vertices renumbering
    printf("Renumbering vertices         : ");
@@ -672,14 +707,14 @@ void SwpMem(MshSct *msh, int typ)
 
 void GmlSrt(MshSct *msh)
 {
-   char *BytPtr, (*DegTab)[ MAXELE ];
-   int i, j, t;
+   char *BytPtr;
+   int i, j, t, (*DegTab)[ MAXELE ];
    uint64_t cod;
    VerSct *ver;
    EleSct *ele;
 
    // Allocate a degree table with one scalar per kind of element
-   DegTab = calloc( msh->NmbVer + 1, MAXELE * sizeof(char));
+   DegTab = calloc( msh->NmbVer + 1, MAXELE * sizeof(int));
 
    // Add each element's vertices to the degree associated to its kind
    // And compute each elements hash tag based on their ref
@@ -698,8 +733,7 @@ void GmlSrt(MshSct *msh)
 
          // Increment the vertex degrees
          for(j=0;j<EleTab[t][0];j++)
-            if(DegTab[ ele->idx[j] ][t] < 127)
-               DegTab[ ele->idx[j] ][t]++;
+            DegTab[ ele->idx[j] ][t]++;
       }
    }
 
@@ -712,12 +746,30 @@ void GmlSrt(MshSct *msh)
       cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
       ver->cod = cod << 53;
 
-      if( (DegTab[i][1] > 8)
-      ||  (DegTab[i][2] > 4)
-      ||  (DegTab[i][3] > 32)
-      ||  (DegTab[i][6] > 8) )
+      if( (DegTab[i][1] > MaxDeg[1][0])
+      ||  (DegTab[i][2] > MaxDeg[2][0])
+      ||  (DegTab[i][3] > MaxDeg[3][0])
+      ||  (DegTab[i][6] > MaxDeg[6][0]) )
       {
          ver->cod |= 1L<<63;
+         msh->HghDeg++;
+
+         for(j=0;j<MAXELE;j++)
+            msh->MaxDeg[j] = MAX(msh->MaxDeg[j], DegTab[i][j]);
+      }
+
+      // Count the number of ver connected vertices
+      if( (DegTab[i][1] > MaxDeg[1][1])
+      ||  (DegTab[i][2] > MaxDeg[2][1])
+      ||  (DegTab[i][3] > MaxDeg[3][1])
+      ||  (DegTab[i][6] > MaxDeg[6][1]) )
+      {
+         msh->OvrDeg++;
       }
    }
+
+   // Set the right vector size for each kind of element ball
+   for(j=0;j<MAXELE;j++)
+      if(msh->MaxDeg[j])
+         msh->DegVec[j] = pow(2., ceil(log2(msh->MaxDeg[j])));
 }
