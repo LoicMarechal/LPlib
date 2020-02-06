@@ -9,7 +9,7 @@
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   feb 05 2020                                           */
+/* Last modification:   feb 06 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -543,8 +543,14 @@ void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
    int i;
 
-   for(i=BegIdx; i<=EndIdx; i++)
-      msh->ver[i].cod = HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
+   // Set the vertex code with the hilbert code, shifted by 11 bits in the case of
+   // GMlib mode to make room for the high degree bit and the 10 bit ref hash tag
+   if(msh->GmlMod)
+      for(i=BegIdx; i<=EndIdx; i++)
+         msh->ver[i].cod |= HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod) >> 11;
+   else
+      for(i=BegIdx; i<=EndIdx; i++)
+         msh->ver[i].cod = HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
 }
 
 
@@ -589,20 +595,24 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
    int      i;
-   uint64_t cod;
    double   crd[3];
 
-    for(i=BegIdx; i<=EndIdx; i++)
-    {
-       SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
-       SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-       cod = HilCod(crd, msh->box, MAXITR, msh->mod);
-
-       if(msh->GmlMod)
-          msh->ele[ msh->TypIdx ][i].cod |= cod >> 10;
-       else
-          msh->ele[ msh->TypIdx ][i].cod = cod;
-    }
+   // Set the elements code with their barycenter hilbert code, shifted
+   // by 10 bits in GMlib mode to make room for the 10 bits ref hash tag
+   if(msh->GmlMod)
+      for(i=BegIdx; i<=EndIdx; i++)
+      {
+         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
+         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
+         msh->ele[ msh->TypIdx ][i].cod |= HilCod(crd, msh->box, MAXITR, msh->mod) >> 10;
+      }
+   else
+      for(i=BegIdx; i<=EndIdx; i++)
+      {
+         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
+         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
+         msh->ele[ msh->TypIdx ][i].cod = HilCod(crd, msh->box, MAXITR, msh->mod);
+      }
 }
 
 
@@ -662,11 +672,17 @@ void SwpMem(MshSct *msh, int typ)
 
 void GmlSrt(MshSct *msh)
 {
-   char *BytPtr;
-   int i, t;
+   char *BytPtr, (*DegTab)[ MAXELE ];
+   int i, j, t;
    uint64_t cod;
+   VerSct *ver;
    EleSct *ele;
 
+   // Allocate a degree table with one scalar per kind of element
+   DegTab = calloc( msh->NmbVer + 1, MAXELE * sizeof(char));
+
+   // Add each element's vertices to the degree associated to its kind
+   // And compute each elements hash tag based on their ref
    for(t=0;t<MAXELE;t++)
    {
       if(!msh->EleTyp[t])
@@ -674,10 +690,34 @@ void GmlSrt(MshSct *msh)
 
       for(i=1;i<=msh->NmbEle[t];i++)
       {
+         // Compute the element ref hash tag as bits 54 to 63
          ele = &msh->ele[t][i];
          BytPtr = (char *)&ele->ref;
          cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
          ele->cod = cod << 54;
+
+         // Increment the vertex degrees
+         for(j=0;j<EleTab[t][0];j++)
+            if(DegTab[ ele->idx[j] ][t] < 127)
+               DegTab[ ele->idx[j] ][t]++;
+      }
+   }
+
+   // Compute the same ref hash tag for each vertices as bits 53 to 62
+   // and set a special high degree flag as leftmost bit (63rd)
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      ver = &msh->ver[i];
+      BytPtr = (char *)&ver->ref;
+      cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+      ver->cod = cod << 53;
+
+      if( (DegTab[i][1] > 8)
+      ||  (DegTab[i][2] > 4)
+      ||  (DegTab[i][3] > 32)
+      ||  (DegTab[i][6] > 8) )
+      {
+         ver->cod |= 1L<<63;
       }
    }
 }
