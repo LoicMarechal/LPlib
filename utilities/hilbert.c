@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.00                               */
+/*                               HILBERT V 2.20                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   jul 25 2017                                           */
+/* Last modification:   jun 19 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -31,13 +31,13 @@
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
 
-#define MAXITR 21
-#define MAXELE 14
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-#define HILMOD 0
-#define OCTMOD 1
-#define RNDMOD 2
+#define MAXITR    21
+#define MAXELE    14
+#define HILMOD    0
+#define OCTMOD    1
+#define RNDMOD    2
+#define MIN(a,b)  ((a) < (b) ? (a) : (b))
+#define MAX(a,b)  ((a) > (b) ? (a) : (b))
 
 
 /*----------------------------------------------------------------------------*/
@@ -47,23 +47,31 @@
 typedef struct
 {
    uint64_t cod;
-   double crd[3];
-   int idx, ref;
+   double   crd[3];
+   int      idx, ref;
+#ifdef WITH_GMLIB
+   int dom;
+#endif
 }VerSct;
 
 typedef struct
 {
    uint64_t cod;
-   int *idx, siz, ref;
+   int      *idx, siz, ref;
+#ifdef WITH_GMLIB
+   int dom;
+#endif
 }EleSct;
 
 typedef struct
 {
-   int NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp;
-   int NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
-   double box[6];
-   VerSct *ver;
-   EleSct *ele[ MAXELE ];
+   int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp, GmlMod;
+   int      NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
+   int      MaxDeg[ MAXELE ], DegVec[ MAXELE ], HghDeg, OvrDeg;
+   int      MtsEleTyp, MtsNmbDom;
+   double   box[6];
+   VerSct   *ver;
+   EleSct   *ele[ MAXELE ];
 }MshSct;
 
 
@@ -71,7 +79,7 @@ typedef struct
 /* Global variables                                                           */
 /*----------------------------------------------------------------------------*/
 
-int EleTab[ MAXELE ][3] = {
+int EleTab[ MAXELE ][2] = {
    { 2, GmfEdges},
    { 3, GmfTriangles},
    { 4, GmfQuadrilaterals},
@@ -103,6 +111,22 @@ char *EleNam[ MAXELE ] = {
    "PrismsP2        ",
    "HexahedraQ2     " };
 
+int MaxDeg[ MAXELE ][2] = {
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32},
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32} };
+
 
 /*----------------------------------------------------------------------------*/
 /* Prototypes of local procedures                                             */
@@ -110,12 +134,17 @@ char *EleNam[ MAXELE ] = {
 
 void     ScaMsh(char *, MshSct *);
 void     RecMsh(char *, MshSct *);
-uint64_t hilbert(double *, double *, int, int);
+uint64_t HilCod(double *, double *, int, int);
 void     GetTim(double *);
 int      CmpFnc(const void *, const void *);
 void     RenVer(int, int, int, MshSct *);
 void     RenEle(int, int, int, MshSct *);
 void     PrtSta(MshSct *, int64_t);
+void     SwpMem(MshSct *, int);
+#ifdef WITH_GMLIB
+void     GmlSrt(MshSct *);
+void     ScaMts(char *, char *, MshSct *);
+#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -124,25 +153,33 @@ void     PrtSta(MshSct *, int64_t);
 
 int main(int ArgCnt, char **ArgVec)
 {
-   char *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-   int i, j, t, NmbCpu = 0, StaFlg=0;
-   int64_t LibParIdx;
-   float flt[3], sta[2];
-   double timer=0;
-   MshSct msh;
+   char     *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
+   char     MtsNodNam[1000], MtsEleNam[1000];
+   int      i, j, t, NmbCpu = 0, StaFlg = 0;
+   int64_t  LibParIdx;
+   float    flt[3], sta[2];
+   double   timer = 0.;
+   MshSct   msh;
 
    // Command line parsing
    memset(&msh, 0, sizeof(MshSct));
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v1.12 march 21 2018   Loic MARECHAL / INRIA");
+      puts("\nHILBERT v2.20 june 19 2020   Loic MARECHAL / INRIA");
       puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
-      puts(" -in name    : name of the input mesh");
-      puts(" -out name   : name of the output renumbered mesh");
+      puts(" -in name    : input mesh(b) name");
+      puts(" -out name   : output renumbered mesh(b)");
       puts(" -stats      : print element blocks dependencies stats before and after renumbering");
       puts(" -scheme n   : renumbering scheme: 0 = Hilbert,  1 = Z curve,  2 = random,  (default = 0)");
-      puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)\n");
+      puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)");
+#ifdef WITH_GMLIB
+      puts(" -gmlib      : special sorting to make the mesh fit for the GMlib");
+      puts(" -ndom n     : n: number of domains generated by Metis");
+      puts(" -npart pf   : pf: Metis node partition filename");
+      puts(" -epart pf t : pf: Metis element partition filename, t: element type");
+#endif
+      puts("");
       exit(0);
    }
 
@@ -179,6 +216,39 @@ int main(int ArgCnt, char **ArgVec)
          StaFlg = 1;
          continue;
       }
+
+#ifdef WITH_GMLIB
+      if(!strcmp(PtrArg,"-ndom"))
+      {
+         msh.MtsNmbDom = atoi(*++ArgVec);
+         ArgCnt--;
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-npart"))
+      {
+         TmpStr = *++ArgVec;
+         ArgCnt--;
+         strcpy(MtsNodNam, TmpStr);
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-epart"))
+      {
+         TmpStr = *++ArgVec;
+         ArgCnt--;
+         strcpy(MtsEleNam, TmpStr);
+         msh.MtsEleTyp = atoi(*++ArgVec);
+         ArgCnt--;
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-gmlib"))
+      {
+         msh.GmlMod = 1;
+         continue;
+      }
+#endif
 
       if(!strcmp(PtrArg,"-scheme"))
       {
@@ -243,6 +313,33 @@ int main(int ArgCnt, char **ArgVec)
       PrtSta(&msh, LibParIdx);
    }
 
+   // Prepare references and degree related data for the GMlib modified sort
+#ifdef WITH_GMLIB
+   if(msh.GmlMod)
+   {
+      if(msh.MtsNmbDom)
+         ScaMts(MtsNodNam, MtsEleNam, &msh);
+
+      GmlSrt(&msh);
+
+      if(StaFlg)
+      {
+         printf(  "High-connected vertices      : %3.6f%%\n",
+                  (100. * (float)msh.HghDeg) / (float)msh.NmbVer );
+
+         printf(  "Over-connected vertices      : %3.6f%%\n",
+                  (100. * (float)msh.OvrDeg) / (float)msh.NmbVer );
+
+         for(j=0;j<MAXELE;j++)
+            if(msh.MaxDeg[j])
+               printf(  "Ball of %s     : max deg = %3d, vec size = %3d\n",
+                        EleNam[j], msh.MaxDeg[j],  msh.DegVec[j] );
+
+         puts("");
+      }
+   }
+#endif
+
    // Vertices renumbering
    printf("Renumbering vertices         : ");
    timer = 0.;
@@ -260,7 +357,6 @@ int main(int ArgCnt, char **ArgVec)
    printf("%g s\n", timer);
 
    // Elements renumbering
-
    for(t=0;t<MAXELE;t++)
       if(msh.NmbEle[t])
       {
@@ -271,6 +367,7 @@ int main(int ArgCnt, char **ArgVec)
          msh.TypIdx = t;
          LaunchParallel(LibParIdx, msh.EleTyp[t], 0, (void *)RenEle, (void *)&msh);
          ParallelQsort(LibParIdx, &msh.ele[t][1], msh.NmbEle[t], sizeof(EleSct), CmpFnc);
+         SwpMem(&msh, t);
          GetTim(&timer);
          printf("%g s\n", timer);
       }
@@ -306,14 +403,42 @@ int main(int ArgCnt, char **ArgVec)
 
 
 /*----------------------------------------------------------------------------*/
-/* Read mesh                                                                  */
+/* Compute the bounding box                                                   */
+/*----------------------------------------------------------------------------*/
+
+static void SetBndBox(int64_t BegIdx, int64_t EndIdx, MshSct *msh)
+{
+   int i, j;
+
+   for(i=BegIdx; i<=EndIdx; i++)
+   {
+      msh->ver[i].idx = i;
+
+      if(msh->dim == 2)
+         msh->ver[i].crd[2] = 0.;
+
+      if(i==1)
+         for(j=0;j<3;j++)
+            msh->box[j] = msh->box[j+3] = msh->ver[i].crd[j];
+      else
+         for(j=0;j<3;j++)
+            if(msh->ver[i].crd[j] < msh->box[j])
+               msh->box[j] = msh->ver[i].crd[j];
+            else if(msh->ver[i].crd[j] > msh->box[j+3])
+               msh->box[j+3] = msh->ver[i].crd[j];
+   }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Open, allocate and read the mesh fields                                    */
 /*----------------------------------------------------------------------------*/
 
 void ScaMsh(char *InpNam, MshSct *msh)
 {
-   int i, j, t, *PtrIdx;
-   int64_t InpMsh;
-   float flt[3];
+   int      i, j, n, t, *PtrIdx;
+   int64_t  InpMsh;
+   float    flt[3];
 
    // Check mesh format
    if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &msh->dim)))
@@ -331,240 +456,36 @@ void ScaMsh(char *InpNam, MshSct *msh)
       exit(1);
    }
 
-   for(t=0;t<MAXELE;t++)
-      if((msh->NmbEle[t] = GmfStatKwd(InpMsh, EleTab[t][1])))
-      {
-         msh->ele[t] = malloc((msh->NmbEle[t]+1) * sizeof(EleSct));
-         msh->IdxTab[t] = malloc((msh->NmbEle[t]+1) * EleTab[t][0] * sizeof(int));
-         PtrIdx = msh->IdxTab[t];
-
-         for(i=1;i<=msh->NmbEle[t];i++)
-         {
-            msh->ele[t][i].idx = PtrIdx;
-            PtrIdx += EleTab[t][0];
-         }
-      }
-
-   // Read fields
+   // Read the vertices
    if(msh->NmbVer)
    {
-      if(msh->dim == 2)
-      {
-         GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
-      }
-      else
-      {
-         GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                     GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
-      }
+      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, SetBndBox, msh,
+                  GmfDoubleVec, msh->dim, msh->ver[1].crd,  msh->ver[ msh->NmbVer ].crd,
+                  GmfInt,                &msh->ver[1].ref, &msh->ver[ msh->NmbVer ].ref);
 
-      for(i=1;i<=msh->NmbVer;i++)
-      {
-         msh->ver[i].idx = i;
-
-         if(msh->dim == 2)
-            msh->ver[i].crd[2] = 0.;
-
-         if(i==1)
-            for(j=0;j<3;j++)
-               msh->box[j] = msh->box[j+3] = msh->ver[i].crd[j];
-         else
-            for(j=0;j<3;j++)
-               if(msh->ver[i].crd[j] < msh->box[j])
-                  msh->box[j] = msh->ver[i].crd[j];
-               else if(msh->ver[i].crd[j] > msh->box[j+3])
-                  msh->box[j+3] = msh->ver[i].crd[j];
-      }
-
+      // normalize the bounding box to map the geometry on a 64 bit cube
       for(j=0;j<3;j++)
          msh->box[j+3] = pow(2,64) / (msh->box[j+3] - msh->box[j]);
    }
 
+   // Allocate and read elements
    for(t=0;t<MAXELE;t++)
    {
-      if(!msh->NmbEle[t])
+      n = msh->NmbEle[t] = GmfStatKwd(InpMsh, EleTab[t][1]);
+
+      if(!n)
          continue;
 
-      switch(EleTab[t][0])
-      {
-         case 2 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
+      msh->ele[t]    = malloc( (n+1) * sizeof(EleSct) );
+      msh->IdxTab[t] = malloc( (n+1) * EleTab[t][0] * sizeof(int));
+      PtrIdx         = msh->IdxTab[t];
 
-         case 3 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
+      for(i=1;i<=n;i++)
+         msh->ele[t][i].idx = &PtrIdx[ i * EleTab[t][0] ];
 
-         case 4 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 5 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].idx[4], &msh->ele[t][ msh->NmbEle[t] ].idx[4],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 6 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].idx[4], &msh->ele[t][ msh->NmbEle[t] ].idx[4],
-                        GmfInt, &msh->ele[t][1].idx[5], &msh->ele[t][ msh->NmbEle[t] ].idx[5],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 8 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].idx[4], &msh->ele[t][ msh->NmbEle[t] ].idx[4],
-                        GmfInt, &msh->ele[t][1].idx[5], &msh->ele[t][ msh->NmbEle[t] ].idx[5],
-                        GmfInt, &msh->ele[t][1].idx[6], &msh->ele[t][ msh->NmbEle[t] ].idx[6],
-                        GmfInt, &msh->ele[t][1].idx[7], &msh->ele[t][ msh->NmbEle[t] ].idx[7],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 9 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].idx[4], &msh->ele[t][ msh->NmbEle[t] ].idx[4],
-                        GmfInt, &msh->ele[t][1].idx[5], &msh->ele[t][ msh->NmbEle[t] ].idx[5],
-                        GmfInt, &msh->ele[t][1].idx[6], &msh->ele[t][ msh->NmbEle[t] ].idx[6],
-                        GmfInt, &msh->ele[t][1].idx[7], &msh->ele[t][ msh->NmbEle[t] ].idx[7],
-                        GmfInt, &msh->ele[t][1].idx[8], &msh->ele[t][ msh->NmbEle[t] ].idx[8],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 10 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[0], &msh->ele[t][ msh->NmbEle[t] ].idx[0],
-                        GmfInt, &msh->ele[t][1].idx[1], &msh->ele[t][ msh->NmbEle[t] ].idx[1],
-                        GmfInt, &msh->ele[t][1].idx[2], &msh->ele[t][ msh->NmbEle[t] ].idx[2],
-                        GmfInt, &msh->ele[t][1].idx[3], &msh->ele[t][ msh->NmbEle[t] ].idx[3],
-                        GmfInt, &msh->ele[t][1].idx[4], &msh->ele[t][ msh->NmbEle[t] ].idx[4],
-                        GmfInt, &msh->ele[t][1].idx[5], &msh->ele[t][ msh->NmbEle[t] ].idx[5],
-                        GmfInt, &msh->ele[t][1].idx[6], &msh->ele[t][ msh->NmbEle[t] ].idx[6],
-                        GmfInt, &msh->ele[t][1].idx[7], &msh->ele[t][ msh->NmbEle[t] ].idx[7],
-                        GmfInt, &msh->ele[t][1].idx[8], &msh->ele[t][ msh->NmbEle[t] ].idx[8],
-                        GmfInt, &msh->ele[t][1].idx[9], &msh->ele[t][ msh->NmbEle[t] ].idx[9],
-                        GmfInt, &msh->ele[t][1].ref,   &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 14 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[ 0], &msh->ele[t][ msh->NmbEle[t] ].idx[ 0],
-                        GmfInt, &msh->ele[t][1].idx[ 1], &msh->ele[t][ msh->NmbEle[t] ].idx[ 1],
-                        GmfInt, &msh->ele[t][1].idx[ 2], &msh->ele[t][ msh->NmbEle[t] ].idx[ 2],
-                        GmfInt, &msh->ele[t][1].idx[ 3], &msh->ele[t][ msh->NmbEle[t] ].idx[ 3],
-                        GmfInt, &msh->ele[t][1].idx[ 4], &msh->ele[t][ msh->NmbEle[t] ].idx[ 4],
-                        GmfInt, &msh->ele[t][1].idx[ 5], &msh->ele[t][ msh->NmbEle[t] ].idx[ 5],
-                        GmfInt, &msh->ele[t][1].idx[ 6], &msh->ele[t][ msh->NmbEle[t] ].idx[ 6],
-                        GmfInt, &msh->ele[t][1].idx[ 7], &msh->ele[t][ msh->NmbEle[t] ].idx[ 7],
-                        GmfInt, &msh->ele[t][1].idx[ 8], &msh->ele[t][ msh->NmbEle[t] ].idx[ 8],
-                        GmfInt, &msh->ele[t][1].idx[ 9], &msh->ele[t][ msh->NmbEle[t] ].idx[ 9],
-                        GmfInt, &msh->ele[t][1].idx[10], &msh->ele[t][ msh->NmbEle[t] ].idx[10],
-                        GmfInt, &msh->ele[t][1].idx[11], &msh->ele[t][ msh->NmbEle[t] ].idx[11],
-                        GmfInt, &msh->ele[t][1].idx[12], &msh->ele[t][ msh->NmbEle[t] ].idx[12],
-                        GmfInt, &msh->ele[t][1].idx[13], &msh->ele[t][ msh->NmbEle[t] ].idx[13],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 18 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[ 0], &msh->ele[t][ msh->NmbEle[t] ].idx[ 0],
-                        GmfInt, &msh->ele[t][1].idx[ 1], &msh->ele[t][ msh->NmbEle[t] ].idx[ 1],
-                        GmfInt, &msh->ele[t][1].idx[ 2], &msh->ele[t][ msh->NmbEle[t] ].idx[ 2],
-                        GmfInt, &msh->ele[t][1].idx[ 3], &msh->ele[t][ msh->NmbEle[t] ].idx[ 3],
-                        GmfInt, &msh->ele[t][1].idx[ 4], &msh->ele[t][ msh->NmbEle[t] ].idx[ 4],
-                        GmfInt, &msh->ele[t][1].idx[ 5], &msh->ele[t][ msh->NmbEle[t] ].idx[ 5],
-                        GmfInt, &msh->ele[t][1].idx[ 6], &msh->ele[t][ msh->NmbEle[t] ].idx[ 6],
-                        GmfInt, &msh->ele[t][1].idx[ 7], &msh->ele[t][ msh->NmbEle[t] ].idx[ 7],
-                        GmfInt, &msh->ele[t][1].idx[ 8], &msh->ele[t][ msh->NmbEle[t] ].idx[ 8],
-                        GmfInt, &msh->ele[t][1].idx[ 9], &msh->ele[t][ msh->NmbEle[t] ].idx[ 9],
-                        GmfInt, &msh->ele[t][1].idx[10], &msh->ele[t][ msh->NmbEle[t] ].idx[10],
-                        GmfInt, &msh->ele[t][1].idx[11], &msh->ele[t][ msh->NmbEle[t] ].idx[11],
-                        GmfInt, &msh->ele[t][1].idx[12], &msh->ele[t][ msh->NmbEle[t] ].idx[12],
-                        GmfInt, &msh->ele[t][1].idx[13], &msh->ele[t][ msh->NmbEle[t] ].idx[13],
-                        GmfInt, &msh->ele[t][1].idx[14], &msh->ele[t][ msh->NmbEle[t] ].idx[14],
-                        GmfInt, &msh->ele[t][1].idx[15], &msh->ele[t][ msh->NmbEle[t] ].idx[15],
-                        GmfInt, &msh->ele[t][1].idx[16], &msh->ele[t][ msh->NmbEle[t] ].idx[16],
-                        GmfInt, &msh->ele[t][1].idx[17], &msh->ele[t][ msh->NmbEle[t] ].idx[17],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-
-         case 27 :
-         {
-            GmfGetBlock(InpMsh, EleTab[t][1], 1, msh->NmbEle[t], 0, NULL, NULL,
-                        GmfInt, &msh->ele[t][1].idx[ 0], &msh->ele[t][ msh->NmbEle[t] ].idx[ 0],
-                        GmfInt, &msh->ele[t][1].idx[ 1], &msh->ele[t][ msh->NmbEle[t] ].idx[ 1],
-                        GmfInt, &msh->ele[t][1].idx[ 2], &msh->ele[t][ msh->NmbEle[t] ].idx[ 2],
-                        GmfInt, &msh->ele[t][1].idx[ 3], &msh->ele[t][ msh->NmbEle[t] ].idx[ 3],
-                        GmfInt, &msh->ele[t][1].idx[ 4], &msh->ele[t][ msh->NmbEle[t] ].idx[ 4],
-                        GmfInt, &msh->ele[t][1].idx[ 5], &msh->ele[t][ msh->NmbEle[t] ].idx[ 5],
-                        GmfInt, &msh->ele[t][1].idx[ 6], &msh->ele[t][ msh->NmbEle[t] ].idx[ 6],
-                        GmfInt, &msh->ele[t][1].idx[ 7], &msh->ele[t][ msh->NmbEle[t] ].idx[ 7],
-                        GmfInt, &msh->ele[t][1].idx[ 8], &msh->ele[t][ msh->NmbEle[t] ].idx[ 8],
-                        GmfInt, &msh->ele[t][1].idx[ 9], &msh->ele[t][ msh->NmbEle[t] ].idx[ 9],
-                        GmfInt, &msh->ele[t][1].idx[10], &msh->ele[t][ msh->NmbEle[t] ].idx[10],
-                        GmfInt, &msh->ele[t][1].idx[11], &msh->ele[t][ msh->NmbEle[t] ].idx[11],
-                        GmfInt, &msh->ele[t][1].idx[12], &msh->ele[t][ msh->NmbEle[t] ].idx[12],
-                        GmfInt, &msh->ele[t][1].idx[13], &msh->ele[t][ msh->NmbEle[t] ].idx[13],
-                        GmfInt, &msh->ele[t][1].idx[14], &msh->ele[t][ msh->NmbEle[t] ].idx[14],
-                        GmfInt, &msh->ele[t][1].idx[15], &msh->ele[t][ msh->NmbEle[t] ].idx[15],
-                        GmfInt, &msh->ele[t][1].idx[16], &msh->ele[t][ msh->NmbEle[t] ].idx[16],
-                        GmfInt, &msh->ele[t][1].idx[17], &msh->ele[t][ msh->NmbEle[t] ].idx[17],
-                        GmfInt, &msh->ele[t][1].idx[18], &msh->ele[t][ msh->NmbEle[t] ].idx[18],
-                        GmfInt, &msh->ele[t][1].idx[19], &msh->ele[t][ msh->NmbEle[t] ].idx[19],
-                        GmfInt, &msh->ele[t][1].idx[20], &msh->ele[t][ msh->NmbEle[t] ].idx[20],
-                        GmfInt, &msh->ele[t][1].idx[21], &msh->ele[t][ msh->NmbEle[t] ].idx[21],
-                        GmfInt, &msh->ele[t][1].idx[22], &msh->ele[t][ msh->NmbEle[t] ].idx[22],
-                        GmfInt, &msh->ele[t][1].idx[23], &msh->ele[t][ msh->NmbEle[t] ].idx[23],
-                        GmfInt, &msh->ele[t][1].idx[24], &msh->ele[t][ msh->NmbEle[t] ].idx[24],
-                        GmfInt, &msh->ele[t][1].idx[25], &msh->ele[t][ msh->NmbEle[t] ].idx[25],
-                        GmfInt, &msh->ele[t][1].idx[26], &msh->ele[t][ msh->NmbEle[t] ].idx[26],
-                        GmfInt, &msh->ele[t][1].ref,    &msh->ele[t][ msh->NmbEle[t] ].ref);
-         }break;
-      }
+      GmfGetBlock(InpMsh,    EleTab[t][1], 1, n, 0, NULL, NULL,
+                  GmfIntVec, EleTab[t][0], msh->ele[t][1].idx,  msh->ele[t][n].idx,
+                  GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
 
    GmfCloseMesh(InpMsh);
@@ -577,8 +498,8 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
 void RecMsh(char *OutNam, MshSct *msh)
 {
-   int i, t;
-   int64_t OutMsh;
+   int      i, t, n;
+   int64_t  OutMsh;
 
    if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, msh->dim)))
    {
@@ -589,154 +510,20 @@ void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbVer)
    {
       GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-
-      if(msh->dim == 2)
-      {
-         GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
-      }
-      else
-      {
-         GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                     GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                     GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                     GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                     GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
-      }
+      GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL,
+                  GmfDoubleVec, msh->dim, msh->ver[1].crd,  msh->ver[ msh->NmbVer ].crd,
+                  GmfInt,                &msh->ver[1].ref, &msh->ver[ msh->NmbVer ].ref);
    }
 
    for(t=0;t<MAXELE;t++)
    {
-      if(!msh->NmbEle[t])
+      if(!(n = msh->NmbEle[t]))
          continue;
 
-      GmfSetKwd(OutMsh, EleTab[t][1], msh->NmbEle[t]);
-
-      switch(EleTab[t][0])
-      {
-         case 2 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].ref);
-         }break;
-
-         case 3 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].ref);
-         }break;
-
-         case 4 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].ref);
-         }break;
-
-         case 5 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].idx[4],
-                           msh->ele[t][i].ref);
-         }break;
-
-         case 6 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].idx[4],
-                           msh->ele[t][i].idx[5], msh->ele[t][i].ref);
-         }break;
-
-         case 8 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].idx[4],
-                           msh->ele[t][i].idx[5], msh->ele[t][i].idx[6],
-                           msh->ele[t][i].idx[7], msh->ele[t][i].ref);
-         }break;
-
-         case 9 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].idx[4],
-                           msh->ele[t][i].idx[5], msh->ele[t][i].idx[6],
-                           msh->ele[t][i].idx[7], msh->ele[t][i].idx[8],
-                           msh->ele[t][i].ref);
-         }break;
-
-         case 10 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],  msh->ele[t][i].idx[0],
-                           msh->ele[t][i].idx[1], msh->ele[t][i].idx[2],
-                           msh->ele[t][i].idx[3], msh->ele[t][i].idx[4],
-                           msh->ele[t][i].idx[5], msh->ele[t][i].idx[6],
-                           msh->ele[t][i].idx[7], msh->ele[t][i].idx[8],
-                           msh->ele[t][i].idx[9], msh->ele[t][i].ref);
-         }break;
-
-         case 14 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],   msh->ele[t][i].idx[ 0],
-                           msh->ele[t][i].idx[ 1], msh->ele[t][i].idx[ 2],
-                           msh->ele[t][i].idx[ 3], msh->ele[t][i].idx[ 4],
-                           msh->ele[t][i].idx[ 5], msh->ele[t][i].idx[ 6],
-                           msh->ele[t][i].idx[ 7], msh->ele[t][i].idx[ 8],
-                           msh->ele[t][i].idx[ 9], msh->ele[t][i].idx[10],
-                           msh->ele[t][i].idx[11], msh->ele[t][i].idx[12],
-                           msh->ele[t][i].idx[13], msh->ele[t][i].ref);
-         }break;
-
-         case 18 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],   msh->ele[t][i].idx[ 0],
-                           msh->ele[t][i].idx[ 1], msh->ele[t][i].idx[ 2],
-                           msh->ele[t][i].idx[ 3], msh->ele[t][i].idx[ 4],
-                           msh->ele[t][i].idx[ 5], msh->ele[t][i].idx[ 6],
-                           msh->ele[t][i].idx[ 7], msh->ele[t][i].idx[ 8],
-                           msh->ele[t][i].idx[ 9], msh->ele[t][i].idx[10],
-                           msh->ele[t][i].idx[11], msh->ele[t][i].idx[12],
-                           msh->ele[t][i].idx[13], msh->ele[t][i].idx[14],
-                           msh->ele[t][i].idx[15], msh->ele[t][i].idx[16],
-                           msh->ele[t][i].idx[17], msh->ele[t][i].ref);
-         }break;
-
-         case 27 :
-         {
-            for(i=1;i<=msh->NmbEle[t];i++)
-               GmfSetLin(  OutMsh, EleTab[t][1],   msh->ele[t][i].idx[ 0],
-                           msh->ele[t][i].idx[ 1], msh->ele[t][i].idx[ 2],
-                           msh->ele[t][i].idx[ 3], msh->ele[t][i].idx[ 4],
-                           msh->ele[t][i].idx[ 5], msh->ele[t][i].idx[ 6],
-                           msh->ele[t][i].idx[ 7], msh->ele[t][i].idx[ 8],
-                           msh->ele[t][i].idx[ 9], msh->ele[t][i].idx[10],
-                           msh->ele[t][i].idx[11], msh->ele[t][i].idx[12],
-                           msh->ele[t][i].idx[13], msh->ele[t][i].idx[14],
-                           msh->ele[t][i].idx[15], msh->ele[t][i].idx[16],
-                           msh->ele[t][i].idx[17], msh->ele[t][i].idx[18],
-                           msh->ele[t][i].idx[19], msh->ele[t][i].idx[20],
-                           msh->ele[t][i].idx[21], msh->ele[t][i].idx[22],
-                           msh->ele[t][i].idx[23], msh->ele[t][i].idx[24],
-                           msh->ele[t][i].idx[25], msh->ele[t][i].idx[26],
-                           msh->ele[t][i].ref);
-         }break;
-      }
+      GmfSetKwd  (OutMsh,    EleTab[t][1], n);
+      GmfSetBlock(OutMsh,    EleTab[t][1], 1, n, 0, NULL, NULL,
+                  GmfIntVec, EleTab[t][0], msh->ele[t][1].idx,  msh->ele[t][n].idx,
+                  GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
 
    GmfCloseMesh(OutMsh);
@@ -747,16 +534,18 @@ void RecMsh(char *OutNam, MshSct *msh)
 /* Compute the hilbert code from 3d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
-uint64_t hilbert(double crd[3], double box[6], int itr, int mod)
+uint64_t HilCod(double crd[3], double box[6], int itr, int mod)
 {
    uint64_t IntCrd[3], m=1LL<<63, cod;
-   int i, j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
-   double TmpCrd[3];
-   int rot[8], GeoCod[8]={0,3,7,4,1,2,6,5}; // Hilbert
-   int OctCod[8] = {5,4,7,6,1,0,3,2}; // octree or Z curve
-   int HilCod[8][8] = {
-      {0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1}, {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
-      {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7}, {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7}};
+   int      i, j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
+   double   TmpCrd[3];
+   int      rot[8], GeoCod[8]={0,3,7,4,1,2,6,5}; // Hilbert
+   int      OctCod[8] = {5,4,7,6,1,0,3,2}; // octree or Z curve
+   int      HilCod[8][8] = {
+            {0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1},
+            {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
+            {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7},
+            {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7} };
 
    if(mod == RNDMOD)
       return(rand());
@@ -838,10 +627,22 @@ void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
    int i;
 
-   for(i=BegIdx; i<=EndIdx; i++)
-      msh->ver[i].cod = hilbert(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
+   // Set the vertex code with the hilbert code, shifted by 11 bits in the case of
+   // GMlib mode to make room for the high degree bit and the 10 bit ref hash tag
+#ifdef WITH_GMLIB
+   if(msh->GmlMod)
+      for(i=BegIdx; i<=EndIdx; i++)
+         msh->ver[i].cod |= HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod) >> 11;
+   else
+#endif
+      for(i=BegIdx; i<=EndIdx; i++)
+         msh->ver[i].cod = HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
 }
 
+
+/*----------------------------------------------------------------------------*/
+/* Set the old to new index convertion table                                  */
+/*----------------------------------------------------------------------------*/
 
 void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
 {
@@ -850,6 +651,11 @@ void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
    for(i=0;i<NmbVer;i++)
       IdxTab[i] = Old2New[ IdxTab[i] ];
 }
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute the barycenter of any kind of element                              */
+/*----------------------------------------------------------------------------*/
 
 void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 {
@@ -867,21 +673,34 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 
 }
 
+
 /*----------------------------------------------------------------------------*/
-/* Parallel loop renumbering tets                                             */
+/* Parallel loop renumbering any kind of element                              */
 /*----------------------------------------------------------------------------*/
 
 void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   int i;
-   double crd[3];
+   int      i;
+   double   crd[3];
 
-    for(i=BegIdx; i<=EndIdx; i++)
-    {
-       SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
-       SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-       msh->ele[ msh->TypIdx ][i].cod = hilbert(crd, msh->box, MAXITR, msh->mod);
-    }
+   // Set the elements code with their barycenter hilbert code, shifted
+   // by 10 bits in GMlib mode to make room for the 10 bits ref hash tag
+#ifdef WITH_GMLIB
+   if(msh->GmlMod)
+      for(i=BegIdx; i<=EndIdx; i++)
+      {
+         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
+         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
+         msh->ele[ msh->TypIdx ][i].cod |= HilCod(crd, msh->box, MAXITR, msh->mod) >> 10;
+      }
+   else
+#endif
+      for(i=BegIdx; i<=EndIdx; i++)
+      {
+         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
+         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
+         msh->ele[ msh->TypIdx ][i].cod = HilCod(crd, msh->box, MAXITR, msh->mod);
+      }
 }
 
 
@@ -891,8 +710,8 @@ void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 void PrtSta(MshSct *msh, int64_t LibParIdx)
 {
-   int i, t;
-   float  sta[2];
+   int      i, t;
+   float    sta[2];
 
    for(t=0;t<MAXELE;t++)
       if(msh->EleTyp[t])
@@ -908,3 +727,139 @@ void PrtSta(MshSct *msh, int64_t LibParIdx)
 
    puts("");
 }
+
+
+/*----------------------------------------------------------------------------*/
+/* Allocate a new index buffer and copy the old indices to the new table      */
+/*----------------------------------------------------------------------------*/
+
+void SwpMem(MshSct *msh, int typ)
+{
+   int i, *IdxTab, siz = EleTab[ typ ][0];
+
+   // Allocate the new table
+   IdxTab = malloc( (msh->NmbEle[ typ ] + 1) * siz * sizeof(int));
+
+   // Copy the old indices to the new table
+   // and save the new pointer to each elements index address
+   for(i=1;i<=msh->NmbEle[ typ ];i++)
+   {
+      memcpy(&IdxTab[ i * siz ], msh->ele[ typ ][i].idx, siz * sizeof(int));
+      msh->ele[ typ ][i].idx = &IdxTab[ i * siz ];
+   }
+
+   // Free the old table and set the element type pointer with the new one
+   free(msh->IdxTab[ typ ]);
+   msh->IdxTab[ typ ] = IdxTab;
+}
+
+
+#ifdef WITH_GMLIB
+
+/*----------------------------------------------------------------------------*/
+/* Read the nodes and elements domain from the Metis files                    */
+/*----------------------------------------------------------------------------*/
+
+void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
+{
+   int i;
+   FILE *mts;
+
+   //msh->NmbEle[1] = 0;
+
+   printf("Reading node partitions from %s\n", MtsNodNam);
+   if(!(mts = fopen(MtsNodNam, "r")))
+      return;
+
+   for(i=1;i<=msh->NmbVer;i++)
+      fscanf(mts, "%d", &msh->ver[i].ref);
+
+   fclose(mts);
+
+   printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
+   if(!(mts = fopen(MtsEleNam, "r")))
+      return;
+
+   if( (msh->MtsEleTyp != GmfTetrahedra) || !msh->NmbEle[3] )
+      return;
+
+   for(i=1;i<=msh->NmbEle[3];i++)
+      fscanf(mts, "%d", &msh->ele[3][i].ref);
+
+   fclose(mts);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set the code 10 upper bit with a hash key based on element's ref           */
+/*----------------------------------------------------------------------------*/
+
+void GmlSrt(MshSct *msh)
+{
+   char *BytPtr;
+   int i, j, t, (*DegTab)[ MAXELE ];
+   uint64_t cod;
+   VerSct *ver;
+   EleSct *ele;
+
+   // Allocate a degree table with one scalar per kind of element
+   DegTab = calloc( msh->NmbVer + 1, MAXELE * sizeof(int));
+
+   // Add each element's vertices to the degree associated to its kind
+   // And compute each elements hash tag based on their ref
+   for(t=0;t<MAXELE;t++)
+   {
+      if(!msh->EleTyp[t])
+         continue;
+
+      for(i=1;i<=msh->NmbEle[t];i++)
+      {
+         // Compute the element ref hash tag as bits 54 to 63
+         ele = &msh->ele[t][i];
+         BytPtr = (char *)&ele->ref;
+         cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+         ele->cod = cod << 54;
+
+         // Increment the vertex degrees
+         for(j=0;j<EleTab[t][0];j++)
+            DegTab[ ele->idx[j] ][t]++;
+      }
+   }
+
+   // Compute the same ref hash tag for each vertices as bits 53 to 62
+   // and set a special high degree flag as leftmost bit (63rd)
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      ver = &msh->ver[i];
+      BytPtr = (char *)&ver->ref;
+      cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+      ver->cod = cod << 53;
+
+      if( (DegTab[i][1] > MaxDeg[1][0])
+      ||  (DegTab[i][2] > MaxDeg[2][0])
+      ||  (DegTab[i][3] > MaxDeg[3][0])
+      ||  (DegTab[i][6] > MaxDeg[6][0]) )
+      {
+         ver->cod |= 1L<<63;
+         msh->HghDeg++;
+
+         for(j=0;j<MAXELE;j++)
+            msh->MaxDeg[j] = MAX(msh->MaxDeg[j], DegTab[i][j]);
+      }
+
+      // Count the number of over connected vertices
+      if( (DegTab[i][1] > MaxDeg[1][1])
+      ||  (DegTab[i][2] > MaxDeg[2][1])
+      ||  (DegTab[i][3] > MaxDeg[3][1])
+      ||  (DegTab[i][6] > MaxDeg[6][1]) )
+      {
+         msh->OvrDeg++;
+      }
+   }
+
+   // Set the right vector size for each kind of element ball
+   for(j=0;j<MAXELE;j++)
+      if(msh->MaxDeg[j])
+         msh->DegVec[j] = pow(2., ceil(log2(msh->MaxDeg[j])));
+}
+#endif
