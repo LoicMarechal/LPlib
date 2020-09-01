@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.60                                  */
+/*                               LPlib V3.61                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 08 2019                                           */
+/*   Last modification: sep 01 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -24,11 +24,15 @@
 #ifdef WIN32
 #include <windows.h>
 #include <sys/timeb.h>
+#else
+#include <unistd.h>
+#include <sys/time.h>
+#endif
+
+#if defined(WIN32) && !defined(NATIVE_WINDOWS)
 #include "winpthreads.h"
 #else
-#include <sys/time.h>
 #include <pthread.h>
-#include <unistd.h>
 #endif
 
 
@@ -44,7 +48,7 @@
 #define MaxPipDep 100
 #define MaxHsh    10
 #define HshBit    16
-#define MaxF77Arg 100
+#define MaxF77Arg 20
 
 enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
@@ -90,8 +94,8 @@ typedef struct
 
 typedef struct PipSct
 {
-   int      idx, NmbDep, DepTab[ MaxPipDep ];
-   void     *prc, *arg;
+   int      idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
+   void     *prc, *arg, *F77ArgTab[ MaxF77Arg ];
    pthread_t pth;
    struct   ParSct *par;
 }PipSct;
@@ -141,7 +145,7 @@ static void *  PthHdl      (void *);
 static WrkSct *NexWrk      (ParSct *, int);
 void           PipSrt      (PipArgSct *);
 static void    CalF77Prc   (itg, itg, int, ParSct *);
-static void    CalF77Pip   (ParSct *, void *);
+static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 
 
@@ -1301,6 +1305,12 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    for(i=0;i<NmbDep;i++)
       NewPip->DepTab[i] = DepTab[i];
 
+   // In case variable arguments where passed through the common LPlib structure
+   // Copy them in the pipeline's own arguments table
+   if(par->NmbF77Arg)
+      for(i=0;i<par->NmbF77Arg;i++)
+         NewPip->F77ArgTab[i] = par->F77ArgTab[i];
+
    // Lock pipe mutex, increment pipe counter
    // and launch the pipe regardless dependencies
    pthread_mutex_lock(&par->PipMtx);
@@ -1324,9 +1334,12 @@ int LaunchPipelineMultiArg(int64_t ParIdx, int NmbDep, int *DepTab,
    va_list ArgLst;
    ParSct *par = (ParSct *)ParIdx;
 
-   if(NmbArg > 20)
+   if(NmbArg > MaxF77Arg)
       return(-1.);
 
+   // Get the variable arguments and store then in the common LPlib structure
+   // This is a temporary storage as the will be copied to the pipeline's own
+   // arguments table after it has been allocated by LaunchPipeline()
    par->NmbF77Arg = NmbArg;
    va_start(ArgLst, NmbArg);
 
@@ -1334,9 +1347,15 @@ int LaunchPipelineMultiArg(int64_t ParIdx, int NmbDep, int *DepTab,
       par->F77ArgTab[i] = va_arg(ArgLst, void *);
 
    va_end(ArgLst);
+
    ret = LaunchPipeline(ParIdx, prc, NULL, NmbDep, DepTab);
+
+   // Clear the temporary arguments table
+   par->NmbF77Arg = 0;
+
    return(ret);
 }
+
 
 /*----------------------------------------------------------------------------*/
 /* Thread handler launching and waitint for user's procedure                  */
@@ -1384,7 +1403,7 @@ static void *PipHdl(void *ptr)
    pthread_mutex_unlock(&par->PipMtx);
 
    if(par->NmbF77Arg)
-      CalF77Pip(par, pip->prc);
+      CalF77Pip(pip, pip->prc);
    else
       prc(pip->arg);
 
@@ -2113,128 +2132,128 @@ static void CalVarArgPrc(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 /* Call a fortran pipeline with 1 to 20 arguments                             */
 /*----------------------------------------------------------------------------*/
 
-static void CalF77Pip(ParSct *par, void *prc)
+static void CalF77Pip(PipSct *pip, void *prc)
 {
-   switch(par->NmbF77Arg)
+   switch(pip->NmbF77Arg)
    {
       case 1 :
       {
          void (*prc1)(DUP(void *, 1)) = (void (*)(DUP(void *, 1)))prc;
-         prc1(ARG(par->F77ArgTab, 1));
+         prc1(ARG(pip->F77ArgTab, 1));
       }break;
 
       case 2 :
       {
          void (*prc1)(DUP(void *, 2)) = (void (*)(DUP(void *, 2)))prc;
-         prc1(ARG(par->F77ArgTab, 2));
+         prc1(ARG(pip->F77ArgTab, 2));
       }break;
 
       case 3 :
       {
          void (*prc1)(DUP(void *, 3)) = (void (*)(DUP(void *, 3)))prc;
-         prc1(ARG(par->F77ArgTab, 3));
+         prc1(ARG(pip->F77ArgTab, 3));
       }break;
 
       case 4 :
       {
          void (*prc1)(DUP(void *, 4)) = (void (*)(DUP(void *, 4)))prc;
-         prc1(ARG(par->F77ArgTab, 4));
+         prc1(ARG(pip->F77ArgTab, 4));
       }break;
 
       case 5 :
       {
          void (*prc1)(DUP(void *, 5)) = (void (*)(DUP(void *, 5)))prc;
-         prc1(ARG(par->F77ArgTab, 5));
+         prc1(ARG(pip->F77ArgTab, 5));
       }break;
 
       case 6 :
       {
          void (*prc1)(DUP(void *, 6)) = (void (*)(DUP(void *, 6)))prc;
-         prc1(ARG(par->F77ArgTab, 6));
+         prc1(ARG(pip->F77ArgTab, 6));
       }break;
 
       case 7 :
       {
          void (*prc1)(DUP(void *, 7)) = (void (*)(DUP(void *, 7)))prc;
-         prc1(ARG(par->F77ArgTab, 7));
+         prc1(ARG(pip->F77ArgTab, 7));
       }break;
 
       case 8 :
       {
          void (*prc1)(DUP(void *, 8)) = (void (*)(DUP(void *, 8)))prc;
-         prc1(ARG(par->F77ArgTab, 8));
+         prc1(ARG(pip->F77ArgTab, 8));
       }break;
 
       case 9 :
       {
          void (*prc1)(DUP(void *, 9)) = (void (*)(DUP(void *, 9)))prc;
-         prc1(ARG(par->F77ArgTab, 9));
+         prc1(ARG(pip->F77ArgTab, 9));
       }break;
 
       case 10 :
       {
          void (*prc1)(DUP(void *, 10)) = (void (*)(DUP(void *, 10)))prc;
-         prc1(ARG(par->F77ArgTab, 10));
+         prc1(ARG(pip->F77ArgTab, 10));
       }break;
 
       case 11 :
       {
          void (*prc1)(DUP(void *, 11)) = (void (*)(DUP(void *, 11)))prc;
-         prc1(ARG(par->F77ArgTab, 11));
+         prc1(ARG(pip->F77ArgTab, 11));
       }break;
 
       case 12 :
       {
          void (*prc1)(DUP(void *, 12)) = (void (*)(DUP(void *, 12)))prc;
-         prc1(ARG(par->F77ArgTab, 12));
+         prc1(ARG(pip->F77ArgTab, 12));
       }break;
 
       case 13 :
       {
          void (*prc1)(DUP(void *, 13)) = (void (*)(DUP(void *, 13)))prc;
-         prc1(ARG(par->F77ArgTab, 13));
+         prc1(ARG(pip->F77ArgTab, 13));
       }break;
 
       case 14 :
       {
          void (*prc1)(DUP(void *, 14)) = (void (*)(DUP(void *, 14)))prc;
-         prc1(ARG(par->F77ArgTab, 14));
+         prc1(ARG(pip->F77ArgTab, 14));
       }break;
 
       case 15 :
       {
          void (*prc1)(DUP(void *, 15)) = (void (*)(DUP(void *, 15)))prc;
-         prc1(ARG(par->F77ArgTab, 15));
+         prc1(ARG(pip->F77ArgTab, 15));
       }break;
 
       case 16 :
       {
          void (*prc1)(DUP(void *, 16)) = (void (*)(DUP(void *, 16)))prc;
-         prc1(ARG(par->F77ArgTab, 16));
+         prc1(ARG(pip->F77ArgTab, 16));
       }break;
 
       case 17 :
       {
          void (*prc1)(DUP(void *, 17)) = (void (*)(DUP(void *, 17)))prc;
-         prc1(ARG(par->F77ArgTab, 17));
+         prc1(ARG(pip->F77ArgTab, 17));
       }break;
 
       case 18 :
       {
          void (*prc1)(DUP(void *, 18)) = (void (*)(DUP(void *, 18)))prc;
-         prc1(ARG(par->F77ArgTab, 18));
+         prc1(ARG(pip->F77ArgTab, 18));
       }break;
 
       case 19 :
       {
          void (*prc1)(DUP(void *, 19)) = (void (*)(DUP(void *, 19)))prc;
-         prc1(ARG(par->F77ArgTab, 19));
+         prc1(ARG(pip->F77ArgTab, 19));
       }break;
 
       case 20 :
       {
          void (*prc1)(DUP(void *, 20)) = (void (*)(DUP(void *, 20)))prc;
-         prc1(ARG(par->F77ArgTab, 20));
+         prc1(ARG(pip->F77ArgTab, 20));
       }break;
    }
 }
