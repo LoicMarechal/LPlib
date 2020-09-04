@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.61                                  */
+/*                               LPlib V3.62                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 01 2020                                           */
+/*   Last modification: sep 04 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,13 +83,16 @@ typedef struct
 
 typedef struct
 {
-   int      idx;
-   char     *ClrAdr;
-   WrkSct   *wrk;
+   int               idx;
+   char              *ClrAdr;
+   size_t            StkSiz;
+   void *            *UsrStk;
+   WrkSct            *wrk;
    pthread_mutex_t   mtx;
    pthread_cond_t    cnd;
    pthread_t         pth;
-   struct   ParSct *par;
+   pthread_attr_t    atr;
+   struct ParSct     *par;
 }PthSct;
 
 typedef struct PipSct
@@ -147,6 +150,7 @@ void           PipSrt      (PipArgSct *);
 static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
+static int64_t IniPar      (int, size_t );
 
 
 /*----------------------------------------------------------------------------*/
@@ -154,6 +158,16 @@ static void    CalVarArgPrc(itg, itg, int, ParSct *);
 /*----------------------------------------------------------------------------*/
 
 int64_t InitParallel(int NmbCpu)
+{
+   return(IniPar(NmbCpu, 0));
+}
+
+int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
+{
+   return(IniPar(NmbCpu, StkSiz));
+}
+
+static int64_t IniPar(int NmbCpu, size_t StkSiz)
 {
    int i;
    int64_t ParIdx;
@@ -208,7 +222,22 @@ int64_t InitParallel(int NmbCpu)
       pth->par = par;
       pthread_mutex_init(&pth->mtx, NULL);
       pthread_cond_init(&pth->cnd, NULL);
-      pthread_create(&pth->pth, NULL, PthHdl, (void *)pth);
+
+      if(StkSiz)
+      {
+         pthread_attr_init(&pth->atr);
+         pth->StkSiz = StkSiz;
+         pth->UsrStk = malloc(pth->StkSiz);
+         pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
+         pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
+         pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
+      }
+      else
+      {
+         pth->StkSiz = 0;
+         pth->UsrStk = NULL;
+         pthread_create(&pth->pth, NULL, PthHdl, (void *)pth);
+      }
    }
 
    // Wait for all threads to be up and wainting
@@ -252,6 +281,9 @@ void StopParallel(int64_t ParIdx)
       pthread_cond_signal(&pth->cnd);
       pthread_mutex_unlock(&pth->mtx);
       pthread_join(pth->pth, NULL);
+
+      if(pth->UsrStk)
+         free(pth->UsrStk);
    }
 
    pthread_mutex_destroy(&par->ParMtx);
