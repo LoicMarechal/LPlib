@@ -9,27 +9,28 @@ A serial program can be easily parallelized step by step.
 It requires no knowledge on parallel programing.  
 Handles transparently concurrent indirect memory writes and dynamics data structures.
 
-## Build for *Linux* or *macOS*
-Simply follow these steps:
-- unarchive the ZIP file
-- `cd LPlib-master`
-- `mkdir build`
-- `cd build`
-- `cmake ..`
-- `cmake --build . --target install`
+## Build
 
-## Build for *Windows*
+### Prerequisites for *Linux* or *macOS*
+- Install [CMake](https://cmake.org/files/v3.7/cmake-3.7.2-win64-x64.msi)
+- A valid C99 compiler
+- Open a shell window
+
+### Prerequisites for *Windows*
 - You first need to install [CMake](https://cmake.org/files/v3.7/cmake-3.7.2-win64-x64.msi). Do not forget to choose "add cmake to the path for all users", from the install panel.
 - Then you need a valid C compiler like the free [Visual Studio Community 2019](https://www.visualstudio.com/vs/visual-studio-express/)
+- Open the x64 Native Tools Command Prompt for VS (or x86 if you need to build a 32-bit version)
+
+### Build commands for all platforms
 - unarchive the ZIP file
-- open the windows shell
 - `cd LPlib-master`
 - `mkdir build`
 - `cd build`
 - `cmake ..`
 - `cmake --build . --target INSTALL`
 
-Optionally, you may download some sample meshes to run the examples:
+### Optional steps
+You may download some sample meshes to run the examples:
 - you need to install the [libMeshb](https://github.com/LoicMarechal/libMeshb) from GitHub
 - manually download files from the *Git LFS* repository: [sample files](sample_meshes/)
 - move them into /opt/LPlib/sample_meshes/
