@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 04 2020                                           */
+/*   Last modification: sep 25 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -21,7 +21,7 @@
 #include <stdarg.h>
 #include "lplib3.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #include <sys/timeb.h>
 #else
@@ -29,7 +29,7 @@
 #include <sys/time.h>
 #endif
 
-#if defined(WIN32) && !defined(NATIVE_WINDOWS)
+#if defined(_WIN32) && !defined(NATIVE_WINDOWS)
 #include "winpthreads.h"
 #else
 #include <pthread.h>
@@ -312,7 +312,7 @@ void StopParallel(int64_t ParIdx)
 
 int GetNumberOfCores()
 {
-#ifdef WIN32
+#ifdef _WIN32
    SYSTEM_INFO info;
    GetSystemInfo(&info);
    return(info.dwNumberOfProcessors);
@@ -1420,7 +1420,7 @@ static void *PipHdl(void *ptr)
       if(!RunFlg)
       {
          pthread_mutex_unlock(&par->PipMtx);
-#ifdef WIN32
+#ifdef _WIN32
          Sleep(1);
 #else
          usleep(1000);
@@ -1468,7 +1468,7 @@ void WaitPipeline(int64_t ParIdx)
       pthread_mutex_lock(&par->PipMtx);
       PenPip = par->PenPip;
       pthread_mutex_unlock(&par->PipMtx);
-#ifdef WIN32
+#ifdef _WIN32
       Sleep(1);
 #else
       usleep(1000);
@@ -1796,7 +1796,7 @@ int HilbertRenumbering2D(  int64_t ParIdx, itg NmbLin, double box[4],
 
 double GetWallClock()
 {
-#ifdef WIN32
+#ifdef _WIN32
    struct __timeb64 tb;
    _ftime64(&tb);
    return((double)tb.time + (double)tb.millitm/1000.);

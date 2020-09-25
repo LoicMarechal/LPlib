@@ -12,21 +12,21 @@ project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C
 include (CheckLanguage)
 check_language (Fortran)
 if(CMAKE_Fortran_COMPILER)
-  enable_language(Fortran)
-  if (CMAKE_Fortran_COMPILER_ID STREQUAL GNU)
-     set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -std=legacy")
-  endif ()
+   enable_language(Fortran)
+   if (CMAKE_Fortran_COMPILER_ID STREQUAL GNU)
+      set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -std=legacy")
+   endif ()
 endif()
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif ()
 
-if (WIN32)
-   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWIN32")
-else ()
-   if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-     set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/local" CACHE PATH "..." FORCE)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+   if (WIN32)
+      set(CMAKE_INSTALL_PREFIX "$ENV{HOMEPATH}/local" CACHE PATH "..." FORCE)
+   else ()
+      set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/local" CACHE PATH "..." FORCE)
    endif()
 endif ()
 
@@ -60,13 +60,15 @@ install (DIRECTORY sample_meshes DESTINATION share/LPlib)
 # SET PACKAGE AND DEPLOYMENT VARIABLES
 ######################################
 
-include (InstallRequiredSystemLibraries)
-set (CPACK_GENERATOR TXZ)
-set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/copyright.txt)
-set (CPACK_PACKAGE_VERSION_MAJOR ${LPlib_VERSION_MAJOR})
-set (CPACK_PACKAGE_VERSION_MINOR ${LPlib_VERSION_MINOR})
-set(CPACK_COMPONENTS_ALL applications examples libraries headers)
-include (CPack)
+if (NOT WIN32)
+   include (InstallRequiredSystemLibraries)
+   set (CPACK_GENERATOR TXZ)
+   set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/copyright.txt)
+   set (CPACK_PACKAGE_VERSION_MAJOR ${LPlib_VERSION_MAJOR})
+   set (CPACK_PACKAGE_VERSION_MINOR ${LPlib_VERSION_MINOR})
+   set(CPACK_COMPONENTS_ALL applications examples libraries headers)
+   include (CPack)
+endif ()
 
 
 ######################################
