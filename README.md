@@ -27,7 +27,7 @@ Handles transparently concurrent indirect memory writes and dynamics data struct
 - `mkdir build`
 - `cd build`
 - `cmake ..`
-- `cmake --build . --target INSTALL`
+- `cmake --build . --target install`
 
 ### Optional steps
 You may download some sample meshes to run the examples:

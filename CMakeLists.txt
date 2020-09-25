@@ -3,7 +3,7 @@
 # GLOBAL CONFIGURATION VARIABLES
 ################################
 
-cmake_minimum_required (VERSION 3.0.1)
+cmake_minimum_required (VERSION 3.7.2)
 set (LPlib_VERSION_MAJOR 3)
 set (LPlib_VERSION_MINOR 60)
 
