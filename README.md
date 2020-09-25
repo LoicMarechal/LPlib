@@ -26,7 +26,7 @@ Simply follow these steps:
 - `cd LPlib-master`
 - `mkdir build`
 - `cd build`
-- `cmake -DCMAKE_INSTALL_PREFIX=%HOMEPATH%\local ..\`
+- `cmake ..`
 - `cmake --build . --target INSTALL`
 
 Optionally, you may download some sample meshes to run the examples:

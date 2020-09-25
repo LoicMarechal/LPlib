@@ -60,7 +60,7 @@ install (DIRECTORY sample_meshes DESTINATION share/LPlib)
 # SET PACKAGE AND DEPLOYMENT VARIABLES
 ######################################
 
-if (NOT WIN32)
+if (CPACK)
    include (InstallRequiredSystemLibraries)
    set (CPACK_GENERATOR TXZ)
    set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/copyright.txt)
