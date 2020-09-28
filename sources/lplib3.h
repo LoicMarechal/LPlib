@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.60                                  */
+/*                               LPlib V3.62                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: apr 11 2019                                           */
+/*   Last modification: sep 04 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -44,6 +44,7 @@ double   GetWallClock            ();
 int      HilbertRenumbering      (int64_t, itg, double [6], double (*)[3], uint64_t (*)[2]);
 int      HilbertRenumbering2D    (int64_t, itg, double [4], double (*)[2], uint64_t (*)[2]);
 int64_t  InitParallel            (int);
+int64_t  InitParallelAttr        (int, size_t);
 float    LaunchParallel          (int64_t, int, int, void *, void *);
 float    LaunchParallelMultiArg  (int64_t, int, int, void *, int, ...);
 int      LaunchPipeline          (int64_t, void *, void *, int, int *);
