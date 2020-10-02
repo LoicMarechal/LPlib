@@ -6,8 +6,7 @@
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*   Description:       Handles threads, scheduling                           */
-/*                      & dependencies                                        */
+/*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
 /*   Last modification: sep 04 2020                                           */

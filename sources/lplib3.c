@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 25 2020                                           */
+/*   Last modification: oct 02 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -60,6 +60,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 #include <math.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 
 
 /*----------------------------------------------------------------------------*/
@@ -97,16 +98,20 @@ typedef struct
 
 typedef struct PipSct
 {
-   int      idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
-   void     *prc, *arg, *F77ArgTab[ MaxF77Arg ];
-   pthread_t pth;
-   struct   ParSct *par;
+   int            idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
+   void           *prc, *arg, *F77ArgTab[ MaxF77Arg ];
+   size_t         StkSiz;
+   void           *UsrStk;
+   pthread_attr_t atr;
+   pthread_t      pth;
+   struct ParSct  *par;
 }PipSct;
 
 typedef struct ParSct
 {
    int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
    int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   size_t   StkSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
    void     (*prc)(itg, itg, itg, void *), *arg;
@@ -164,6 +169,9 @@ int64_t InitParallel(int NmbCpu)
 
 int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
 {
+   if(StkSiz < PTHREAD_STACK_MIN)
+      StkSiz = PTHREAD_STACK_MIN;
+
    return(IniPar(NmbCpu, StkSiz));
 }
 
@@ -202,6 +210,7 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    par->NmbCpu = NmbCpu;
    par->WrkCpt = par->NmbPip = par->PenPip = par->RunPip = 0;
    par->SizMul = 2;
+   par->StkSiz = StkSiz;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -1348,7 +1357,19 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    pthread_mutex_lock(&par->PipMtx);
    NewPip->idx = ++par->NmbPip;
    par->PenPip++;
-   pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
+
+   if(par->StkSiz)
+   {
+      pthread_attr_init(&NewPip->atr);
+      NewPip->StkSiz = par->StkSiz;
+      NewPip->UsrStk = malloc(par->StkSiz);
+      pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
+      pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
+      pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
+   }
+   else
+      pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
+
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NewPip->idx);
