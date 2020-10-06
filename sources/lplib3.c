@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.62                                  */
+/*                               LPlib V3.63                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 02 2020                                           */
+/*   Last modification: oct 06 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -42,6 +42,7 @@
 
 #define MaxLibPar 10
 #define MaxTyp    100
+#define NmbItlBlk 16
 #define NmbSmlBlk 128
 #define NmbDepBlk 512
 #define MaxTotPip 65536
@@ -69,7 +70,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   itg      BegIdx, EndIdx;
+   itg      BegIdx, EndIdx, ItlTab[ NmbItlBlk ][2];
    int      NmbDep, *DepWrdTab;
    struct   WrkSct *pre, *nex;
 }WrkSct;
@@ -504,6 +505,7 @@ float LaunchParallelMultiArg( int64_t ParIdx, int TypIdx1, int TypIdx2,
 
 static void *PthHdl(void *ptr)
 {
+   itg i, beg, end;
    PthSct *pth = (PthSct *)ptr;
    ParSct *par = pth->par;
 
@@ -524,13 +526,23 @@ static void *PthHdl(void *ptr)
       {
          case RunBigWrk :
          {
-            // Launch a single big wp and signal completion to the scheduler
-            if(par->NmbF77Arg)
-               CalF77Prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
-            else if(par->NmbVarArg)
-               CalVarArgPrc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
-            else
-               par->prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par->arg);
+            // Loop over the interleaved blocks
+            for(i=0;i<NmbItlBlk;i++)
+            {
+               beg = pth->wrk->ItlTab[i][0];
+               end = pth->wrk->ItlTab[i][1];
+
+               if(!beg || !end)
+                  break;
+
+               // Launch a single big wp and signal completion to the scheduler
+               if(par->NmbF77Arg)
+                  CalF77Prc(beg, end, pth->idx, par);
+               else if(par->NmbVarArg)
+                  CalVarArgPrc(beg, end, pth->idx, par);
+               else
+                  par->prc(beg, end, pth->idx, par->arg);
+            }
 
             pthread_mutex_lock(&par->ParMtx);
             par->WrkCpt++;
@@ -664,9 +676,10 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 
 int NewType(int64_t ParIdx, itg NmbLin)
 {
-   int i, TypIdx=0, idx;
-   TypSct *typ;
-   ParSct *par = (ParSct *)ParIdx;
+   int      i, j, TypIdx=0, idx;
+   double   ItlSiz, ItlIdx;
+   TypSct   *typ;
+   ParSct   *par = (ParSct *)ParIdx;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -721,7 +734,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
    // Compute the size of big work-packages
-   if(NmbLin >= par->NmbCpu)
+   if(NmbLin >= NmbItlBlk * par->NmbCpu)
    {
       typ->BigWrkSiz = NmbLin / par->NmbCpu;
       typ->NmbBigWrk = par->NmbCpu;
@@ -747,6 +760,28 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
    typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
 
+   // Set big WP interleaved indices
+   ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
+   ItlIdx = 0.;
+
+   if(ItlSiz >= 1.)
+   {
+      for(j=0;j<NmbItlBlk;j++)
+         for(i=0;i<par->NmbCpu;i++)
+         {
+            typ->BigWrkTab[i].ItlTab[j][0] = (int64_t)(ItlIdx + 1.);
+            typ->BigWrkTab[i].ItlTab[j][1] = (int64_t)(ItlIdx + ItlSiz);
+            ItlIdx += ItlSiz;
+         }
+
+      typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
+   }
+   else
+   {
+      typ->BigWrkTab[0].ItlTab[0][0] = 1;
+      typ->BigWrkTab[0].ItlTab[0][1] = NmbLin;
+   }
+
    return(TypIdx);
 }
 
@@ -757,9 +792,10 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   int i, idx;
-   TypSct *typ;
-   ParSct *par = (ParSct *)ParIdx;
+   int      i, j, idx;
+   double   ItlSiz, ItlIdx;
+   TypSct   *typ;
+   ParSct   *par = (ParSct *)ParIdx;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -813,6 +849,28 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
    }
 
    typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
+
+   // Set big WP interleaved indices
+   ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
+   ItlIdx = 0.;
+
+   if(ItlSiz >= 1.)
+   {
+      for(j=0;j<NmbItlBlk;j++)
+         for(i=0;i<par->NmbCpu;i++)
+         {
+            typ->BigWrkTab[i].ItlTab[j][0] = (int64_t)(ItlIdx + 1.);
+            typ->BigWrkTab[i].ItlTab[j][1] = (int64_t)(ItlIdx + ItlSiz);
+            ItlIdx += ItlSiz;
+         }
+
+      typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
+   }
+   else
+   {
+      typ->BigWrkTab[0].ItlTab[0][0] = 1;
+      typ->BigWrkTab[0].ItlTab[0][1] = NmbLin;
+   }
 
    return(TypIdx);
 }
