@@ -42,7 +42,7 @@
 
 #define MaxLibPar 10
 #define MaxTyp    100
-#define NmbItlBlk 16
+#define NmbItlBlk 32
 #define NmbSmlBlk 128
 #define NmbDepBlk 512
 #define MaxTotPip 65536
@@ -78,7 +78,7 @@ typedef struct WrkSct
 typedef struct
 {
    itg      NmbLin, MaxNmbLin;
-   int      NmbSmlWrk, NmbBigWrk, SmlWrkSiz, BigWrkSiz, DepWrkSiz;
+   int      NmbSmlWrk, SmlWrkSiz, DepWrkSiz;
    int      NmbDepWrd, *DepWrdMat, *RunDepTab;
    WrkSct   *SmlWrkTab, *BigWrkTab;
 }TypSct;
@@ -444,13 +444,13 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       par->typ2 = NULL;
       par->WrkCpt = 0;
 
-      for(i=0;i<typ1->NmbBigWrk;i++)
+      for(i=0;i<par->NmbCpu;i++)
       {
          pth = &par->PthTab[i];
          pth->wrk = &typ1->BigWrkTab[i];
       }
 
-      for(i=0;i<typ1->NmbBigWrk;i++)
+      for(i=0;i<par->NmbCpu;i++)
       {
          pth = &par->PthTab[i];
          pthread_mutex_lock(&pth->mtx);
@@ -532,8 +532,8 @@ static void *PthHdl(void *ptr)
                beg = pth->wrk->ItlTab[i][0];
                end = pth->wrk->ItlTab[i][1];
 
-               if(!beg || !end)
-                  break;
+               if(!beg || !end || (end < beg))
+                  continue;
 
                // Launch a single big wp and signal completion to the scheduler
                if(par->NmbF77Arg)
@@ -547,7 +547,7 @@ static void *PthHdl(void *ptr)
             pthread_mutex_lock(&par->ParMtx);
             par->WrkCpt++;
 
-            if(par->WrkCpt >= par->typ1->NmbBigWrk)
+            if(par->WrkCpt >= par->NmbCpu)
                pthread_cond_signal(&par->ParCnd);
 
             pthread_mutex_unlock(&par->ParMtx);
@@ -676,8 +676,9 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 
 int NewType(int64_t ParIdx, itg NmbLin)
 {
-   int      i, j, TypIdx=0, idx;
-   double   ItlSiz, ItlIdx;
+   int      TypIdx = 0;
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ NmbItlBlk ] = {0};
+   double   ItlSiz, ItlIdx = 0.;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -734,53 +735,35 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
    // Compute the size of big work-packages
-   if(NmbLin >= NmbItlBlk * par->NmbCpu)
-   {
-      typ->BigWrkSiz = NmbLin / par->NmbCpu;
-      typ->NmbBigWrk = par->NmbCpu;
-   }
-   else
-   {
-      typ->BigWrkSiz = NmbLin;
-      typ->NmbBigWrk = 1;
-   }
-
-   if(!(typ->BigWrkTab = calloc(typ->NmbBigWrk * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->BigWrkTab = calloc(par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
-
-   // Set big work-packages
-   idx = 0;
-
-   for(i=0;i<typ->NmbBigWrk;i++)
-   {
-      typ->BigWrkTab[i].BegIdx = idx + 1;
-      typ->BigWrkTab[i].EndIdx = idx + typ->BigWrkSiz;
-      idx += typ->BigWrkSiz;
-   }
-
-   typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
 
    // Set big WP interleaved indices
    ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
-   ItlIdx = 0.;
 
-   if(ItlSiz >= 1.)
-   {
+   for(i=0;i<par->NmbCpu;i++)
       for(j=0;j<NmbItlBlk;j++)
-         for(i=0;i<par->NmbCpu;i++)
-         {
-            typ->BigWrkTab[i].ItlTab[j][0] = (int64_t)(ItlIdx + 1.);
-            typ->BigWrkTab[i].ItlTab[j][1] = (int64_t)(ItlIdx + ItlSiz);
-            ItlIdx += ItlSiz;
-         }
+      {
+         BegIdx = (int64_t)(ItlIdx + 1.);
+         EndIdx = (int64_t)(ItlIdx + ItlSiz);
+         ItlIdx += ItlSiz;
 
-      typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
-   }
-   else
-   {
-      typ->BigWrkTab[0].ItlTab[0][0] = 1;
-      typ->BigWrkTab[0].ItlTab[0][1] = NmbLin;
-   }
+         if(BegIdx <= EndIdx)
+         {
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][0] = BegIdx;
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][1] = EndIdx;
+            PagIdx[ CpuIdx ]++;
+            CpuIdx++;
+            CpuIdx = CpuIdx % par->NmbCpu;
+         }
+      }
+
+   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
+
+   /*for(i=0;i<par->NmbCpu;i++)
+      for(j=0;j<NmbItlBlk;j++)
+         if(typ->BigWrkTab[i].ItlTab[j][0])
+            printf("%d/%d : %d->%d\n",i,j,typ->BigWrkTab[i].ItlTab[j][0],typ->BigWrkTab[i].ItlTab[j][1]);*/
 
    return(TypIdx);
 }
@@ -792,8 +775,8 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   int      i, j, idx;
-   double   ItlSiz, ItlIdx;
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ NmbItlBlk ] = {0};
+   double   ItlSiz, ItlIdx = 0.;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -826,51 +809,27 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
-   // Compute the size of big work-packages
-   if(NmbLin >= par->NmbCpu)
-   {
-      typ->BigWrkSiz = NmbLin / par->NmbCpu;
-      typ->NmbBigWrk = par->NmbCpu;
-   }
-   else
-   {
-      typ->BigWrkSiz = NmbLin;
-      typ->NmbBigWrk = 1;
-   }
-
-   // Set big work-packages
-   idx = 0;
-
-   for(i=0;i<typ->NmbBigWrk;i++)
-   {
-      typ->BigWrkTab[i].BegIdx = idx + 1;
-      typ->BigWrkTab[i].EndIdx = idx + typ->BigWrkSiz;
-      idx += typ->BigWrkSiz;
-   }
-
-   typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
-
    // Set big WP interleaved indices
    ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
-   ItlIdx = 0.;
 
-   if(ItlSiz >= 1.)
-   {
+   for(i=0;i<par->NmbCpu;i++)
       for(j=0;j<NmbItlBlk;j++)
-         for(i=0;i<par->NmbCpu;i++)
-         {
-            typ->BigWrkTab[i].ItlTab[j][0] = (int64_t)(ItlIdx + 1.);
-            typ->BigWrkTab[i].ItlTab[j][1] = (int64_t)(ItlIdx + ItlSiz);
-            ItlIdx += ItlSiz;
-         }
+      {
+         BegIdx = (int64_t)(ItlIdx + 1.);
+         EndIdx = (int64_t)(ItlIdx + ItlSiz);
+         ItlIdx += ItlSiz;
 
-      typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
-   }
-   else
-   {
-      typ->BigWrkTab[0].ItlTab[0][0] = 1;
-      typ->BigWrkTab[0].ItlTab[0][1] = NmbLin;
-   }
+         if(BegIdx <= EndIdx)
+         {
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][0] = BegIdx;
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][1] = EndIdx;
+            PagIdx[ CpuIdx ]++;
+            CpuIdx++;
+            CpuIdx = CpuIdx % par->NmbCpu;
+         }
+      }
+
+   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
 
    return(TypIdx);
 }
