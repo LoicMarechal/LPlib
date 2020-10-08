@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 06 2020                                           */
+/*   Last modification: oct 08 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -686,7 +686,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
    if(!ParIdx)
       return(0);
 
-   if(NmbLin < par->NmbCpu)
+   if(NmbLin <= 0)
       return(0);
 
    // Search for a free type structure
@@ -742,6 +742,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
    ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
 
    for(i=0;i<par->NmbCpu;i++)
+   {
       for(j=0;j<NmbItlBlk;j++)
       {
          BegIdx = (int64_t)(ItlIdx + 1.);
@@ -757,6 +758,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
             CpuIdx = CpuIdx % par->NmbCpu;
          }
       }
+   }
 
    typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
 
