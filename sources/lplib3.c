@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 08 2020                                           */
+/*   Last modification: oct 13 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -238,8 +238,7 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
          pth->UsrStk = malloc(pth->StkSiz);
-         pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
-         pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
+         pthread_attr_setstack(&pth->atr, pth->UsrStk, pth->StkSiz);
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
       }
       else
@@ -1382,8 +1381,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       pthread_attr_init(&NewPip->atr);
       NewPip->StkSiz = par->StkSiz;
       NewPip->UsrStk = malloc(par->StkSiz);
-      pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
-      pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
+      pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
       pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
    }
    else
