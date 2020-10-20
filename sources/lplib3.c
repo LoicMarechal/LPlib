@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 13 2020                                           */
+/*   Last modification: oct 19 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1367,8 +1367,12 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    // In case variable arguments where passed through the common LPlib structure
    // Copy them in the pipeline's own arguments table
    if(par->NmbF77Arg)
+   {
+      NewPip->NmbF77Arg = par->NmbF77Arg;
+
       for(i=0;i<par->NmbF77Arg;i++)
          NewPip->F77ArgTab[i] = par->F77ArgTab[i];
+   }
 
    // Lock pipe mutex, increment pipe counter
    // and launch the pipe regardless dependencies
@@ -1381,7 +1385,9 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       pthread_attr_init(&NewPip->atr);
       NewPip->StkSiz = par->StkSiz;
       NewPip->UsrStk = malloc(par->StkSiz);
-      pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+      pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
+      pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
+      //pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
       pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
    }
    else
@@ -1472,7 +1478,7 @@ static void *PipHdl(void *ptr)
 
    pthread_mutex_unlock(&par->PipMtx);
 
-   if(par->NmbF77Arg)
+   if(pip->NmbF77Arg)
       CalF77Pip(pip, pip->prc);
    else
       prc(pip->arg);
