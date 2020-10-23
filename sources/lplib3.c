@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 19 2020                                           */
+/*   Last modification: oct 23 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -70,7 +70,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   itg      BegIdx, EndIdx, ItlTab[ NmbItlBlk ][2];
+   itg      BegIdx, EndIdx, ItlTab[ MaxPth ][2];
    int      NmbDep, *DepWrdTab;
    struct   WrkSct *pre, *nex;
 }WrkSct;
@@ -115,7 +115,7 @@ typedef struct ParSct
    size_t   StkSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
-   void     (*prc)(itg, itg, itg, void *), *arg;
+   void     (*prc)(itg, itg, int, void *), *arg;
    pthread_cond_t ParCnd, PipCnd;
    pthread_mutex_t ParMtx, PipMtx;
    pthread_t PipPth;
@@ -238,7 +238,8 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
          pth->UsrStk = malloc(pth->StkSiz);
-         pthread_attr_setstack(&pth->atr, pth->UsrStk, pth->StkSiz);
+         pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
+         pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
       }
       else
@@ -366,7 +367,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunSmlWrk;
-      par->prc = (void (*)(itg, itg, itg, void *))prc;
+      par->prc = (void (*)(itg, itg, int, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = typ2 = &par->TypTab[ TypIdx2 ];
@@ -437,7 +438,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunBigWrk;
-      par->prc = (void (*)(itg, itg, itg, void *))prc;
+      par->prc = (void (*)(itg, itg, int, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = NULL;
@@ -676,7 +677,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ NmbItlBlk ] = {0};
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
    double   ItlSiz, ItlIdx = 0.;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
@@ -761,11 +762,6 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
    typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
 
-   /*for(i=0;i<par->NmbCpu;i++)
-      for(j=0;j<NmbItlBlk;j++)
-         if(typ->BigWrkTab[i].ItlTab[j][0])
-            printf("%d/%d : %d->%d\n",i,j,typ->BigWrkTab[i].ItlTab[j][0],typ->BigWrkTab[i].ItlTab[j][1]);*/
-
    return(TypIdx);
 }
 
@@ -776,7 +772,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ NmbItlBlk ] = {0};
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
    double   ItlSiz, ItlIdx = 0.;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
