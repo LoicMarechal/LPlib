@@ -1671,27 +1671,27 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    {
       for(i=0;i<1<<HshBit;i++)
          stat[i] = 0;
-   
+
       for(i=1;i<=NmbLin;i++)
          stat[ idx[i][0] >> (64 - HshBit) ]++;
-   
+
       for(i=0;i<MaxPth;i++)
          bound[i][0] = bound[i][1] = 0;
-   
+
       NmbPip = cpt = sum = 0;
    
       for(i=0;i<1<<HshBit;i++)
       {
          bound[ NmbPip ][0] += stat[i];
          cpt++;
-   
+
          if(bound[ NmbPip ][0] >= (size_t)NmbLin / par->NmbCpu)
          {
             bound[ NmbPip ][1] = cpt << (64 - HshBit);
             NmbPip++;
          }
       }
-   
+
       bound[ NmbPip ][1] = 1LL<<63;
    
       NmbByt = NmbLin+1;
@@ -1707,13 +1707,13 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
          cpt = bound[i][0];
          bound[i][0] = sum;
          sum += cpt;
-   
+
          PipArg[i].base = &tab[ bound[i][0] ];
          PipArg[i].nel = cpt;
          PipArg[i].width = 2 * sizeof(int64_t);
          PipArg[i].compar = CmpPrc;
       }
-   
+
       for(i=1;i<=NmbLin;i++)
          for(j=0;j<=NmbPip;j++)
             if(idx[i][0] <= bound[j][1])
@@ -1723,18 +1723,18 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                bound[j][0]++;
                break;
             }
-   
+
       for(i=0;i<NmbPip;i++)
          LaunchPipeline(ParIdx, PipSrt, &PipArg[i], 0, NULL);
-   
+
       WaitPipeline(ParIdx);
-   
+
       for(i=1;i<=NmbLin;i++)
       {
          idx[i][1] = tab[i-1][1];
          idx[ tab[i-1][1] ][0] = i;
       }
-   
+
       free(tab);
    }
 
