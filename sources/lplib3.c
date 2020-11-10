@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 23 2020                                           */
+/*   Last modification: nov 10 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1349,7 +1349,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       return(0);
 
    // Allocate and setup a new pipe
-   if(!(NewPip = malloc(sizeof(PipSct))))
+   if(!(NewPip = calloc(1, sizeof(PipSct))))
       return(0);
 
    NewPip->prc = prc;
