@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.63                                  */
+/*                               LPlib V3.70                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 04 2020                                           */
+/*   Last modification: dec 03 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -58,6 +58,7 @@ void     UpdateDependencyFast    (int64_t, int, int, itg *, int, int, itg *);
 void     WaitPipeline            (int64_t);
 int      GetBlkIdx               (int64_t, int, int);
 int      ChkBlkDep               (int64_t, int, int, int);
+int      SetExtendedAttributes   (int64_t , ...);
 
 
 /*----------------------------------------------------------------------------*/
@@ -65,3 +66,11 @@ int      ChkBlkDep               (int64_t, int, int, int);
 /*----------------------------------------------------------------------------*/
 
 #define MaxPth 1024
+
+enum ArgAtr {
+   SetInterleavingFactor = 1,
+   SetInterleavingSize,
+   DisableInterleaving,
+   EnableBlockSorting,
+   DisableBlockSorting
+};

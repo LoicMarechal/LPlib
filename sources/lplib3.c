@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.63                                  */
+/*                               LPlib V3.70                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: nov 10 2020                                           */
+/*   Last modification: dec 03 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -42,7 +42,6 @@
 
 #define MaxLibPar 10
 #define MaxTyp    100
-#define NmbItlBlk 32
 #define NmbSmlBlk 128
 #define NmbDepBlk 512
 #define MaxTotPip 65536
@@ -112,6 +111,7 @@ typedef struct ParSct
 {
    int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
    int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int      WrkSizSrt, NmbItlBlk, ItlBlkSiz;
    size_t   StkSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
@@ -157,6 +157,7 @@ static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 static int64_t IniPar      (int, size_t );
+static void    SetItlBlk   (ParSct *, TypSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -212,6 +213,8 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    par->WrkCpt = par->NmbPip = par->PenPip = par->RunPip = 0;
    par->SizMul = 2;
    par->StkSiz = StkSiz;
+   par->NmbItlBlk = 1;
+   par->WrkSizSrt = 1;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -337,6 +340,85 @@ int GetNumberOfCores()
 
 
 /*----------------------------------------------------------------------------*/
+/* Set extra attributes to fine tune the blocks processing order              */
+/*----------------------------------------------------------------------------*/
+
+int SetExtendedAttributes(int64_t ParIdx, ...)
+{
+   int NmbArg = 0, ArgCod, ArgVal;
+   ParSct *par = (ParSct *)ParIdx;
+   va_list ArgLst;
+
+   // Attributes cannot be modified the a prallel loop is running
+   if(par->typ1)
+      return(0);
+
+   // Read the argument list that must be terminated by a zero
+   va_start(ArgLst, ParIdx);
+
+   do
+   {
+      ArgCod = va_arg(ArgLst, int);
+
+      switch(ArgCod)
+      {
+         // Set the number of interleaved blocks in independant loops
+         case SetInterleavingFactor :
+         {
+            ArgVal = va_arg(ArgLst, int);
+
+            if(ArgVal > 0)
+            {
+               par->NmbItlBlk = ArgVal;
+               par->ItlBlkSiz = 0;
+               NmbArg++;
+            }
+         }break;
+
+         // Set the interleaved blocks size in independant loops
+         case SetInterleavingSize :
+         {
+            ArgVal = va_arg(ArgLst, int);
+
+            if(ArgVal > 0)
+            {
+               par->NmbItlBlk = 0;
+               par->ItlBlkSiz = ArgVal;
+               NmbArg++;
+            }
+         }break;
+
+         // Desable blocks interleaving (default)
+         case DisableInterleaving :
+         {
+            par->NmbItlBlk = 1;
+            par->ItlBlkSiz = 0;
+            NmbArg++;
+         }break;
+
+         // Sort depedancy-loop WP through their number of dependencies (default)
+         case EnableBlockSorting :
+         {
+            par->WrkSizSrt = 1;
+            NmbArg++;
+         }break;
+
+         // Disable WP sorting: it lowers concurrency but enhances cache reuse
+         case DisableBlockSorting :
+         {
+            par->WrkSizSrt = 0;
+            NmbArg++;
+         }break;
+      }
+   }while(ArgCod);
+
+   va_end(ArgLst);
+
+   return(NmbArg);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Launch the loop prc on typ1 element depending on typ2                      */
 /*----------------------------------------------------------------------------*/
 
@@ -344,6 +426,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
    int i;
+   float acc;
    PthSct *pth;
    ParSct *par = (ParSct *)ParIdx;
    TypSct *typ1, *typ2 = NULL;
@@ -392,9 +475,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       typ1->SmlWrkTab[0].pre = typ1->SmlWrkTab[ typ1->NmbSmlWrk - 1 ].nex = NULL;
 
-      /* Start the main loop: 
-         wake up threads and wait for completion or blocked threads */
-
+      // Main loop: wake up threads and wait for completion or blocked threads
       do
       {
          // Search for some idle threads
@@ -429,8 +510,8 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       pthread_mutex_unlock(&par->ParMtx);
 
-      // Return the average speedup
-      return(par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.);
+      // Compute the average concurrency factor
+      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.;
    }
    else
    {
@@ -450,6 +531,9 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
          pth->wrk = &typ1->BigWrkTab[i];
       }
 
+      // Update block interleaving according to the current attributes
+      SetItlBlk(par, typ1);
+
       for(i=0;i<par->NmbCpu;i++)
       {
          pth = &par->PthTab[i];
@@ -462,9 +546,15 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       pthread_mutex_unlock(&par->ParMtx);
 
-      // Return the average speedup
-      return(par->NmbCpu);
+      // Arbitrary set the average concurrency factor
+      acc = par->NmbCpu;
    }
+
+   // Clear the main datatyp loop to indicate that no LaunchParallel is running
+   par->typ1 = 0;
+
+   // Return the concurrency factor
+   return(acc);
 }
 
 
@@ -527,7 +617,7 @@ static void *PthHdl(void *ptr)
          case RunBigWrk :
          {
             // Loop over the interleaved blocks
-            for(i=0;i<NmbItlBlk;i++)
+            for(i=0;i<par->NmbItlBlk;i++)
             {
                beg = pth->wrk->ItlTab[i][0];
                end = pth->wrk->ItlTab[i][1];
@@ -677,8 +767,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
-   double   ItlSiz, ItlIdx = 0.;
+   itg      i, j, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -738,30 +827,6 @@ int NewType(int64_t ParIdx, itg NmbLin)
    if(!(typ->BigWrkTab = calloc(par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
 
-   // Set big WP interleaved indices
-   ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
-
-   for(i=0;i<par->NmbCpu;i++)
-   {
-      for(j=0;j<NmbItlBlk;j++)
-      {
-         BegIdx = (int64_t)(ItlIdx + 1.);
-         EndIdx = (int64_t)(ItlIdx + ItlSiz);
-         ItlIdx += ItlSiz;
-
-         if(BegIdx <= EndIdx)
-         {
-            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][0] = BegIdx;
-            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][1] = EndIdx;
-            PagIdx[ CpuIdx ]++;
-            CpuIdx++;
-            CpuIdx = CpuIdx % par->NmbCpu;
-         }
-      }
-   }
-
-   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
-
    return(TypIdx);
 }
 
@@ -772,8 +837,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
-   double   ItlSiz, ItlIdx = 0.;
+   itg      i, j, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -806,11 +870,36 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
-   // Set big WP interleaved indices
-   ItlSiz = (double)NmbLin / (double)(NmbItlBlk * par->NmbCpu);
+   return(TypIdx);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set big work blocks interleaving                                           */
+/*----------------------------------------------------------------------------*/
+
+static void SetItlBlk(ParSct *par, TypSct *typ)
+{
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
+   double   ItlSiz, ItlIdx = 0.;
+
+   // Set big WP interleaved indices and block sizes if requested
+   if(par->NmbItlBlk)
+      ItlSiz = (double)typ->NmbLin / (double)(par->NmbItlBlk * par->NmbCpu);
+   else if(par->ItlBlkSiz)
+   {
+      par->NmbItlBlk = (double)typ->NmbLin / (double)(par->ItlBlkSiz * par->NmbCpu);
+      ItlSiz = (double)par->ItlBlkSiz;
+   }
+   else
+   {
+      par->NmbItlBlk = 1;
+      ItlSiz = (double)typ->NmbLin / (double)(par->NmbCpu);
+   }
 
    for(i=0;i<par->NmbCpu;i++)
-      for(j=0;j<NmbItlBlk;j++)
+   {
+      for(j=0;j<par->NmbItlBlk;j++)
       {
          BegIdx = (int64_t)(ItlIdx + 1.);
          EndIdx = (int64_t)(ItlIdx + ItlSiz);
@@ -825,10 +914,9 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
             CpuIdx = CpuIdx % par->NmbCpu;
          }
       }
+   }
 
-   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ NmbItlBlk - 1 ][1] = NmbLin;
-
-   return(TypIdx);
+   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ par->NmbItlBlk - 1 ][1] = typ->NmbLin;
 }
 
 
@@ -1095,7 +1183,8 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    DepSta[1] = 100 * DepSta[1] / NmbDepBit;
 
    // Sort WP from highest collision number to the lowest
-   qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
+   if(par->WrkSizSrt)
+      qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
 
    return(1);
 }
