@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.62                                  */
+/*                               LPlib V3.70                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 25 2020                                           */
+/*   Last modification: dec 03 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -60,6 +60,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 #include <math.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 
 
 /*----------------------------------------------------------------------------*/
@@ -68,7 +69,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   itg      BegIdx, EndIdx;
+   itg      BegIdx, EndIdx, ItlTab[ MaxPth ][2];
    int      NmbDep, *DepWrdTab;
    struct   WrkSct *pre, *nex;
 }WrkSct;
@@ -76,7 +77,7 @@ typedef struct WrkSct
 typedef struct
 {
    itg      NmbLin, MaxNmbLin;
-   int      NmbSmlWrk, NmbBigWrk, SmlWrkSiz, BigWrkSiz, DepWrkSiz;
+   int      NmbSmlWrk, SmlWrkSiz, DepWrkSiz;
    int      NmbDepWrd, *DepWrdMat, *RunDepTab;
    WrkSct   *SmlWrkTab, *BigWrkTab;
 }TypSct;
@@ -97,19 +98,24 @@ typedef struct
 
 typedef struct PipSct
 {
-   int      idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
-   void     *prc, *arg, *F77ArgTab[ MaxF77Arg ];
-   pthread_t pth;
-   struct   ParSct *par;
+   int            idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
+   void           *prc, *arg, *F77ArgTab[ MaxF77Arg ];
+   size_t         StkSiz;
+   void           *UsrStk;
+   pthread_attr_t atr;
+   pthread_t      pth;
+   struct ParSct  *par;
 }PipSct;
 
 typedef struct ParSct
 {
    int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
    int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int      WrkSizSrt, NmbItlBlk, ItlBlkSiz;
+   size_t   StkSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
-   void     (*prc)(itg, itg, itg, void *), *arg;
+   void     (*prc)(itg, itg, int, void *), *arg;
    pthread_cond_t ParCnd, PipCnd;
    pthread_mutex_t ParMtx, PipMtx;
    pthread_t PipPth;
@@ -151,6 +157,7 @@ static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 static int64_t IniPar      (int, size_t );
+static void    SetItlBlk   (ParSct *, TypSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -164,6 +171,9 @@ int64_t InitParallel(int NmbCpu)
 
 int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
 {
+   if(StkSiz < PTHREAD_STACK_MIN)
+      StkSiz = PTHREAD_STACK_MIN;
+
    return(IniPar(NmbCpu, StkSiz));
 }
 
@@ -202,6 +212,9 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    par->NmbCpu = NmbCpu;
    par->WrkCpt = par->NmbPip = par->PenPip = par->RunPip = 0;
    par->SizMul = 2;
+   par->StkSiz = StkSiz;
+   par->NmbItlBlk = 1;
+   par->WrkSizSrt = 1;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -228,8 +241,8 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
          pth->UsrStk = malloc(pth->StkSiz);
-         pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
          pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
+         pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
       }
       else
@@ -327,6 +340,85 @@ int GetNumberOfCores()
 
 
 /*----------------------------------------------------------------------------*/
+/* Set extra attributes to fine tune the blocks processing order              */
+/*----------------------------------------------------------------------------*/
+
+int SetExtendedAttributes(int64_t ParIdx, ...)
+{
+   int NmbArg = 0, ArgCod, ArgVal;
+   ParSct *par = (ParSct *)ParIdx;
+   va_list ArgLst;
+
+   // Attributes cannot be modified the a prallel loop is running
+   if(par->typ1)
+      return(0);
+
+   // Read the argument list that must be terminated by a zero
+   va_start(ArgLst, ParIdx);
+
+   do
+   {
+      ArgCod = va_arg(ArgLst, int);
+
+      switch(ArgCod)
+      {
+         // Set the number of interleaved blocks in independant loops
+         case SetInterleavingFactor :
+         {
+            ArgVal = va_arg(ArgLst, int);
+
+            if(ArgVal > 0)
+            {
+               par->NmbItlBlk = ArgVal;
+               par->ItlBlkSiz = 0;
+               NmbArg++;
+            }
+         }break;
+
+         // Set the interleaved blocks size in independant loops
+         case SetInterleavingSize :
+         {
+            ArgVal = va_arg(ArgLst, int);
+
+            if(ArgVal > 0)
+            {
+               par->NmbItlBlk = 0;
+               par->ItlBlkSiz = ArgVal;
+               NmbArg++;
+            }
+         }break;
+
+         // Desable blocks interleaving (default)
+         case DisableInterleaving :
+         {
+            par->NmbItlBlk = 1;
+            par->ItlBlkSiz = 0;
+            NmbArg++;
+         }break;
+
+         // Sort depedancy-loop WP through their number of dependencies (default)
+         case EnableBlockSorting :
+         {
+            par->WrkSizSrt = 1;
+            NmbArg++;
+         }break;
+
+         // Disable WP sorting: it lowers concurrency but enhances cache reuse
+         case DisableBlockSorting :
+         {
+            par->WrkSizSrt = 0;
+            NmbArg++;
+         }break;
+      }
+   }while(ArgCod);
+
+   va_end(ArgLst);
+
+   return(NmbArg);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Launch the loop prc on typ1 element depending on typ2                      */
 /*----------------------------------------------------------------------------*/
 
@@ -334,6 +426,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
    int i;
+   float acc;
    PthSct *pth;
    ParSct *par = (ParSct *)ParIdx;
    TypSct *typ1, *typ2 = NULL;
@@ -357,7 +450,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunSmlWrk;
-      par->prc = (void (*)(itg, itg, itg, void *))prc;
+      par->prc = (void (*)(itg, itg, int, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = typ2 = &par->TypTab[ TypIdx2 ];
@@ -382,9 +475,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       typ1->SmlWrkTab[0].pre = typ1->SmlWrkTab[ typ1->NmbSmlWrk - 1 ].nex = NULL;
 
-      /* Start the main loop: 
-         wake up threads and wait for completion or blocked threads */
-
+      // Main loop: wake up threads and wait for completion or blocked threads
       do
       {
          // Search for some idle threads
@@ -419,8 +510,8 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       pthread_mutex_unlock(&par->ParMtx);
 
-      // Return the average speedup
-      return(par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.);
+      // Compute the average concurrency factor
+      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.;
    }
    else
    {
@@ -428,19 +519,22 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_lock(&par->ParMtx);
 
       par->cmd = RunBigWrk;
-      par->prc = (void (*)(itg, itg, itg, void *))prc;
+      par->prc = (void (*)(itg, itg, int, void *))prc;
       par->arg = PtrArg;
       par->typ1 = typ1;
       par->typ2 = NULL;
       par->WrkCpt = 0;
 
-      for(i=0;i<typ1->NmbBigWrk;i++)
+      for(i=0;i<par->NmbCpu;i++)
       {
          pth = &par->PthTab[i];
          pth->wrk = &typ1->BigWrkTab[i];
       }
 
-      for(i=0;i<typ1->NmbBigWrk;i++)
+      // Update block interleaving according to the current attributes
+      SetItlBlk(par, typ1);
+
+      for(i=0;i<par->NmbCpu;i++)
       {
          pth = &par->PthTab[i];
          pthread_mutex_lock(&pth->mtx);
@@ -452,9 +546,15 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       pthread_mutex_unlock(&par->ParMtx);
 
-      // Return the average speedup
-      return(par->NmbCpu);
+      // Arbitrary set the average concurrency factor
+      acc = par->NmbCpu;
    }
+
+   // Clear the main datatyp loop to indicate that no LaunchParallel is running
+   par->typ1 = 0;
+
+   // Return the concurrency factor
+   return(acc);
 }
 
 
@@ -495,6 +595,7 @@ float LaunchParallelMultiArg( int64_t ParIdx, int TypIdx1, int TypIdx2,
 
 static void *PthHdl(void *ptr)
 {
+   itg i, beg, end;
    PthSct *pth = (PthSct *)ptr;
    ParSct *par = pth->par;
 
@@ -515,18 +616,28 @@ static void *PthHdl(void *ptr)
       {
          case RunBigWrk :
          {
-            // Launch a single big wp and signal completion to the scheduler
-            if(par->NmbF77Arg)
-               CalF77Prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
-            else if(par->NmbVarArg)
-               CalVarArgPrc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
-            else
-               par->prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par->arg);
+            // Loop over the interleaved blocks
+            for(i=0;i<par->NmbItlBlk;i++)
+            {
+               beg = pth->wrk->ItlTab[i][0];
+               end = pth->wrk->ItlTab[i][1];
+
+               if(!beg || !end || (end < beg))
+                  continue;
+
+               // Launch a single big wp and signal completion to the scheduler
+               if(par->NmbF77Arg)
+                  CalF77Prc(beg, end, pth->idx, par);
+               else if(par->NmbVarArg)
+                  CalVarArgPrc(beg, end, pth->idx, par);
+               else
+                  par->prc(beg, end, pth->idx, par->arg);
+            }
 
             pthread_mutex_lock(&par->ParMtx);
             par->WrkCpt++;
 
-            if(par->WrkCpt >= par->typ1->NmbBigWrk)
+            if(par->WrkCpt >= par->NmbCpu)
                pthread_cond_signal(&par->ParCnd);
 
             pthread_mutex_unlock(&par->ParMtx);
@@ -655,15 +766,16 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 
 int NewType(int64_t ParIdx, itg NmbLin)
 {
-   int i, TypIdx=0, idx;
-   TypSct *typ;
-   ParSct *par = (ParSct *)ParIdx;
+   int      TypIdx = 0;
+   itg      i, j, idx;
+   TypSct   *typ;
+   ParSct   *par = (ParSct *)ParIdx;
 
    // Get and check lib parallel instance
    if(!ParIdx)
       return(0);
 
-   if(NmbLin < par->NmbCpu)
+   if(NmbLin <= 0)
       return(0);
 
    // Search for a free type structure
@@ -712,31 +824,8 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
    // Compute the size of big work-packages
-   if(NmbLin >= par->NmbCpu)
-   {
-      typ->BigWrkSiz = NmbLin / par->NmbCpu;
-      typ->NmbBigWrk = par->NmbCpu;
-   }
-   else
-   {
-      typ->BigWrkSiz = NmbLin;
-      typ->NmbBigWrk = 1;
-   }
-
-   if(!(typ->BigWrkTab = calloc(typ->NmbBigWrk * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->BigWrkTab = calloc(par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
-
-   // Set big work-packages
-   idx = 0;
-
-   for(i=0;i<typ->NmbBigWrk;i++)
-   {
-      typ->BigWrkTab[i].BegIdx = idx + 1;
-      typ->BigWrkTab[i].EndIdx = idx + typ->BigWrkSiz;
-      idx += typ->BigWrkSiz;
-   }
-
-   typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
 
    return(TypIdx);
 }
@@ -748,9 +837,9 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   int i, idx;
-   TypSct *typ;
-   ParSct *par = (ParSct *)ParIdx;
+   itg      i, j, idx;
+   TypSct   *typ;
+   ParSct   *par = (ParSct *)ParIdx;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -781,31 +870,53 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
-   // Compute the size of big work-packages
-   if(NmbLin >= par->NmbCpu)
+   return(TypIdx);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set big work blocks interleaving                                           */
+/*----------------------------------------------------------------------------*/
+
+static void SetItlBlk(ParSct *par, TypSct *typ)
+{
+   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
+   double   ItlSiz, ItlIdx = 0.;
+
+   // Set big WP interleaved indices and block sizes if requested
+   if(par->NmbItlBlk)
+      ItlSiz = (double)typ->NmbLin / (double)(par->NmbItlBlk * par->NmbCpu);
+   else if(par->ItlBlkSiz)
    {
-      typ->BigWrkSiz = NmbLin / par->NmbCpu;
-      typ->NmbBigWrk = par->NmbCpu;
+      par->NmbItlBlk = (double)typ->NmbLin / (double)(par->ItlBlkSiz * par->NmbCpu);
+      ItlSiz = (double)par->ItlBlkSiz;
    }
    else
    {
-      typ->BigWrkSiz = NmbLin;
-      typ->NmbBigWrk = 1;
+      par->NmbItlBlk = 1;
+      ItlSiz = (double)typ->NmbLin / (double)(par->NmbCpu);
    }
 
-   // Set big work-packages
-   idx = 0;
-
-   for(i=0;i<typ->NmbBigWrk;i++)
+   for(i=0;i<par->NmbCpu;i++)
    {
-      typ->BigWrkTab[i].BegIdx = idx + 1;
-      typ->BigWrkTab[i].EndIdx = idx + typ->BigWrkSiz;
-      idx += typ->BigWrkSiz;
+      for(j=0;j<par->NmbItlBlk;j++)
+      {
+         BegIdx = (int64_t)(ItlIdx + 1.);
+         EndIdx = (int64_t)(ItlIdx + ItlSiz);
+         ItlIdx += ItlSiz;
+
+         if(BegIdx <= EndIdx)
+         {
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][0] = BegIdx;
+            typ->BigWrkTab[ CpuIdx ].ItlTab[ PagIdx[ CpuIdx ] ][1] = EndIdx;
+            PagIdx[ CpuIdx ]++;
+            CpuIdx++;
+            CpuIdx = CpuIdx % par->NmbCpu;
+         }
+      }
    }
 
-   typ->BigWrkTab[ typ->NmbBigWrk - 1 ].EndIdx = NmbLin;
-
-   return(TypIdx);
+   typ->BigWrkTab[ par->NmbCpu - 1 ].ItlTab[ par->NmbItlBlk - 1 ][1] = typ->NmbLin;
 }
 
 
@@ -1072,7 +1183,8 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    DepSta[1] = 100 * DepSta[1] / NmbDepBit;
 
    // Sort WP from highest collision number to the lowest
-   qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
+   if(par->WrkSizSrt)
+      qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
 
    return(1);
 }
@@ -1134,7 +1246,7 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
 
 
 /*----------------------------------------------------------------------------*/
-/* Return the block ID containing the giver element ID                        */
+/* Return the block ID containing the given element ID                        */
 /*----------------------------------------------------------------------------*/
 
 int GetBlkIdx(int64_t ParIdx, int typ, int idx)
@@ -1326,7 +1438,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       return(0);
 
    // Allocate and setup a new pipe
-   if(!(NewPip = malloc(sizeof(PipSct))))
+   if(!(NewPip = calloc(1, sizeof(PipSct))))
       return(0);
 
    NewPip->prc = prc;
@@ -1340,15 +1452,32 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    // In case variable arguments where passed through the common LPlib structure
    // Copy them in the pipeline's own arguments table
    if(par->NmbF77Arg)
+   {
+      NewPip->NmbF77Arg = par->NmbF77Arg;
+
       for(i=0;i<par->NmbF77Arg;i++)
          NewPip->F77ArgTab[i] = par->F77ArgTab[i];
+   }
 
    // Lock pipe mutex, increment pipe counter
    // and launch the pipe regardless dependencies
    pthread_mutex_lock(&par->PipMtx);
    NewPip->idx = ++par->NmbPip;
    par->PenPip++;
-   pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
+
+   if(par->StkSiz)
+   {
+      pthread_attr_init(&NewPip->atr);
+      NewPip->StkSiz = par->StkSiz;
+      NewPip->UsrStk = malloc(par->StkSiz);
+      pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
+      pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
+      //pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+      pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
+   }
+   else
+      pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
+
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NewPip->idx);
@@ -1434,7 +1563,7 @@ static void *PipHdl(void *ptr)
 
    pthread_mutex_unlock(&par->PipMtx);
 
-   if(par->NmbF77Arg)
+   if(pip->NmbF77Arg)
       CalF77Pip(pip, pip->prc);
    else
       prc(pip->arg);
@@ -1631,27 +1760,27 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    {
       for(i=0;i<1<<HshBit;i++)
          stat[i] = 0;
-   
+
       for(i=1;i<=NmbLin;i++)
          stat[ idx[i][0] >> (64 - HshBit) ]++;
-   
+
       for(i=0;i<MaxPth;i++)
          bound[i][0] = bound[i][1] = 0;
-   
+
       NmbPip = cpt = sum = 0;
    
       for(i=0;i<1<<HshBit;i++)
       {
          bound[ NmbPip ][0] += stat[i];
          cpt++;
-   
+
          if(bound[ NmbPip ][0] >= (size_t)NmbLin / par->NmbCpu)
          {
             bound[ NmbPip ][1] = cpt << (64 - HshBit);
             NmbPip++;
          }
       }
-   
+
       bound[ NmbPip ][1] = 1LL<<63;
    
       NmbByt = NmbLin+1;
@@ -1667,13 +1796,13 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
          cpt = bound[i][0];
          bound[i][0] = sum;
          sum += cpt;
-   
+
          PipArg[i].base = &tab[ bound[i][0] ];
          PipArg[i].nel = cpt;
          PipArg[i].width = 2 * sizeof(int64_t);
          PipArg[i].compar = CmpPrc;
       }
-   
+
       for(i=1;i<=NmbLin;i++)
          for(j=0;j<=NmbPip;j++)
             if(idx[i][0] <= bound[j][1])
@@ -1683,18 +1812,18 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                bound[j][0]++;
                break;
             }
-   
+
       for(i=0;i<NmbPip;i++)
          LaunchPipeline(ParIdx, PipSrt, &PipArg[i], 0, NULL);
-   
+
       WaitPipeline(ParIdx);
-   
+
       for(i=1;i<=NmbLin;i++)
       {
          idx[i][1] = tab[i-1][1];
          idx[ tab[i-1][1] ][0] = i;
       }
-   
+
       free(tab);
    }
 

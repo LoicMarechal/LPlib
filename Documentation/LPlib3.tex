@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large December 2018 \\
-\normalsize Document v1.71
+\Large February 2021 \\
+\normalsize Document v1.72, library v3.70
 \end{flushright}
 
 \end{titlepage}
@@ -674,6 +674,16 @@ Building a dependency between two kinds of elements is a three-step process :
 \end{enumerate}
 
 
+\subsection{ChkBlkDep}
+
+\subsubsection*{Syntax}
+\tt{ChkBlkDep(LibIndex, int TypIdx, int blk1, int blk2);}
+\normalfont
+
+\subsubsection*{Description}
+Returns a boolean that states whether the two blocks indices of the given datatype share a common entity and cannot be processed concurrently.
+
+
 \subsection{EndDependency}
 
 \subsubsection*{Syntax}
@@ -704,6 +714,16 @@ Note that, without proper renumbering, the intrinsic connectivity featured by me
 
 \subsubsection*{Description}
 Free memory used by this type data structures as well as the type index number. They may be reused by the next call to NewType.
+
+
+\subsection{GetBlkIdx}
+
+\subsubsection*{Syntax}
+\tt{GetBlkIdx(LibIndex, int type, int index);}
+\normalfont
+
+\subsubsection*{Description}
+Returns the internal block index that includes the element whose type and index are provided.
 
 
 \subsection{GetDependencyStats}

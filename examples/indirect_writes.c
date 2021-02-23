@@ -9,7 +9,7 @@
 /*   Description:       direct and indirect memory writes                     */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     jan 15 2015                                           */
-/*   Last modification: feb 01 2017                                           */
+/*   Last modification: oct 08 2020                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
+#include <stdint.h>
 #include "lplib3.h"
 #include "libmeshb7.h"
 
@@ -31,9 +32,9 @@
 
 typedef struct
 {
-   int TetTyp, VerTyp, NmbVer, NmbTet, (*TetVer)[4], *VerDeg;
-   long long ParIdx;
-   double *VerTem, *TetTem;
+   int      TetTyp, VerTyp, NmbVer, NmbTet, (*TetVer)[4], *VerDeg;
+   int64_t  ParIdx;
+   double   *VerTem, *TetTem;
 }MshSct;
 
 
@@ -82,7 +83,7 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
    for(i=BegIdx;i<=EndIdx;i++)
       for(j=0;j<4;j++)
-         msh->VerTem[ msh->TetVer[i][j] ] += \
+         msh->VerTem[ msh->TetVer[i][j] ] +=
             msh->TetTem[i] / msh->VerDeg[ msh->TetVer[i][j] ];
 }
 
@@ -93,11 +94,11 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int i, j, NmbCpu=GetNumberOfCores(), ver, dim, ref, NmbItr=100;
-   long long InpMsh;
-   float sta[2], acc=0;
-   double tim=0;
-   MshSct msh;
+   int      i, j, NmbCpu=GetNumberOfCores(), ver, dim, ref, NmbItr=100;
+   int64_t  InpMsh;
+   float    sta[2], acc=0;
+   double   tim=0;
+   MshSct   msh;
 
    // Read the number of threads to launch from the command line argument
    if(ArgCnt > 1)
@@ -108,14 +109,14 @@ int main(int ArgCnt, char **ArgVec)
       return(1);
 
    puts("");
-   printf("Input mesh : idx = %lld, version = %d, dimension = %d\n", \
+   printf("Input mesh: idx = %lld, version = %d, dimension = %d\n",
             InpMsh, ver, dim);
 
    msh.NmbVer = GmfStatKwd(InpMsh, GmfVertices);
-   printf("Input mesh : nmb vertices = %d\n", msh.NmbVer);
+   printf("Input mesh: nmb vertices = %d\n", msh.NmbVer);
 
    msh.NmbTet = GmfStatKwd(InpMsh, GmfTetrahedra);
-   printf("Input mesh : nmb tets = %d\n", msh.NmbTet);
+   printf("Input mesh: nmb tets = %d\n", msh.NmbTet);
 
    // Allocate the memory
    msh.TetVer = malloc( (msh.NmbTet+1) * 4 * sizeof(int) );
@@ -123,12 +124,10 @@ int main(int ArgCnt, char **ArgVec)
    msh.VerTem = malloc( (msh.NmbVer+1) * sizeof(double) );
    msh.VerDeg = calloc( (msh.NmbVer+1), sizeof(int) );
 
-   // Read the mesh
-   GmfGotoKwd(InpMsh, GmfTetrahedra);
-
-   for(i=1;i<=msh.NmbTet;i++)
-      GmfGetLin(  InpMsh, GmfTetrahedra, &msh.TetVer[i][0], &msh.TetVer[i][1], \
-                  &msh.TetVer[i][2], &msh.TetVer[i][3], &ref );
+   // Read the tets
+   GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
+               GmfIntVec, 4, msh.TetVer[1], msh.TetVer[ msh.NmbTet ],
+               GmfInt, &ref, &ref);
 
    GmfCloseMesh(InpMsh);
 
@@ -155,9 +154,8 @@ int main(int ArgCnt, char **ArgVec)
    printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n", \
          msh.TetTyp, msh.VerTyp, NmbCpu);
 
-   /* Setup dependencies between tets and vertices 
-      and compute vertices' degree on the flight */
-
+   // Setup dependencies between tets and vertices 
+   // and compute vertices' degree on the flight
    BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
 
    for(i=1;i<=msh.NmbTet;i++)
@@ -169,7 +167,7 @@ int main(int ArgCnt, char **ArgVec)
 
    EndDependency(msh.ParIdx, sta);
 
-   printf("dependencies stats : average = %g %%, maximum = %g %%\n", \
+   printf("dependencies stats: average = %g %%, maximum = %g %%\n",
             sta[0], sta[1]);
 
    // Initialize the vertices' temperature with some crap values
@@ -186,7 +184,7 @@ int main(int ArgCnt, char **ArgVec)
    puts("");
    for(i=1;i<=NmbItr;i++)
    {
-      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp, \
+      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp,
                                  (void *)TetTem, (void *)&msh)))
       {
          puts("Error while launching the parallel loop TetTem.");
@@ -203,8 +201,8 @@ int main(int ArgCnt, char **ArgVec)
 
    tim = GetWallClock() - tim;
 
-   printf(" %d steps, average concurency = %g, // running time = %gs\n", \
-         NmbItr, acc / (2 * NmbItr), tim);
+   printf(" %d steps, average concurency = %g, // running time = %gs\n",
+            NmbItr, acc / (2 * NmbItr), tim);
 
    // Stop and free everything
    StopParallel(msh.ParIdx);
