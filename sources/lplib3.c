@@ -1246,7 +1246,7 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
 
 
 /*----------------------------------------------------------------------------*/
-/* Return the block ID containing the giver element ID                        */
+/* Return the block ID containing the given element ID                        */
 /*----------------------------------------------------------------------------*/
 
 int GetBlkIdx(int64_t ParIdx, int typ, int idx)
