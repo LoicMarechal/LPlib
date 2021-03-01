@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: dec 03 2020                                           */
+/*   Last modification: mar 01 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -767,7 +767,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, j, idx;
+   itg      i, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -837,7 +837,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, j, idx;
+   itg      i, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -880,7 +880,7 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 
 static void SetItlBlk(ParSct *par, TypSct *typ)
 {
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
+   itg      i, j, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
    double   ItlSiz, ItlIdx = 0.;
 
    // Set big WP interleaved indices and block sizes if requested
