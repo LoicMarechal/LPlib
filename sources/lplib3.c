@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.70                                  */
+/*                               LPlib V3.71                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 01 2021                                           */
+/*   Last modification: apr 17 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -891,7 +891,9 @@ static void SetItlBlk(ParSct *par, TypSct *typ)
       par->NmbItlBlk = (double)typ->NmbLin / (double)(par->ItlBlkSiz * par->NmbCpu);
       ItlSiz = (double)par->ItlBlkSiz;
    }
-   else
+
+   // In case the block or lines numbers is too small, deactivate interleaving
+   if(!par->NmbItlBlk || !ItlSiz)
    {
       par->NmbItlBlk = 1;
       ItlSiz = (double)typ->NmbLin / (double)(par->NmbCpu);
