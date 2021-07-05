@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: apr 17 2021                                           */
+/*   Last modification: jul 05 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1480,6 +1480,8 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    else
       pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
 
+   // Make the thread unjoinable to work around a memory leak in some systems
+   pthread_detach(NewPip->pth);
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NewPip->idx);
