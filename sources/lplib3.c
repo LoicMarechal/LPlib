@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jul 05 2021                                           */
+/*   Last modification: aug 03 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -110,9 +110,9 @@ typedef struct PipSct
 typedef struct ParSct
 {
    int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
-   int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int      req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int      WrkSizSrt, NmbItlBlk, ItlBlkSiz;
-   size_t   StkSiz;
+   size_t   StkSiz, ClrLinSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
    void     (*prc)(itg, itg, int, void *), *arg;
@@ -171,9 +171,10 @@ int64_t InitParallel(int NmbCpu)
 
 int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
 {
+#ifdef PTHREAD_STACK_MIN
    if(StkSiz < PTHREAD_STACK_MIN)
       StkSiz = PTHREAD_STACK_MIN;
-
+#endif
    return(IniPar(NmbCpu, StkSiz));
 }
 
@@ -511,7 +512,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_unlock(&par->ParMtx);
 
       // Compute the average concurrency factor
-      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.;
+      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0;
    }
    else
    {
@@ -547,7 +548,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_unlock(&par->ParMtx);
 
       // Arbitrary set the average concurrency factor
-      acc = par->NmbCpu;
+      acc = (float)par->NmbCpu;
    }
 
    // Clear the main datatyp loop to indicate that no LaunchParallel is running
@@ -903,8 +904,8 @@ static void SetItlBlk(ParSct *par, TypSct *typ)
    {
       for(j=0;j<par->NmbItlBlk;j++)
       {
-         BegIdx = (int64_t)(ItlIdx + 1.);
-         EndIdx = (int64_t)(ItlIdx + ItlSiz);
+         BegIdx = (itg)(ItlIdx + 1.);
+         EndIdx = (itg)(ItlIdx + ItlSiz);
          ItlIdx += ItlSiz;
 
          if(BegIdx <= EndIdx)
@@ -1159,13 +1160,13 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
       TotNmbDep += typ1->SmlWrkTab[i].NmbDep;
 
       if(typ1->SmlWrkTab[i].NmbDep > DepSta[1])
-         DepSta[1] = typ1->SmlWrkTab[i].NmbDep;
+         DepSta[1] = (float)typ1->SmlWrkTab[i].NmbDep;
    }
 
    if(!TotNmbDep)
       return(0);
 
-   DepSta[0] = TotNmbDep;
+   DepSta[0] = (float)TotNmbDep;
 
    // Compute stats
    if(typ2->NmbLin >= typ1->DepWrkSiz)
@@ -1226,10 +1227,10 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
       TotNmbDep += typ1->SmlWrkTab[i].NmbDep;
 
       if(typ1->SmlWrkTab[i].NmbDep > DepSta[1])
-         DepSta[1] = typ1->SmlWrkTab[i].NmbDep;
+         DepSta[1] = (float)typ1->SmlWrkTab[i].NmbDep;
    }
 
-   DepSta[0] = TotNmbDep;
+   DepSta[0] = (float)TotNmbDep;
 
    // Compute stats
    if(typ2->NmbLin >= typ1->DepWrkSiz)
@@ -1500,7 +1501,7 @@ int LaunchPipelineMultiArg(int64_t ParIdx, int NmbDep, int *DepTab,
    ParSct *par = (ParSct *)ParIdx;
 
    if(NmbArg > MaxF77Arg)
-      return(-1.);
+      return(-1);
 
    // Get the variable arguments and store then in the common LPlib structure
    // This is a temporary storage as the will be copied to the pipeline's own
@@ -1669,7 +1670,7 @@ static void RenPrc(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
       for(j=0;j<3;j++)
       {
          dbl = (arg->crd[i][j] - arg->box[j]) * arg->box[j+3];
-         IntCrd[j] = dbl;
+         IntCrd[j] = (uint64_t)dbl;
       }
 
       // Binary hilbert renumbering loop
@@ -1727,8 +1728,8 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                         double (*crd)[3], uint64_t (*idx)[2] )
 {
    itg i;
-   int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip, sum;
-   uint64_t bound[ MaxPth ][2], cpt, (*tab)[2];
+   int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip;
+   uint64_t bound[ MaxPth ][2], cpt, sum, (*tab)[2];
    size_t NmbByt;
    double len = pow(2,64);
    ParSct *par = (ParSct *)ParIdx;
@@ -1771,7 +1772,8 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
       for(i=0;i<MaxPth;i++)
          bound[i][0] = bound[i][1] = 0;
 
-      NmbPip = cpt = sum = 0;
+      NmbPip = 0;
+      sum = cpt = 0;
    
       for(i=0;i<1<<HshBit;i++)
       {
@@ -1855,7 +1857,7 @@ static void RenPrc2D(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
       for(j=0;j<2;j++)
       {
          dbl = (arg->crd2[i][j] - arg->box[j]) * arg->box[j+2];
-         IntCrd[j] = dbl;
+         IntCrd[j] = (uint64_t)dbl;
       }
 
       // Binary hilbert renumbering loop

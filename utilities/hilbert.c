@@ -762,7 +762,7 @@ void SwpMem(MshSct *msh, int typ)
 
 void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
 {
-   int i;
+   int i, ref;
    FILE *mts;
 
    //msh->NmbEle[1] = 0;
@@ -776,7 +776,16 @@ void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
 
    fclose(mts);
 
-   printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
+   for(i=1;i<=msh->NmbEle[3];i++)
+   {
+      ref = msh->ver[ msh->ele[3][i].idx[0] ].ref;
+      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[1] ].ref);
+      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[2] ].ref);
+      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[3] ].ref);
+      msh->ele[3][i].ref = ref;
+   }
+
+   /*printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
    if(!(mts = fopen(MtsEleNam, "r")))
       return;
 
@@ -786,7 +795,7 @@ void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
    for(i=1;i<=msh->NmbEle[3];i++)
       fscanf(mts, "%d", &msh->ele[3][i].ref);
 
-   fclose(mts);
+   fclose(mts);*/
 }
 
 
