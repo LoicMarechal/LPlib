@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.71                                  */
+/*                               LPlib V3.72                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,10 +10,14 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: aug 03 2021                                           */
+/*   Last modification: aug 04 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -889,7 +893,7 @@ static void SetItlBlk(ParSct *par, TypSct *typ)
       ItlSiz = (double)typ->NmbLin / (double)(par->NmbItlBlk * par->NmbCpu);
    else if(par->ItlBlkSiz)
    {
-      par->NmbItlBlk = (double)typ->NmbLin / (double)(par->ItlBlkSiz * par->NmbCpu);
+      par->NmbItlBlk = typ->NmbLin / (par->ItlBlkSiz * par->NmbCpu);
       ItlSiz = (double)par->ItlBlkSiz;
    }
 

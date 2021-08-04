@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: mar 21 2018                                           */
+/*   Last modification: aug 04 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -18,6 +18,10 @@
 /*----------------------------------------------------------------------------*/
 /* Includes                                                                   */
 /*----------------------------------------------------------------------------*/
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,8 +36,8 @@
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
 
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#define max(a,b) ((a) > (b) ? (a) : (b))
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
 
 
 /*----------------------------------------------------------------------------*/
@@ -154,8 +158,8 @@ int main(int ArgCnt, char **ArgVec)
       if(!strcmp(PtrArg,"-nproc"))
       {
          NmbCpu = atoi(*++ArgVec);
-         NmbCpu = max(NmbCpu, 1);
-         NmbCpu = min(NmbCpu, 128);
+         NmbCpu = MAX(NmbCpu, 1);
+         NmbCpu = MIN(NmbCpu, 128);
          ArgCnt--;
          continue;
       }
@@ -246,7 +250,7 @@ static void ScaMsh(char *InpNam, MshSct *msh)
    }
 
    // Get stats and allocate tables
-   if((msh->NmbVer = GmfStatKwd(InpMsh, GmfVertices)))
+   if((msh->NmbVer = (int)GmfStatKwd(InpMsh, GmfVertices)))
       msh->ver = malloc((msh->NmbVer+1) * sizeof(VerSct));
    else
    {
@@ -254,28 +258,23 @@ static void ScaMsh(char *InpNam, MshSct *msh)
       exit(1);
    }
 
-   if((msh->NmbTet = GmfStatKwd(InpMsh, GmfTetrahedra)))
+   if((msh->NmbTet = (int)GmfStatKwd(InpMsh, GmfTetrahedra)))
       msh->tet = malloc((msh->NmbTet+1) * sizeof(TetSct));
 
    // Read the vertices
    if(msh->NmbVer)
    {
-      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                  GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                  GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                  GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                  GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      GmfGetBlock(InpMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL,
+                  GmfDoubleVec, 3, msh->ver[1].crd,  msh->ver[ msh->NmbVer ].crd,
+                  GmfInt,         &msh->ver[1].ref, &msh->ver[ msh->NmbVer ].ref);
    }
 
    // Read the tetrahedra
    if(msh->NmbTet)
    {
-      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL, \
-                  GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
-                  GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
-                  GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
-                  GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
-                  GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
+      GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL,
+                  GmfIntVec, 4, msh->tet[1].idx,  msh->tet[ msh->NmbTet ].idx,
+                  GmfInt,      &msh->tet[1].ref, &msh->tet[ msh->NmbTet ].ref);
    }
 
    GmfCloseMesh(InpMsh);
@@ -301,34 +300,27 @@ static void RecMsh(char *OutNam, MshSct *msh)
    if(msh->NmbVer)
    {
       GmfSetKwd(OutMsh, GmfVertices, msh->NmbVer);
-      GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL, \
-                  GmfDouble, &msh->ver[1].crd[0], &msh->ver[ msh->NmbVer ].crd[0], \
-                  GmfDouble, &msh->ver[1].crd[1], &msh->ver[ msh->NmbVer ].crd[1], \
-                  GmfDouble, &msh->ver[1].crd[2], &msh->ver[ msh->NmbVer ].crd[2], \
-                  GmfInt, &msh->ver[1].ref,       &msh->ver[ msh->NmbVer ].ref);
+      GmfSetBlock(OutMsh, GmfVertices, 1, msh->NmbVer, 0, NULL, NULL,
+                  GmfDoubleVec, 3, msh->ver[1].crd,  msh->ver[ msh->NmbVer ].crd,
+                  GmfInt,         &msh->ver[1].ref, &msh->ver[ msh->NmbVer ].ref);
    }
 
    // Save the extracted triangles
    if(msh->NmbTri)
    {
       GmfSetKwd(OutMsh, GmfTriangles, msh->NmbTri);
-      GmfSetBlock(OutMsh, GmfTriangles, 1, msh->NmbTri, 0, NULL, NULL, \
-                  GmfInt, &msh->tri[1].idx[0], &msh->tri[ msh->NmbTri ].idx[0], \
-                  GmfInt, &msh->tri[1].idx[1], &msh->tri[ msh->NmbTri ].idx[1], \
-                  GmfInt, &msh->tri[1].idx[2], &msh->tri[ msh->NmbTri ].idx[2], \
-                  GmfInt, &msh->tri[1].ref,    &msh->tri[ msh->NmbTri ].ref);
+      GmfSetBlock(OutMsh, GmfTriangles, 1, msh->NmbTri, 0, NULL, NULL,
+                  GmfIntVec, 3, msh->tri[1].idx,  msh->tri[ msh->NmbTri ].idx,
+                  GmfInt,      &msh->tri[1].ref, &msh->tri[ msh->NmbTri ].ref);
    }
 
    // Save the tetrahedra from the input mesh
    if(msh->NmbTet)
    {
       GmfSetKwd(OutMsh, GmfTetrahedra, msh->NmbTet);
-      GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL, \
-                  GmfInt, &msh->tet[1].idx[0], &msh->tet[ msh->NmbTet ].idx[0], \
-                  GmfInt, &msh->tet[1].idx[1], &msh->tet[ msh->NmbTet ].idx[1], \
-                  GmfInt, &msh->tet[1].idx[2], &msh->tet[ msh->NmbTet ].idx[2], \
-                  GmfInt, &msh->tet[1].idx[3], &msh->tet[ msh->NmbTet ].idx[3], \
-                  GmfInt, &msh->tet[1].ref,    &msh->tet[ msh->NmbTet ].ref);
+      GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh->NmbTet, 0, NULL, NULL,
+                  GmfIntVec, 4, msh->tet[1].idx,  msh->tet[ msh->NmbTet ].idx,
+                  GmfInt,      &msh->tet[1].ref, &msh->tet[ msh->NmbTet ].ref);
    }
 
    GmfCloseMesh(OutMsh);

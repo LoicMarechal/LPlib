@@ -9,7 +9,7 @@
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   jun 19 2020                                           */
+/* Last modification:   aug 04 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -17,6 +17,10 @@
 /*----------------------------------------------------------------------------*/
 /* Includes                                                                   */
 /*----------------------------------------------------------------------------*/
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -154,12 +158,14 @@ void     ScaMts(char *, char *, MshSct *);
 int main(int ArgCnt, char **ArgVec)
 {
    char     *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-   char     MtsNodNam[1000], MtsEleNam[1000];
-   int      i, j, t, NmbCpu = 0, StaFlg = 0;
+   int      i, t, NmbCpu = 0, StaFlg = 0;
    int64_t  LibParIdx;
-   float    flt[3], sta[2];
    double   timer = 0.;
    MshSct   msh;
+#ifdef WITH_GMLIB
+   int      j;
+   char     MtsNodNam[1000], MtsEleNam[1000];
+#endif
 
    // Command line parsing
    memset(&msh, 0, sizeof(MshSct));
@@ -408,7 +414,8 @@ int main(int ArgCnt, char **ArgVec)
 
 static void SetBndBox(int64_t BegIdx, int64_t EndIdx, MshSct *msh)
 {
-   int i, j;
+   int64_t  i;
+   int      j;
 
    for(i=BegIdx; i<=EndIdx; i++)
    {
@@ -438,7 +445,6 @@ void ScaMsh(char *InpNam, MshSct *msh)
 {
    int      i, j, n, t, *PtrIdx;
    int64_t  InpMsh;
-   float    flt[3];
 
    // Check mesh format
    if(!(InpMsh = GmfOpenMesh(InpNam, GmfRead, &msh->MshVer, &msh->dim)))
@@ -448,7 +454,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
    }
 
    // Get stats and allocate tables
-   if((msh->NmbVer = GmfStatKwd(InpMsh, GmfVertices)))
+   if((msh->NmbVer = (int)GmfStatKwd(InpMsh, GmfVertices)))
       msh->ver = malloc((msh->NmbVer+1) * sizeof(VerSct));
    else
    {
@@ -471,7 +477,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
    // Allocate and read elements
    for(t=0;t<MAXELE;t++)
    {
-      n = msh->NmbEle[t] = GmfStatKwd(InpMsh, EleTab[t][1]);
+      n = msh->NmbEle[t] = (int)GmfStatKwd(InpMsh, EleTab[t][1]);
 
       if(!n)
          continue;
@@ -498,7 +504,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
 
 void RecMsh(char *OutNam, MshSct *msh)
 {
-   int      i, t, n;
+   int      t, n;
    int64_t  OutMsh;
 
    if(!(OutMsh = GmfOpenMesh(OutNam, GmfWrite, msh->MshVer, msh->dim)))
@@ -537,7 +543,7 @@ void RecMsh(char *OutNam, MshSct *msh)
 uint64_t HilCod(double crd[3], double box[6], int itr, int mod)
 {
    uint64_t IntCrd[3], m=1LL<<63, cod;
-   int      i, j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
+   int      j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
    double   TmpCrd[3];
    int      rot[8], GeoCod[8]={0,3,7,4,1,2,6,5}; // Hilbert
    int      OctCod[8] = {5,4,7,6,1,0,3,2}; // octree or Z curve
@@ -554,7 +560,7 @@ uint64_t HilCod(double crd[3], double box[6], int itr, int mod)
    for(j=0;j<3;j++)
    {
       TmpCrd[j] = (crd[j] - box[j]) * box[j+3];
-      IntCrd[j] = TmpCrd[j];
+      IntCrd[j] = (uint64_t)TmpCrd[j];
    }
 
    // Binary hilbert renumbering loop
