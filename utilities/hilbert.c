@@ -9,7 +9,7 @@
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   aug 04 2021                                           */
+/* Last modification:   aug 05 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -419,7 +419,7 @@ static void SetBndBox(int64_t BegIdx, int64_t EndIdx, MshSct *msh)
 
    for(i=BegIdx; i<=EndIdx; i++)
    {
-      msh->ver[i].idx = i;
+      msh->ver[i].idx = (itg)i;
 
       if(msh->dim == 2)
          msh->ver[i].crd[2] = 0.;
