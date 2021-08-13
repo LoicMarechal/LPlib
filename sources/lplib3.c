@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.70                                  */
+/*                               LPlib V3.72                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,10 +10,14 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: dec 03 2020                                           */
+/*   Last modification: aug 04 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -110,9 +114,9 @@ typedef struct PipSct
 typedef struct ParSct
 {
    int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
-   int      req, cmd, ClrLinSiz, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int      req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int      WrkSizSrt, NmbItlBlk, ItlBlkSiz;
-   size_t   StkSiz;
+   size_t   StkSiz, ClrLinSiz;
    void     *F77ArgTab[ MaxF77Arg ];
    float    sta[2];
    void     (*prc)(itg, itg, int, void *), *arg;
@@ -171,9 +175,10 @@ int64_t InitParallel(int NmbCpu)
 
 int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
 {
+#ifdef PTHREAD_STACK_MIN
    if(StkSiz < PTHREAD_STACK_MIN)
       StkSiz = PTHREAD_STACK_MIN;
-
+#endif
    return(IniPar(NmbCpu, StkSiz));
 }
 
@@ -511,7 +516,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_unlock(&par->ParMtx);
 
       // Compute the average concurrency factor
-      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0.;
+      acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0;
    }
    else
    {
@@ -547,7 +552,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       pthread_mutex_unlock(&par->ParMtx);
 
       // Arbitrary set the average concurrency factor
-      acc = par->NmbCpu;
+      acc = (float)par->NmbCpu;
    }
 
    // Clear the main datatyp loop to indicate that no LaunchParallel is running
@@ -767,7 +772,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, j, idx;
+   itg      i, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -837,7 +842,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, j, idx;
+   itg      i, idx;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -880,7 +885,7 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 
 static void SetItlBlk(ParSct *par, TypSct *typ)
 {
-   itg      i, j, idx, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
+   itg      i, j, BegIdx, EndIdx, CpuIdx = 0, PagIdx[ MaxPth ] = {0};
    double   ItlSiz, ItlIdx = 0.;
 
    // Set big WP interleaved indices and block sizes if requested
@@ -888,10 +893,12 @@ static void SetItlBlk(ParSct *par, TypSct *typ)
       ItlSiz = (double)typ->NmbLin / (double)(par->NmbItlBlk * par->NmbCpu);
    else if(par->ItlBlkSiz)
    {
-      par->NmbItlBlk = (double)typ->NmbLin / (double)(par->ItlBlkSiz * par->NmbCpu);
+      par->NmbItlBlk = typ->NmbLin / (par->ItlBlkSiz * par->NmbCpu);
       ItlSiz = (double)par->ItlBlkSiz;
    }
-   else
+
+   // In case the block or lines numbers is too small, deactivate interleaving
+   if(!par->NmbItlBlk || !ItlSiz)
    {
       par->NmbItlBlk = 1;
       ItlSiz = (double)typ->NmbLin / (double)(par->NmbCpu);
@@ -901,8 +908,8 @@ static void SetItlBlk(ParSct *par, TypSct *typ)
    {
       for(j=0;j<par->NmbItlBlk;j++)
       {
-         BegIdx = (int64_t)(ItlIdx + 1.);
-         EndIdx = (int64_t)(ItlIdx + ItlSiz);
+         BegIdx = (itg)(ItlIdx + 1.);
+         EndIdx = (itg)(ItlIdx + ItlSiz);
          ItlIdx += ItlSiz;
 
          if(BegIdx <= EndIdx)
@@ -1157,13 +1164,13 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
       TotNmbDep += typ1->SmlWrkTab[i].NmbDep;
 
       if(typ1->SmlWrkTab[i].NmbDep > DepSta[1])
-         DepSta[1] = typ1->SmlWrkTab[i].NmbDep;
+         DepSta[1] = (float)typ1->SmlWrkTab[i].NmbDep;
    }
 
    if(!TotNmbDep)
       return(0);
 
-   DepSta[0] = TotNmbDep;
+   DepSta[0] = (float)TotNmbDep;
 
    // Compute stats
    if(typ2->NmbLin >= typ1->DepWrkSiz)
@@ -1224,10 +1231,10 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
       TotNmbDep += typ1->SmlWrkTab[i].NmbDep;
 
       if(typ1->SmlWrkTab[i].NmbDep > DepSta[1])
-         DepSta[1] = typ1->SmlWrkTab[i].NmbDep;
+         DepSta[1] = (float)typ1->SmlWrkTab[i].NmbDep;
    }
 
-   DepSta[0] = TotNmbDep;
+   DepSta[0] = (float)TotNmbDep;
 
    // Compute stats
    if(typ2->NmbLin >= typ1->DepWrkSiz)
@@ -1478,6 +1485,8 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    else
       pthread_create(&NewPip->pth, NULL, PipHdl, (void *)NewPip);
 
+   // Make the thread unjoinable to work around a memory leak in some systems
+   pthread_detach(NewPip->pth);
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NewPip->idx);
@@ -1496,7 +1505,7 @@ int LaunchPipelineMultiArg(int64_t ParIdx, int NmbDep, int *DepTab,
    ParSct *par = (ParSct *)ParIdx;
 
    if(NmbArg > MaxF77Arg)
-      return(-1.);
+      return(-1);
 
    // Get the variable arguments and store then in the common LPlib structure
    // This is a temporary storage as the will be copied to the pipeline's own
@@ -1665,7 +1674,7 @@ static void RenPrc(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
       for(j=0;j<3;j++)
       {
          dbl = (arg->crd[i][j] - arg->box[j]) * arg->box[j+3];
-         IntCrd[j] = dbl;
+         IntCrd[j] = (uint64_t)dbl;
       }
 
       // Binary hilbert renumbering loop
@@ -1723,8 +1732,8 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                         double (*crd)[3], uint64_t (*idx)[2] )
 {
    itg i;
-   int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip, sum;
-   uint64_t bound[ MaxPth ][2], cpt, (*tab)[2];
+   int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip;
+   uint64_t bound[ MaxPth ][2], cpt, sum, (*tab)[2];
    size_t NmbByt;
    double len = pow(2,64);
    ParSct *par = (ParSct *)ParIdx;
@@ -1767,7 +1776,8 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
       for(i=0;i<MaxPth;i++)
          bound[i][0] = bound[i][1] = 0;
 
-      NmbPip = cpt = sum = 0;
+      NmbPip = 0;
+      sum = cpt = 0;
    
       for(i=0;i<1<<HshBit;i++)
       {
@@ -1851,7 +1861,7 @@ static void RenPrc2D(itg BegIdx, itg EndIdx, int PthIdx, ArgSct *arg)
       for(j=0;j<2;j++)
       {
          dbl = (arg->crd2[i][j] - arg->box[j]) * arg->box[j+2];
-         IntCrd[j] = dbl;
+         IntCrd[j] = (uint64_t)dbl;
       }
 
       // Binary hilbert renumbering loop

@@ -112,10 +112,10 @@ int main(int ArgCnt, char **ArgVec)
    printf("Input mesh: idx = %lld, version = %d, dimension = %d\n",
             InpMsh, ver, dim);
 
-   msh.NmbVer = GmfStatKwd(InpMsh, GmfVertices);
+   msh.NmbVer = (int)GmfStatKwd(InpMsh, GmfVertices);
    printf("Input mesh: nmb vertices = %d\n", msh.NmbVer);
 
-   msh.NmbTet = GmfStatKwd(InpMsh, GmfTetrahedra);
+   msh.NmbTet = (int)GmfStatKwd(InpMsh, GmfTetrahedra);
    printf("Input mesh: nmb tets = %d\n", msh.NmbTet);
 
    // Allocate the memory
