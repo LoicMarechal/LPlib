@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.20                               */
+/*                               HILBERT V 2.21                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   aug 05 2021                                           */
+/* Last modification:   sep 27 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -37,6 +37,7 @@
 
 #define MAXITR    21
 #define MAXELE    14
+#define MAXDOM    1024
 #define HILMOD    0
 #define OCTMOD    1
 #define RNDMOD    2
@@ -54,7 +55,7 @@ typedef struct
    double   crd[3];
    int      idx, ref;
 #ifdef WITH_GMLIB
-   int dom;
+   int      dom, gid, lid;
 #endif
 }VerSct;
 
@@ -63,7 +64,7 @@ typedef struct
    uint64_t cod;
    int      *idx, siz, ref;
 #ifdef WITH_GMLIB
-   int dom;
+   int      dom, gid, lid;
 #endif
 }EleSct;
 
@@ -227,6 +228,7 @@ int main(int ArgCnt, char **ArgVec)
       if(!strcmp(PtrArg,"-ndom"))
       {
          msh.MtsNmbDom = atoi(*++ArgVec);
+         msh.MtsNmbDom = MIN(msh.MtsNmbDom, MAXDOM);
          ArgCnt--;
          continue;
       }
@@ -532,6 +534,27 @@ void RecMsh(char *OutNam, MshSct *msh)
                   GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
 
+#ifdef WITH_GMLIB
+   // Save the number of domains
+   GmfSetKwd(OutMsh, GmfDomains, 1);
+   GmfSetLin(OutMsh, GmfDomains, 0, msh->MtsNmbDom);
+
+   // Save the vertices Global ID / Domain / Local ID
+   GmfSetKwd(OutMsh, GmfVerticesGID, msh->NmbVer);
+   GmfSetBlock(OutMsh, GmfVerticesGID, 1, msh->NmbVer, 0, NULL, NULL,
+               GmfInt, &msh->ver[1].gid, &msh->ver[ msh->NmbVer ].gid,
+               GmfInt, &msh->ver[1].dom, &msh->ver[ msh->NmbVer ].dom,
+               GmfInt, &msh->ver[1].lid, &msh->ver[ msh->NmbVer ].lid);
+
+   // Save the tets Global ID / Domain / Local ID
+   GmfSetKwd(OutMsh, GmfTetrahedraGID, msh->NmbEle[3]);
+   GmfSetBlock(OutMsh, GmfTetrahedraGID, 1, msh->NmbEle[3], 0, NULL, NULL,
+               GmfInt, &msh->ele[3][1].gid, &msh->ele[3][ msh->NmbEle[3] ].gid,
+               GmfInt, &msh->ele[3][1].dom, &msh->ele[3][ msh->NmbEle[3] ].dom,
+               GmfInt, &msh->ele[3][1].lid, &msh->ele[3][ msh->NmbEle[3] ].lid);
+
+#endif
+
    GmfCloseMesh(OutMsh);
 }
 
@@ -768,40 +791,58 @@ void SwpMem(MshSct *msh, int typ)
 
 void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
 {
-   int i, ref;
-   FILE *mts;
+   int      i, ref, dom, VerCpt[ MAXDOM ], TetCpt[ MAXDOM ];
+   FILE     *mts;
+   VerSct   *ver;
+   EleSct   *tet;
 
-   //msh->NmbEle[1] = 0;
-
+   // Read the Metis vertex domain and build the local idx / domain information
    printf("Reading node partitions from %s\n", MtsNodNam);
    if(!(mts = fopen(MtsNodNam, "r")))
       return;
 
+   for(i=0;i<msh->MtsNmbDom;i++)
+      VerCpt[i] = 0;
+
+   // Deduce the local ID from the Global ID and the domain ID
    for(i=1;i<=msh->NmbVer;i++)
-      fscanf(mts, "%d", &msh->ver[i].ref);
+   {
+      ver = &msh->ver[i];
+      fscanf(mts, "%d", &dom);
+      dom = MIN(dom, msh->MtsNmbDom - 1);
+      dom = MAX(dom, 0);
+      VerCpt[ dom ]++;
+      ver->gid = i;
+      ver->dom = dom;
+      ver->lid = VerCpt[ dom ];
+   }
 
    fclose(mts);
 
-   for(i=1;i<=msh->NmbEle[3];i++)
-   {
-      ref = msh->ver[ msh->ele[3][i].idx[0] ].ref;
-      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[1] ].ref);
-      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[2] ].ref);
-      ref = MAX(ref, msh->ver[ msh->ele[3][i].idx[3] ].ref);
-      msh->ele[3][i].ref = ref;
-   }
-
-   /*printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
+   printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
    if(!(mts = fopen(MtsEleNam, "r")))
       return;
 
    if( (msh->MtsEleTyp != GmfTetrahedra) || !msh->NmbEle[3] )
       return;
 
-   for(i=1;i<=msh->NmbEle[3];i++)
-      fscanf(mts, "%d", &msh->ele[3][i].ref);
+   for(i=1;i<=msh->MtsNmbDom;i++)
+      TetCpt[i] = 0;
 
-   fclose(mts);*/
+   // Deduce the local ID from the Global ID and the domain ID
+   for(i=1;i<=msh->NmbEle[3];i++)
+   {
+      tet = &msh->ele[3][i];
+      fscanf(mts, "%d", &dom);
+      dom = MIN(dom, msh->MtsNmbDom - 1);
+      dom = MAX(dom, 0);
+      TetCpt[ dom ]++;
+      tet->gid = i;
+      tet->dom = dom;
+      tet->lid = TetCpt[ dom ];
+   }
+
+   fclose(mts);
 }
 
 

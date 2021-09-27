@@ -73,17 +73,17 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 
 typedef struct WrkSct
 {
-   itg      BegIdx, EndIdx, ItlTab[ MaxPth ][2];
-   int      NmbDep, *DepWrdTab;
-   struct   WrkSct *pre, *nex;
+   itg               BegIdx, EndIdx, ItlTab[ MaxPth ][2];
+   int               NmbDep, *DepWrdTab;
+   struct            WrkSct *pre, *nex;
 }WrkSct;
 
 typedef struct
 {
-   itg      NmbLin, MaxNmbLin;
-   int      NmbSmlWrk, SmlWrkSiz, DepWrkSiz;
-   int      NmbDepWrd, *DepWrdMat, *RunDepTab;
-   WrkSct   *SmlWrkTab, *BigWrkTab;
+   itg               NmbLin, MaxNmbLin;
+   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz;
+   int               NmbDepWrd, *DepWrdMat, *RunDepTab;
+   WrkSct            *SmlWrkTab, *BigWrkTab;
 }TypSct;
 
 typedef struct
@@ -102,43 +102,43 @@ typedef struct
 
 typedef struct PipSct
 {
-   int            idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
-   void           *prc, *arg, *F77ArgTab[ MaxF77Arg ];
-   size_t         StkSiz;
-   void           *UsrStk;
-   pthread_attr_t atr;
-   pthread_t      pth;
-   struct ParSct  *par;
+   int               idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
+   void              *prc, *arg, *F77ArgTab[ MaxF77Arg ];
+   size_t            StkSiz;
+   void              *UsrStk;
+   pthread_attr_t    atr;
+   pthread_t         pth;
+   struct ParSct     *par;
 }PipSct;
 
 typedef struct ParSct
 {
-   int      NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, BufMax, BufCpt;
-   int      req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
-   int      WrkSizSrt, NmbItlBlk, ItlBlkSiz;
-   size_t   StkSiz, ClrLinSiz;
-   void     *F77ArgTab[ MaxF77Arg ];
-   float    sta[2];
-   void     (*prc)(itg, itg, int, void *), *arg;
-   pthread_cond_t ParCnd, PipCnd;
-   pthread_mutex_t ParMtx, PipMtx;
-   pthread_t PipPth;
-   PthSct   *PthTab;
-   TypSct   *TypTab, *CurTyp, *DepTyp, *typ1, *typ2;
-   WrkSct   *NexWrk, *BufWrk[ MaxPth / 4 ];
+   int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp;
+   int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
+   size_t            StkSiz, ClrLinSiz;
+   void              *F77ArgTab[ MaxF77Arg ];
+   float             sta[2];
+   void              (*prc)(itg, itg, int, void *), *arg;
+   pthread_cond_t    ParCnd, PipCnd;
+   pthread_mutex_t   ParMtx, PipMtx;
+   pthread_t         PipPth;
+   PthSct            *PthTab;
+   TypSct            *TypTab, *CurTyp, *DepTyp, *typ1, *typ2;
+   WrkSct            *NexWrk, *BufWrk[ MaxPth / 4 ];
 }ParSct;
 
 typedef struct
 {
-   uint64_t (*idx)[2];
-   double   box[6], (*crd)[3], (*crd2)[2];
+   uint64_t          (*idx)[2];
+   double            box[6], (*crd)[3], (*crd2)[2];
 }ArgSct;
 
 typedef struct
 {
-   void     *base;
-   size_t   nel, width;
-   int      (*compar)(const void *, const void *);
+   void              *base;
+   size_t            nel, width;
+   int               (*compar)(const void *, const void *);
 }PipArgSct;
 
 
@@ -153,8 +153,8 @@ static void    AddWrd      (int, int *, int *);
 static void    SubWrd      (int, int *, int *);
 static void    ClrWrd      (int, int *);
 int            CmpWrk      (const void *, const void *);
-static void *  PipHdl      (void *);
-static void *  PthHdl      (void *);
+static void   *PipHdl      (void *);
+static void   *PthHdl      (void *);
 static WrkSct *NexWrk      (ParSct *, int);
 void           PipSrt      (PipArgSct *);
 static void    CalF77Prc   (itg, itg, int, ParSct *);
