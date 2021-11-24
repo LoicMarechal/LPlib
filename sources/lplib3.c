@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.72                                  */
+/*                               LPlib V3.73                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: aug 04 2021                                           */
+/*   Last modification: nov 24 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -53,8 +53,9 @@
 #define MaxHsh    10
 #define HshBit    16
 #define MaxF77Arg 20
+#define WrkPerGrp 8
 
-enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
+enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, ClrMem, EndPth};
 
 
 /*----------------------------------------------------------------------------*/
@@ -74,25 +75,33 @@ enum ParCmd {RunBigWrk, RunSmlWrk, ClrMem, EndPth};
 typedef struct WrkSct
 {
    itg               BegIdx, EndIdx, ItlTab[ MaxPth ][2];
-   int               NmbDep, *DepWrdTab;
-   struct            WrkSct *pre, *nex;
+   int               NmbDep, *DepWrdTab, GrpIdx;
+   struct WrkSct     *pre, *nex;
 }WrkSct;
+
+typedef struct GrpSct
+{
+   int               idx, NmbSmlWrk[ MaxPth ];
+   WrkSct            *SmlWrkTab[ MaxPth ][ WrkPerGrp ];
+   struct GrpSct     *nex;
+}GrpSct;
 
 typedef struct
 {
    itg               NmbLin, MaxNmbLin;
-   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz;
+   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp;
    int               NmbDepWrd, *DepWrdMat, *RunDepTab;
    WrkSct            *SmlWrkTab, *BigWrkTab;
+   GrpSct            *NexGrp;
 }TypSct;
 
 typedef struct
 {
-   int               idx;
+   int               idx, NmbDetWrk;
    char              *ClrAdr;
    size_t            StkSiz;
    void *            *UsrStk;
-   WrkSct            *wrk;
+   WrkSct            *wrk, **DetWrkTab;
    pthread_mutex_t   mtx;
    pthread_cond_t    cnd;
    pthread_t         pth;
@@ -113,7 +122,7 @@ typedef struct PipSct
 
 typedef struct ParSct
 {
-   int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp;
+   int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
    int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
    size_t            StkSiz, ClrLinSiz;
@@ -152,6 +161,7 @@ static int     AndWrd      (int, int *, int *);
 static void    AddWrd      (int, int *, int *);
 static void    SubWrd      (int, int *, int *);
 static void    ClrWrd      (int, int *);
+static void    CpyWrd      (int, int *, int *);
 int            CmpWrk      (const void *, const void *);
 static void   *PipHdl      (void *);
 static void   *PthHdl      (void *);
@@ -162,6 +172,7 @@ static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 static int64_t IniPar      (int, size_t );
 static void    SetItlBlk   (ParSct *, TypSct *);
+static void    SetGrp      (ParSct *, TypSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -220,6 +231,7 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    par->StkSiz = StkSiz;
    par->NmbItlBlk = 1;
    par->WrkSizSrt = 1;
+   par->DynSch = 1;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -414,6 +426,14 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
             par->WrkSizSrt = 0;
             NmbArg++;
          }break;
+
+         // Static scheduling makes the library deterministic
+         case StaticScheduling :
+         {
+            // WP sorting is useless in this mode so it is disabled
+            par->WrkSizSrt = par->DynSch = 0;
+            NmbArg++;
+         }break;
       }
    }while(ArgCod);
 
@@ -430,11 +450,12 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
 float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
-   int i;
-   float acc;
-   PthSct *pth;
-   ParSct *par = (ParSct *)ParIdx;
-   TypSct *typ1, *typ2 = NULL;
+   int      i, j, idx, nex;
+   float    acc;
+   PthSct   *pth;
+   ParSct   *par = (ParSct *)ParIdx;
+   TypSct   *typ1, *typ2 = NULL;
+   GrpSct   *grp;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -449,8 +470,52 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
    typ1 =  &par->TypTab[ TypIdx1 ];
 
-   if(TypIdx2)
+   // Launch small WP with static scheduling
+   if(TypIdx2 && !par->DynSch)
    {
+      grp = typ1->NexGrp;
+      acc = 0.;
+
+      do
+      {
+         // Lock acces to global parameters
+         pthread_mutex_lock(&par->ParMtx);
+
+         par->cmd = RunDetWrk;
+         par->prc = (void (*)(itg, itg, int, void *))prc;
+         par->arg = PtrArg;
+         par->typ1 = typ1;
+         par->typ2 = NULL;
+         par->WrkCpt = 0;
+
+         for(i=0;i<par->NmbCpu;i++)
+         {
+            pth = &par->PthTab[i];
+            pth->NmbDetWrk = grp->NmbSmlWrk[i];
+            pth->DetWrkTab = grp->SmlWrkTab[i];
+            acc += (float)grp->NmbSmlWrk[i];
+         }
+
+         for(i=0;i<par->NmbCpu;i++)
+         {
+            pth = &par->PthTab[i];
+            pthread_mutex_lock(&pth->mtx);
+            pthread_cond_signal(&pth->cnd);
+            pthread_mutex_unlock(&pth->mtx);
+         }
+
+         pthread_cond_wait(&par->ParCnd, &par->ParMtx);
+
+         pthread_mutex_unlock(&par->ParMtx);
+         grp = grp->nex;
+      }while(grp);
+
+      acc /= NmbSmlBlk / WrkPerGrp * typ1->NmbGrp;
+   }
+   else if(TypIdx2 && par->DynSch)
+   {
+      // Launch small WP with dynamic scheduling
+
       // Lock acces to global parameters
       pthread_mutex_lock(&par->ParMtx);
 
@@ -520,6 +585,8 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
    }
    else
    {
+      // Launch big WP with static scheduling
+
       // Lock acces to global parameters
       pthread_mutex_lock(&par->ParMtx);
 
@@ -619,6 +686,7 @@ static void *PthHdl(void *ptr)
 
       switch(par->cmd)
       {
+         // Call user's procedure with big WP
          case RunBigWrk :
          {
             // Loop over the interleaved blocks
@@ -648,6 +716,7 @@ static void *PthHdl(void *ptr)
             pthread_mutex_unlock(&par->ParMtx);
          }break;
 
+         // Call user's procedure with small WP using dynamic scheduling
          case RunSmlWrk :
          {
             do
@@ -679,6 +748,32 @@ static void *PthHdl(void *ptr)
 
                pthread_mutex_unlock(&par->ParMtx);
             }while(1);
+         }break;
+
+         // Call user's procedure with small WP using static scheduling
+         case RunDetWrk :
+         {
+            // Loop over the groups' WP
+            for(i=0;i<pth->NmbDetWrk;i++)
+            {
+               beg = pth->DetWrkTab[i]->BegIdx;
+               end = pth->DetWrkTab[i]->EndIdx;
+
+               if(par->NmbF77Arg)
+                  CalF77Prc(beg, end, pth->idx, par);
+               else if(par->NmbVarArg)
+                  CalVarArgPrc(beg, end, pth->idx, par);
+               else
+                  par->prc(beg, end, pth->idx, par->arg);
+            }
+
+            pthread_mutex_lock(&par->ParMtx);
+            par->WrkCpt++;
+
+            if(par->WrkCpt >= par->NmbCpu)
+               pthread_cond_signal(&par->ParCnd);
+
+            pthread_mutex_unlock(&par->ParMtx);
          }break;
 
          case ClrMem :
@@ -1143,9 +1238,9 @@ void UpdateDependencyFast( int64_t ParIdx,  int TypIdx1, int NmbTyp1,
 
 int EndDependency(int64_t ParIdx, float DepSta[2])
 {
-   int i, NmbDepBit, TotNmbDep = 0;
-   ParSct *par = (ParSct *)ParIdx;
-   TypSct *typ1, *typ2;
+   int      i, NmbDepBit, TotNmbDep = 0;
+   ParSct   *par = (ParSct *)ParIdx;
+   TypSct   *typ1, *typ2;
 
    // Get and check lib parallel instance
    if( !ParIdx || !DepSta )
@@ -1190,8 +1285,11 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    DepSta[1] = 100 * DepSta[1] / NmbDepBit;
 
    // Sort WP from highest collision number to the lowest
-   if(par->WrkSizSrt)
+   if(par->WrkSizSrt && par->DynSch)
       qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
+
+   if(!par->DynSch)
+      SetGrp(par, typ1);
 
    return(1);
 }
@@ -1354,7 +1452,7 @@ static void SubWrd(int NmbWrd, int *SrcWrd, int *DstWrd)
 
 
 /*----------------------------------------------------------------------------*/
-/* Clear a  multibyte words                                                   */
+/* Clear a multibyte word                                                     */
 /*----------------------------------------------------------------------------*/
 
 static void ClrWrd(int NmbWrd, int *wrd)
@@ -1363,6 +1461,19 @@ static void ClrWrd(int NmbWrd, int *wrd)
 
    for(i=0;i<NmbWrd;i++)
       wrd[i] = 0;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Copy a multibyte word into another one                                     */
+/*----------------------------------------------------------------------------*/
+
+static void CpyWrd(int NmbWrd, int *SrcWrd, int *DstWrd)
+{
+   int i;
+
+   for(i=0;i<NmbWrd;i++)
+      DstWrd[i] = SrcWrd[i];
 }
 
 
@@ -1383,6 +1494,126 @@ int CmpWrk(const void *ptr1, const void *ptr2)
       return(1);
    else
       return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Generate static scheduling groups of small WP for each thread              */
+/*----------------------------------------------------------------------------*/
+
+static void SetGrp(ParSct *par, TypSct *typ)
+{
+   int      i, NmbSmlWrk, *GrpWrd, *AllWrd, *TstWrd;
+   int      IncFlg, MaxItm, siz = typ->NmbDepWrd;
+   GrpSct   *grp;
+   WrkSct   *wrk, *NexWrk;
+
+   // Initialize the static group list
+   NmbSmlWrk = typ->NmbSmlWrk;
+   typ->NmbGrp = 0;
+   typ->NexGrp = NULL;
+
+   // Allocate a dependency word to contain all threads
+   GrpWrd = malloc(par->NmbCpu * siz * sizeof(int));
+   assert(GrpWrd);
+
+   // Allocate a dependency word to concatenate all thread words
+   AllWrd = malloc(siz * sizeof(int));
+   assert(AllWrd);
+
+   // Allocate a working dependency word for testings
+   TstWrd = malloc(siz * sizeof(int));
+   assert(TstWrd);
+
+   // Link all WP together to make a free list
+   NexWrk = &typ->SmlWrkTab[0];
+
+   for(i=0;i<typ->NmbSmlWrk;i++)
+   {
+      typ->SmlWrkTab[i].pre = &typ->SmlWrkTab[ i - 1 ];
+      typ->SmlWrkTab[i].nex = &typ->SmlWrkTab[ i + 1 ];
+   }
+
+   typ->SmlWrkTab[0].pre = NULL;
+   typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].nex = NULL;
+
+   // Kepp on creating new groups as long as there are free WP
+   do
+   {
+      // Allocate a new group and link it
+      grp = calloc(1, sizeof(GrpSct));
+      assert(grp);
+      grp->nex = typ->NexGrp;
+      typ->NexGrp = grp;
+      grp->idx = ++typ->NmbGrp;
+
+      // Reset all the dependencies words
+      memset(GrpWrd, 0, par->NmbCpu * siz * sizeof(int));
+      memset(AllWrd, 0, siz * sizeof(int));
+
+      // Keep on adding WP to each groups' threads until they reach WrkPerGrp
+      do
+      {
+         // Could we add some WP to this group during this iteration ?
+         IncFlg = 0;
+
+         // Loop over the threads and try adding them as many WP as possible
+         for(i=0;i<par->NmbCpu;i++)
+         {
+            // Do not add WP is this threads has reached its target number
+            if(!NexWrk || (grp->NmbSmlWrk[i] >= WrkPerGrp))
+               continue;
+
+            // Initialize the WP pointer with the first
+            // available one from the linked list
+            wrk = NexWrk;
+
+            // Then loop over the linked list of available WP and add them to
+            // the curent group-thread list as long as they do not interfere
+            // with the combined dependency word of other threads
+            do
+            {
+               // To avoid making a AND with all threads' words, we remode (XOR)
+               // the tested thread' word from the combined one and test (AND)
+               // it against this WP's word
+               CpyWrd(siz, AllWrd, TstWrd);
+               SubWrd(siz, &GrpWrd[ i * siz ], TstWrd);
+
+               if(!AndWrd(siz, wrk->DepWrdTab, TstWrd))
+               {
+                  // If this WP is compatible, add its word to the thread
+                  // dependency word and to the combined one
+                  AddWrd(siz, wrk->DepWrdTab, AllWrd);
+                  AddWrd(siz, wrk->DepWrdTab, &GrpWrd[ i * siz ]);
+
+                  // Add this WP to the list, decrease the number of available
+                  // WPs and set the flag to indicate that we found some work
+                  grp->SmlWrkTab[i][ grp->NmbSmlWrk[i] ] = wrk;
+                  grp->NmbSmlWrk[i]++;
+                  NmbSmlWrk--;
+                  IncFlg = 1;
+
+                  // Unlink the WP from the available WP linked list
+                  if(wrk->pre)
+                     wrk->pre->nex = wrk->nex;
+                  else
+                     NexWrk = wrk->nex;
+
+                  if(wrk->nex)
+                     wrk->nex->pre = wrk->pre;
+               }
+
+               // Stop adding WP to this group-thread if its table is full
+               if(grp->NmbSmlWrk[i] >= WrkPerGrp)
+                  break;
+
+               wrk = wrk->nex;
+            }while(wrk && NmbSmlWrk);
+         }
+      }while(IncFlg && NmbSmlWrk);
+   }while(NmbSmlWrk);
+
+   free(GrpWrd);
 }
 
 
@@ -1756,10 +1987,11 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    arg.box[4] = len / (box[4] - box[1]);
    arg.box[5] = len / (box[5] - box[2]);
 
-   LaunchParallel(ParIdx, NewTyp, 0, (void *)RenPrc, (void *)&arg);
 
    if(NmbLin < 10000)
    {
+      RenPrc(1, NmbLin, 0, (void *)&arg);
+
       qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
 
       for(i=1;i<=NmbLin;i++)
@@ -1767,6 +1999,8 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    }
    else
    {
+      LaunchParallel(ParIdx, NewTyp, 0, (void *)RenPrc, (void *)&arg);
+
       for(i=0;i<1<<HshBit;i++)
          stat[i] = 0;
 

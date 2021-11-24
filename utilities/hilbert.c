@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.21                               */
+/*                               HILBERT V 2.22                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   sep 27 2021                                           */
+/* Last modification:   oct 14 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -27,7 +27,9 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 #include "libmeshb7.h"
+#include "libmeshb7_helpers.h"
 #include "lplib3.h"
 
 
@@ -41,6 +43,14 @@
 #define HILMOD    0
 #define OCTMOD    1
 #define RNDMOD    2
+
+enum {TypEdg, TypTri, TypQad, TypTet, TypPyr, TypPri, TypHex};
+
+
+/*----------------------------------------------------------------------------*/
+/* Macros                                                                     */
+/*----------------------------------------------------------------------------*/
+
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
 
@@ -62,11 +72,18 @@ typedef struct
 typedef struct
 {
    uint64_t cod;
-   int      *idx, siz, ref;
+   int      *idx, siz, ref, gid;
 #ifdef WITH_GMLIB
-   int      dom, gid, lid;
+   int      dom, lid;
 #endif
 }EleSct;
+
+typedef struct PtrBuc
+{
+   int      idx[3], ele;
+   char     typ, voy;
+   struct   PtrBuc *nex;
+}BucSct;
 
 typedef struct
 {
@@ -84,22 +101,24 @@ typedef struct
 /* Global variables                                                           */
 /*----------------------------------------------------------------------------*/
 
-int EleTab[ MAXELE ][2] = {
-   { 2, GmfEdges},
-   { 3, GmfTriangles},
-   { 4, GmfQuadrilaterals},
-   { 4, GmfTetrahedra},
-   { 5, GmfPyramids},
-   { 6, GmfPrisms},
-   { 8, GmfHexahedra},
-   { 3, GmfEdgesP2},
-   { 6, GmfTrianglesP2},
-   { 9, GmfQuadrilateralsQ2},
-   {10, GmfTetrahedraP2},
-   {14, GmfPyramidsP2},
-   {18, GmfPrismsP2},
-   {27, GmfHexahedraQ2} };
+// For each kind of element: number of node, number of faces, GMF keyword
+int EleTab[ MAXELE ][3] = {
+   { 2, 2, GmfEdges},
+   { 3, 3, GmfTriangles},
+   { 4, 4, GmfQuadrilaterals},
+   { 4, 4, GmfTetrahedra},
+   { 5, 5, GmfPyramids},
+   { 6, 5, GmfPrisms},
+   { 8, 6, GmfHexahedra},
+   { 3, 2, GmfEdgesP2},
+   { 6, 3, GmfTrianglesP2},
+   { 9, 4, GmfQuadrilateralsQ2},
+   {10, 4, GmfTetrahedraP2},
+   {14, 5, GmfPyramidsP2},
+   {18, 5, GmfPrismsP2},
+   {27, 6, GmfHexahedraQ2} };
 
+// For each kind of element: GMF keyword strings
 char *EleNam[ MAXELE ] = {
    "Edges           ",
    "Triangles       ",
@@ -116,6 +135,8 @@ char *EleNam[ MAXELE ] = {
    "PrismsP2        ",
    "HexahedraQ2     " };
 
+#ifdef WITH_GMLIB
+// For each kind of element: low vertex degree and highest vertex degree
 int MaxDeg[ MAXELE ][2] = {
    { 2,   8},
    { 8,  32},
@@ -131,6 +152,22 @@ int MaxDeg[ MAXELE ][2] = {
    {16,  64},
    {16,  64},
    { 8,  32} };
+#endif
+
+// For each kind of element: give each face number of nodes
+int FacDeg[7][6] = { 
+   {0,0,0,0,0,0}, {3,0,0,0,0,0}, {4,0,0,0,0,0},
+   {3,3,3,3,0,0}, {3,3,3,3,4,0}, {3,3,4,4,4,0}, {4,4,4,4,4,4} };
+
+// For each kind of element: give eahc face list of nodes
+int EleFac[7][6][4] = {
+   { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} },
+   { {0,1,2,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} },
+   { {0,1,2,3}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} },
+   { {1,2,3,0}, {2,0,3,0}, {3,0,1,0}, {0,2,1,0}, {0,0,0,0}, {0,0,0,0} },
+   { {0,1,4,0}, {1,2,4,0}, {2,3,4,0}, {3,0,4,0}, {3,2,1,0}, {0,0,0,0} },
+   { {0,2,1,0}, {3,4,5,0}, {0,1,4,3}, {1,2,5,4}, {3,5,2,0}, {0,0,0,0} },
+   { {0,4,7,3}, {1,2,6,5}, {0,1,5,4}, {3,7,6,2}, {0,3,2,1}, {4,5,6,7} } };
 
 
 /*----------------------------------------------------------------------------*/
@@ -146,6 +183,8 @@ void     RenVer(int, int, int, MshSct *);
 void     RenEle(int, int, int, MshSct *);
 void     PrtSta(MshSct *, int64_t);
 void     SwpMem(MshSct *, int);
+char    *SetNgb(MshSct *);
+void     SrtFac(EleSct *, int, int, int [3]);
 #ifdef WITH_GMLIB
 void     GmlSrt(MshSct *);
 void     ScaMts(char *, char *, MshSct *);
@@ -158,26 +197,32 @@ void     ScaMts(char *, char *, MshSct *);
 
 int main(int ArgCnt, char **ArgVec)
 {
-   char     *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-   int      i, t, NmbCpu = 0, StaFlg = 0;
+   char     *PtrArg, *TmpStr, *BndTab, InpNam[1000], OutNam[1000];
+   int      i, t, NmbCpu = 0, StaFlg = 0, BndFlg = 0, *IdxTab, NmbSrf, NmbVol;
    int64_t  LibParIdx;
    double   timer = 0.;
    MshSct   msh;
+   VerSct   *OldVer, *NewVer, *VolVer;
 #ifdef WITH_GMLIB
    int      j;
    char     MtsNodNam[1000], MtsEleNam[1000];
 #endif
 
+
+   // --------------------
    // Command line parsing
+   // --------------------
+
    memset(&msh, 0, sizeof(MshSct));
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v2.20 june 19 2020   Loic MARECHAL / INRIA");
+      puts("\nHILBERT v2.22 october 12 2021   Loic MARECHAL / INRIA");
       puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
       puts(" -in name    : input mesh(b) name");
       puts(" -out name   : output renumbered mesh(b)");
       puts(" -stats      : print element blocks dependencies stats before and after renumbering");
+      puts(" -fixbnd     : do not renumber boundary nodes");
       puts(" -scheme n   : renumbering scheme: 0 = Hilbert,  1 = Z curve,  2 = random,  (default = 0)");
       puts(" -nproc n    : n is the number of threads to be launched (default = all available threads)");
 #ifdef WITH_GMLIB
@@ -221,6 +266,12 @@ int main(int ArgCnt, char **ArgVec)
       if(!strcmp(PtrArg,"-stats"))
       {
          StaFlg = 1;
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-fixbnd"))
+      {
+         BndFlg = 1;
          continue;
       }
 
@@ -289,7 +340,11 @@ int main(int ArgCnt, char **ArgVec)
       exit(1);
    }
 
+
+   // ------------
    // Mesh reading
+   // ------------
+
    printf("\nReading mesh          : ");
    timer = 0.;
    GetTim(&timer);
@@ -306,7 +361,11 @@ int main(int ArgCnt, char **ArgVec)
 
    puts("");
 
-   // Compute initial stats
+
+   // --------------------------------------------
+   // Compute initial block dependenies statistics
+   // --------------------------------------------
+
    LibParIdx = InitParallel(NmbCpu);
 
    if(StaFlg)
@@ -321,7 +380,11 @@ int main(int ArgCnt, char **ArgVec)
       PrtSta(&msh, LibParIdx);
    }
 
+
+   // ----------------------------------------------------------------------
    // Prepare references and degree related data for the GMlib modified sort
+   // ----------------------------------------------------------------------
+
 #ifdef WITH_GMLIB
    if(msh.GmlMod)
    {
@@ -348,13 +411,67 @@ int main(int ArgCnt, char **ArgVec)
    }
 #endif
 
+
+   // --------------------
    // Vertices renumbering
+   // --------------------
+
    printf("Renumbering vertices         : ");
    timer = 0.;
    GetTim(&timer);
-   msh.VerTyp = NewType(LibParIdx, msh.NmbVer);
-   LaunchParallel(LibParIdx, msh.VerTyp, 0, (void *)RenVer, (void *)&msh);
-   ParallelQsort(LibParIdx, &msh.ver[1], msh.NmbVer, sizeof(VerSct), CmpFnc);
+
+   if(BndFlg)
+   {
+      // Set the neighbours between elements and set boundary vertices tags
+      BndTab = SetNgb(&msh);
+
+      // Extract the inner volume vertices in a separate table
+      IdxTab = malloc( (msh.NmbVer + 1) * sizeof(int) );
+      assert(IdxTab);
+      NmbVol = 0;
+
+      for(i=1;i<=msh.NmbVer;i++)
+         IdxTab[i] = BndTab[i] ? 0 : ++NmbVol;
+
+      VolVer = malloc( (NmbVol + 1) * sizeof(VerSct) );
+      assert(VolVer);
+
+      for(i=1;i<=msh.NmbVer;i++)
+         if(!BndTab[i])
+            memcpy(&VolVer[ IdxTab[i] ], &msh.ver[i], sizeof(VerSct));
+
+      OldVer = msh.ver;
+      msh.ver = VolVer;
+   
+      // Renumber the inner volume vertices only
+      msh.VerTyp = NewType(LibParIdx, NmbVol);
+      LaunchParallel(LibParIdx, msh.VerTyp, 0, (void *)RenVer, (void *)&msh);
+      ParallelQsort(LibParIdx, &msh.ver[1], NmbVol, sizeof(VerSct), CmpFnc);
+
+      // Join the surface vertices with the renumbered volume ones
+      NewVer = malloc( (msh.NmbVer + 1) * sizeof(VerSct) );
+      assert(NewVer);
+
+      for(i=1;i<=msh.NmbVer;i++)
+         if(BndTab[i])
+            memcpy(&NewVer[i], &OldVer[i], sizeof(VerSct));
+         else
+            memcpy(&NewVer[i], &VolVer[ IdxTab[i] ], sizeof(VerSct));
+
+      msh.ver = NewVer;
+
+      // Free everything
+      free(VolVer);
+      free(OldVer);
+      free(IdxTab);
+      free(BndTab);
+   }
+   else
+   {
+      msh.VerTyp = NewType(LibParIdx, msh.NmbVer);
+      LaunchParallel(LibParIdx, msh.VerTyp, 0, (void *)RenVer, (void *)&msh);
+      ParallelQsort(LibParIdx, &msh.ver[1], msh.NmbVer, sizeof(VerSct), CmpFnc);
+   }
 
    msh.Old2New = malloc( (msh.NmbVer+1) * sizeof(int) );
 
@@ -364,7 +481,11 @@ int main(int ArgCnt, char **ArgVec)
    GetTim(&timer);
    printf("%g s\n", timer);
 
+
+   // --------------------
    // Elements renumbering
+   // --------------------
+
    for(t=0;t<MAXELE;t++)
       if(msh.NmbEle[t])
       {
@@ -380,7 +501,10 @@ int main(int ArgCnt, char **ArgVec)
          printf("%g s\n", timer);
       }
 
-   // Compute dependencies
+
+   // --------------------------------------
+   // Compute dependencies after renumbering
+   // --------------------------------------
    if(StaFlg)
    {
       puts("\nDependencies after renumbering (average / MAX) :");
@@ -389,7 +513,11 @@ int main(int ArgCnt, char **ArgVec)
 
    StopParallel(LibParIdx);
 
+
+   // ------------
    // Mesh writing
+   // ------------
+
    printf("Writing mesh          : ");
    timer = 0.;
    GetTim(&timer);
@@ -397,7 +525,11 @@ int main(int ArgCnt, char **ArgVec)
    GetTim(&timer);
    printf("%g s\n\n", timer);
 
+
+   // --------------
    // Release memory
+   // --------------
+
    if(msh.ver)
       free(msh.ver);
 
@@ -479,7 +611,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
    // Allocate and read elements
    for(t=0;t<MAXELE;t++)
    {
-      n = msh->NmbEle[t] = (int)GmfStatKwd(InpMsh, EleTab[t][1]);
+      n = msh->NmbEle[t] = (int)GmfStatKwd(InpMsh, EleTab[t][2]);
 
       if(!n)
          continue;
@@ -491,7 +623,7 @@ void ScaMsh(char *InpNam, MshSct *msh)
       for(i=1;i<=n;i++)
          msh->ele[t][i].idx = &PtrIdx[ i * EleTab[t][0] ];
 
-      GmfGetBlock(InpMsh,    EleTab[t][1], 1, n, 0, NULL, NULL,
+      GmfGetBlock(InpMsh,    EleTab[t][2], 1, n, 0, NULL, NULL,
                   GmfIntVec, EleTab[t][0], msh->ele[t][1].idx,  msh->ele[t][n].idx,
                   GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
@@ -528,30 +660,33 @@ void RecMsh(char *OutNam, MshSct *msh)
       if(!(n = msh->NmbEle[t]))
          continue;
 
-      GmfSetKwd  (OutMsh,    EleTab[t][1], n);
-      GmfSetBlock(OutMsh,    EleTab[t][1], 1, n, 0, NULL, NULL,
+      GmfSetKwd  (OutMsh,    EleTab[t][2], n);
+      GmfSetBlock(OutMsh,    EleTab[t][2], 1, n, 0, NULL, NULL,
                   GmfIntVec, EleTab[t][0], msh->ele[t][1].idx,  msh->ele[t][n].idx,
                   GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
 
 #ifdef WITH_GMLIB
-   // Save the number of domains
-   GmfSetKwd(OutMsh, GmfDomains, 1);
-   GmfSetLin(OutMsh, GmfDomains, 0, msh->MtsNmbDom);
+   if(msh->GmlMod)
+   {
+      // Save the number of domains
+      GmfSetKwd(OutMsh, GmfDomains, 1);
+      GmfSetLin(OutMsh, GmfDomains, 0, msh->MtsNmbDom);
 
-   // Save the vertices Global ID / Domain / Local ID
-   GmfSetKwd(OutMsh, GmfVerticesGID, msh->NmbVer);
-   GmfSetBlock(OutMsh, GmfVerticesGID, 1, msh->NmbVer, 0, NULL, NULL,
-               GmfInt, &msh->ver[1].gid, &msh->ver[ msh->NmbVer ].gid,
-               GmfInt, &msh->ver[1].dom, &msh->ver[ msh->NmbVer ].dom,
-               GmfInt, &msh->ver[1].lid, &msh->ver[ msh->NmbVer ].lid);
+      // Save the vertices Global ID / Domain / Local ID
+      GmfSetKwd(OutMsh, GmfVerticesGID, msh->NmbVer);
+      GmfSetBlock(OutMsh, GmfVerticesGID, 1, msh->NmbVer, 0, NULL, NULL,
+                  GmfInt, &msh->ver[1].gid, &msh->ver[ msh->NmbVer ].gid,
+                  GmfInt, &msh->ver[1].dom, &msh->ver[ msh->NmbVer ].dom,
+                  GmfInt, &msh->ver[1].lid, &msh->ver[ msh->NmbVer ].lid);
 
-   // Save the tets Global ID / Domain / Local ID
-   GmfSetKwd(OutMsh, GmfTetrahedraGID, msh->NmbEle[3]);
-   GmfSetBlock(OutMsh, GmfTetrahedraGID, 1, msh->NmbEle[3], 0, NULL, NULL,
-               GmfInt, &msh->ele[3][1].gid, &msh->ele[3][ msh->NmbEle[3] ].gid,
-               GmfInt, &msh->ele[3][1].dom, &msh->ele[3][ msh->NmbEle[3] ].dom,
-               GmfInt, &msh->ele[3][1].lid, &msh->ele[3][ msh->NmbEle[3] ].lid);
+      // Save the tets Global ID / Domain / Local ID
+      GmfSetKwd(OutMsh, GmfTetrahedraGID, msh->NmbEle[3]);
+      GmfSetBlock(OutMsh, GmfTetrahedraGID, 1, msh->NmbEle[3], 0, NULL, NULL,
+                  GmfInt, &msh->ele[3][1].gid, &msh->ele[3][ msh->NmbEle[3] ].gid,
+                  GmfInt, &msh->ele[3][1].dom, &msh->ele[3][ msh->NmbEle[3] ].dom,
+                  GmfInt, &msh->ele[3][1].lid, &msh->ele[3][ msh->NmbEle[3] ].lid);
+   }
 
 #endif
 
@@ -780,6 +915,197 @@ void SwpMem(MshSct *msh, int typ)
    // Free the old table and set the element type pointer with the new one
    free(msh->IdxTab[ typ ]);
    msh->IdxTab[ typ ] = IdxTab;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Setup packed neighbours + voyeurs information                              */
+/*----------------------------------------------------------------------------*/
+
+char *SetNgb(MshSct *msh)
+{
+   int      i, j, k, t, idx[3], key, NmbCol = 0, siz, gid = 1, (*ngb)[6];
+   char     (*voy)[6], *BndTab;
+   BucSct   *hsh, *col, *buc, *cur = NULL;
+   EleSct   *ele;
+
+   // Compute the total number of faces
+   siz = 4 * msh->NmbEle[ TypTet ]
+       + 5 * msh->NmbEle[ TypPyr ]
+       + 5 * msh->NmbEle[ TypPri ]
+       + 6 * msh->NmbEle[ TypHex ];
+
+   // Allocate but do not clear a colision table for each face
+   col = malloc(siz * sizeof(BucSct));
+   assert(col);
+
+   // Allocate and clear the base hash table with half the number of faces
+   siz /= 2;
+   hsh = calloc(siz, sizeof(BucSct));
+   assert(hsh);
+
+   // Set each element's global ID
+   for(t=TypTet; t<=TypHex; t++)
+      for(i=1;i<=msh->NmbEle[t];i++)
+         msh->ele[t][i].gid = gid++;
+
+   // Allocate the neighbours and a voyeurs tables
+   ngb = calloc(gid + 1, 6 * sizeof(int));
+   assert(ngb);
+   voy = calloc(gid + 1, 6 * sizeof(char));
+   assert(voy);
+
+   // Scan each element type
+   for(t=TypTet; t<=TypHex; t++)
+   {
+      // Scan each element
+      for(i=1;i<=msh->NmbEle[t];i++)
+      {
+         ele = &msh->ele[t][i];
+
+         // Scan each face
+         for(j=0;j<EleTab[t][1];j++)
+         {
+            // Get the face's caracteristic node indices
+            SrtFac(ele, t, j, idx);
+            key = (3 * idx[0] + 5 * idx[1] + 7 * idx[2]) % siz;
+            buc = &hsh[ key ];
+
+            // If the bucket is empty, store the face
+            if(!buc->ele)
+            {
+               for(k=0;k<3;k++)
+                  buc->idx[k] = idx[k];
+
+               buc->ele = ele->gid;
+               buc->voy = j;
+               buc->typ = t;
+            }
+            else
+            {
+               // Search for the face through the linked list
+               do
+               {
+                  // If found, setup the neighborhood information
+                  if((idx[0] == buc->idx[0])
+                  && (idx[1] == buc->idx[1])
+                  && (idx[2] == buc->idx[2]))
+                  {
+                     ngb[ ele->gid ][j] = buc->ele;
+                     ngb[ buc->ele ][ buc->voy ] = ele->gid;
+                     break;
+                  }
+
+                  cur = buc;
+               }while((buc = buc->nex));
+
+               // If not, add the face to the collision buffer
+               if(!buc)
+               {
+                  buc = cur->nex = &col[ NmbCol++ ];
+                  buc->ele = ele->gid;
+                  buc->voy = j;
+                  buc->typ = t;
+                  buc->nex = NULL;
+
+                  for(k=0;k<3;k++)
+                     buc->idx[k] = idx[k];
+               }
+            }
+         }
+      }
+   }
+
+   free(hsh);
+   free(col);
+
+   // Allocate and fill a boundary vertex flag table and return it
+   BndTab = calloc(msh->NmbVer + 1, sizeof(char));
+   assert(BndTab);
+
+   for(t=TypTet; t<=TypHex; t++)
+      for(i=1;i<=msh->NmbEle[t];i++)
+         for(j=0;j<EleTab[t][1];j++)
+            if(!ngb[ msh->ele[t][i].gid ][j])
+               for(k=0;k<FacDeg[t][j];k++)
+                  BndTab[ msh->ele[t][i].idx[ EleFac[t][j][k] ] ] = 1;
+
+   free(ngb);
+   free(voy);
+
+   return(BndTab);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Fill idx table with the sorted face vertices                               */
+/*----------------------------------------------------------------------------*/
+
+void SrtFac(EleSct *ele, int typ, int fac, int nod[3])
+{
+   int a, b, c, i, MinPos;
+
+   // Triangle face: return the three sorted indices
+   if(FacDeg[ typ ][ fac ] == 3)
+   {
+      a = ele->idx[ EleFac[ typ ][ fac ][0] ];
+      b = ele->idx[ EleFac[ typ ][ fac ][1] ];
+      c = ele->idx[ EleFac[ typ ][ fac ][2] ];
+
+      if(a < b)
+         if(b < c)
+         {
+            nod[0] = a;
+            nod[1] = b;
+            nod[2] = c;
+         }
+         else
+            if(a < c)
+            {
+               nod[0] = a;
+               nod[1] = c;
+               nod[2] = b;
+            }
+            else
+            {
+               nod[0] = c;
+               nod[1] = a;
+               nod[2] = b;
+            }
+      else
+         if(a < c)
+         {
+            nod[0] = b;
+            nod[1] = a;
+            nod[2] = c;
+         }
+         else
+            if(b < c)
+            {
+               nod[0] = b;
+               nod[1] = c;
+               nod[2] = a;
+            }
+            else
+            {
+               nod[0] = c;
+               nod[1] = b;
+               nod[2] = a;
+            }
+   }
+   else if(FacDeg[ typ ][ fac ] == 4)
+   {
+      // Quad face: return the minimum index vertex and its diagonal opposite
+      MinPos = 0;
+
+      for(i=1;i<4;i++)
+         if(ele->idx[ EleFac[ typ ][ fac ][i] ] < ele->idx[ EleFac[ typ ][ fac ][ MinPos ] ])
+            MinPos = i;
+
+      nod[0] = ele->idx[ EleFac[ typ ][ fac ][ MinPos ] ];
+      nod[1] = ele->idx[ EleFac[ typ ][ fac ][ (MinPos + 2) % 4 ] ];
+      nod[2] = 0;
+   }
 }
 
 

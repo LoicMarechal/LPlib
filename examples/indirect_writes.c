@@ -94,7 +94,7 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int      i, j, NmbCpu=GetNumberOfCores(), ver, dim, ref, NmbItr=100;
+   int      i, j, NmbCpu = GetNumberOfCores(), ver, dim, ref, NmbItr=100;
    int64_t  InpMsh;
    float    sta[2], acc=0;
    double   tim=0;
