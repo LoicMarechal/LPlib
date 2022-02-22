@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large February 2021 \\
-\normalsize Document v1.72, library v3.70
+\Large February 2022 \\
+\normalsize Document v1.73, library v3.73
 \end{flushright}
 
 \end{titlepage}
@@ -991,6 +991,29 @@ It works similarly to the C library qsort command.
 
 \subsubsection*{Description}
 Increase the number of lines of a previously allocated data type. This command must be called outside of a running parallel loop and the NewNumberOfLines must respect this condition: $$ InitialNumberOfLines < NewNumberOfLines < 2*InitialNumberOfLines $$
+
+
+\subsection{SetExtendedAttributes}
+
+\subsubsection*{Syntax}
+\tt{SetExtendedAttributes(LibIndex, ...);}
+\normalfont
+
+\subsubsection*{Description}
+This procedure enables the settings of some specific parameters and should be called \emph{ONLY} right after InitParallel and before any other call to LPlib's functionalities.
+It enables the following actions.
+
+\paragraph{SetInterleavingSize $S$} non-dependencies loops indices will be scattered among threads in a round-robin way. For example, when launching a loop over 100 items on two threads in regular mode, the first thread will process indices ranging from 1 to 50 and the second one from 51 to 100. If a call to {\tt SetExtendedAttributes(LibIndex, SetInterleavingSize, 10)} is made before the launch, then the first thread will process indices from 1-10, 21-30, 41-50, 61-70, 81-90 and the second thread will processes 11-20, 31-40, 51-60, 71-80, 91-100. This interleaving of indices between alternating threads allows for better cache reuse as threads will process very close items. It is up to the user to find the right interleaving factor so that the range of items fits perfectly inside the processor's cache memory.
+
+\paragraph{SetInterleavingFactor $F$} same as above, but defines the number of interleaving blocks instead of their size. $S = \frac{N}{F}$ where $N$ is the number of items, $S$ is the interleaving size, and $F$ the number of interleaved blocks. Conversely, $F = \frac{N}{S}$.
+
+\paragraph{DisableInterleaving} simply disables the block interleaving triggers by the two modes above and returns back to regular bloc splitting.
+
+\paragraph{DisableBlockSorting} prevent the LPlib to sort small worpackages across their number of dependencies (default behavior). The sorting is performed to enhance the concurrency level and make better use of the system's cores at the expense of the cache reuse as the blocks processed concurrently may be far away from each other. By disabling the sorting, the concurrency factor may be lower (it is returned by the {\tt LaunchParallel} procedure) but each single block may run faster thanks to a better cache efficiency. It is up to the user to compare the global runtime between both modes.
+
+\paragraph{EnableBlockSorting} go back to the default block sorting.
+
+\paragraph{StaticScheduling} disable the LPlib's dynamic scheduling definitively, there is no way to go back other than closing the library. In static scheduling mode, dependency loop work packages will always be processed in the same order, making the whole process deterministic, at the cost of paralle efficiency. With a low number of threads this mode does not affect too much the run time, but with tens of threads, static scheduling becomes several times slower than the default dynamic scheduling.
 
 
 \subsection{StopParallel}

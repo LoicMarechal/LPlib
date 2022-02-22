@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: nov 24 2021                                           */
+/*   Last modification: nov 25 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -450,7 +450,7 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
 float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
-   int      i, j, idx, nex;
+   int      i;
    float    acc;
    PthSct   *pth;
    ParSct   *par = (ParSct *)ParIdx;
@@ -510,7 +510,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
          grp = grp->nex;
       }while(grp);
 
-      acc /= NmbSmlBlk / WrkPerGrp * typ1->NmbGrp;
+      acc /= (float)(NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
    }
    else if(TypIdx2 && par->DynSch)
    {
@@ -1504,7 +1504,7 @@ int CmpWrk(const void *ptr1, const void *ptr2)
 static void SetGrp(ParSct *par, TypSct *typ)
 {
    int      i, NmbSmlWrk, *GrpWrd, *AllWrd, *TstWrd;
-   int      IncFlg, MaxItm, siz = typ->NmbDepWrd;
+   int      IncFlg, siz = typ->NmbDepWrd;
    GrpSct   *grp;
    WrkSct   *wrk, *NexWrk;
 
