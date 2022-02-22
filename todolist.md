@@ -5,7 +5,6 @@
 - hierarchical block scheduling to enable adaptive block size scheduling
 - develop a lattice scheduling based on geometric blocks, not on element indices blocs
 - link dependency block at creation and do not unlink them while running the parallel loop
-- develop an optional static scheduling option that focuses on memory proximity between concurrent blocks
 - interleaved procedures: allow multiple procedures to be launched in parallel and processed in a pipelined way
 
 ### DONE
@@ -19,3 +18,4 @@
 - add an option to choose between a fixed number of blocks and a fixed block size in interleaved mode
 - make interleaved blocks optional as some parallel loops cannot work with it (i.e. TetrahedraNeighbours example)
 - add a procedure to set new parameters before calling LaunchParallel()
+- develop an optional static scheduling option that makes the process deterministic

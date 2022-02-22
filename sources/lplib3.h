@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.70                                  */
+/*                               LPlib V3.73                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: dec 03 2020                                           */
+/*   Last modification: nov 23 2021                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -65,12 +65,13 @@ int      SetExtendedAttributes   (int64_t , ...);
 /* Public defines                                                             */
 /*----------------------------------------------------------------------------*/
 
-#define MaxPth 1024
+#define MaxPth 256
 
 enum ArgAtr {
    SetInterleavingFactor = 1,
    SetInterleavingSize,
    DisableInterleaving,
    EnableBlockSorting,
-   DisableBlockSorting
+   DisableBlockSorting,
+   StaticScheduling
 };
