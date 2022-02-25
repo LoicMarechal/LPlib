@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.73                                  */
+/*                               LPlib V3.74                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,10 +10,14 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: nov 25 2021                                           */
+/*   Last modification: feb 25 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
+
+/*----------------------------------------------------------------------------*/
+/* Includes                                                                   */
+/*----------------------------------------------------------------------------*/
 
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS
@@ -39,6 +43,10 @@
 #include <pthread.h>
 #endif
 
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
+
 
 /*----------------------------------------------------------------------------*/
 /* Defines                                                                    */
@@ -56,16 +64,6 @@
 #define WrkPerGrp 8
 
 enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, ClrMem, EndPth};
-
-
-/*----------------------------------------------------------------------------*/
-/* Includes                                                                   */
-/*----------------------------------------------------------------------------*/
-
-#include <math.h>
-#include <assert.h>
-#include <errno.h>
-#include <limits.h>
 
 
 /*----------------------------------------------------------------------------*/
@@ -172,7 +170,7 @@ static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 static int64_t IniPar      (int, size_t );
 static void    SetItlBlk   (ParSct *, TypSct *);
-static void    SetGrp      (ParSct *, TypSct *);
+static int     SetGrp      (ParSct *, TypSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -1288,8 +1286,9 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    if(par->WrkSizSrt && par->DynSch)
       qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
 
-   if(!par->DynSch)
-      SetGrp(par, typ1);
+   // If the dynamic scheduling is disabled, set static WP
+   if(!par->DynSch && !SetGrp(par, typ1))
+      return(0);
 
    return(1);
 }
@@ -1501,7 +1500,7 @@ int CmpWrk(const void *ptr1, const void *ptr2)
 /* Generate static scheduling groups of small WP for each thread              */
 /*----------------------------------------------------------------------------*/
 
-static void SetGrp(ParSct *par, TypSct *typ)
+static int SetGrp(ParSct *par, TypSct *typ)
 {
    int      i, NmbSmlWrk, *GrpWrd, *AllWrd, *TstWrd;
    int      IncFlg, siz = typ->NmbDepWrd;
@@ -1514,16 +1513,16 @@ static void SetGrp(ParSct *par, TypSct *typ)
    typ->NexGrp = NULL;
 
    // Allocate a dependency word to contain all threads
-   GrpWrd = malloc(par->NmbCpu * siz * sizeof(int));
-   assert(GrpWrd);
+   if(!(GrpWrd = malloc(par->NmbCpu * siz * sizeof(int))))
+      return(0);
 
    // Allocate a dependency word to concatenate all thread words
-   AllWrd = malloc(siz * sizeof(int));
-   assert(AllWrd);
+   if(!(AllWrd = malloc(siz * sizeof(int))))
+      return(0);
 
    // Allocate a working dependency word for testings
-   TstWrd = malloc(siz * sizeof(int));
-   assert(TstWrd);
+   if(!(TstWrd = malloc(siz * sizeof(int))))
+      return(0);
 
    // Link all WP together to make a free list
    NexWrk = &typ->SmlWrkTab[0];
@@ -1541,8 +1540,9 @@ static void SetGrp(ParSct *par, TypSct *typ)
    do
    {
       // Allocate a new group and link it
-      grp = calloc(1, sizeof(GrpSct));
-      assert(grp);
+      if(!(grp = calloc(1, sizeof(GrpSct))))
+         return(0);
+
       grp->nex = typ->NexGrp;
       typ->NexGrp = grp;
       grp->idx = ++typ->NmbGrp;
@@ -1614,6 +1614,8 @@ static void SetGrp(ParSct *par, TypSct *typ)
    }while(NmbSmlWrk);
 
    free(GrpWrd);
+
+   return(1);
 }
 
 
