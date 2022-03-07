@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.74                                  */
+/*                               LPlib V3.75                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -10,7 +10,7 @@
 /*                      & dependencies                                        */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: feb 25 2022                                           */
+/*   Last modification: mar 07 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -46,6 +46,12 @@
 #include <math.h>
 #include <errno.h>
 #include <limits.h>
+
+#ifdef WITH_LIBMEMBLOCKS
+#include <libmemblocks1.h>
+#else
+#include <assert.h>
+#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -124,7 +130,7 @@ typedef struct ParSct
    int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
    size_t            StkSiz, ClrLinSiz;
-   void              *F77ArgTab[ MaxF77Arg ];
+   void              *lmb, *F77ArgTab[ MaxF77Arg ];
    float             sta[2];
    void              (*prc)(itg, itg, int, void *), *arg;
    pthread_cond_t    ParCnd, PipCnd;
@@ -168,9 +174,13 @@ void           PipSrt      (PipArgSct *);
 static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
-static int64_t IniPar      (int, size_t );
+static int64_t IniPar      (int, size_t, void *);
 static void    SetItlBlk   (ParSct *, TypSct *);
 static int     SetGrp      (ParSct *, TypSct *);
+static void   *LPL_malloc  (void *, int64_t);
+static void   *LPL_calloc  (void *, int64_t, int64_t);
+static void   *LPL_realloc (void *, void *, int64_t);
+static void    LPL_free    (void *, void *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -179,19 +189,19 @@ static int     SetGrp      (ParSct *, TypSct *);
 
 int64_t InitParallel(int NmbCpu)
 {
-   return(IniPar(NmbCpu, 0));
+   return(IniPar(NmbCpu, 0, NULL));
 }
 
-int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
+int64_t InitParallelAttr(int NmbCpu, size_t StkSiz, void *lmb)
 {
 #ifdef PTHREAD_STACK_MIN
    if(StkSiz < PTHREAD_STACK_MIN)
       StkSiz = PTHREAD_STACK_MIN;
 #endif
-   return(IniPar(NmbCpu, StkSiz));
+   return(IniPar(NmbCpu, StkSiz, lmb));
 }
 
-static int64_t IniPar(int NmbCpu, size_t StkSiz)
+static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
 {
    int i;
    int64_t ParIdx;
@@ -214,13 +224,16 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    if(!(par = calloc(1, sizeof(ParSct))))
       return(0);
 
-   if(!(par->PthTab = calloc(NmbCpu, sizeof(PthSct))))
+   // Pass along a potential libMemBlocks structure
+   par->lmb = lmb;
+
+   if(!(par->PthTab = LPL_calloc(par->lmb, NmbCpu, sizeof(PthSct))))
       return(0);
 
-   if(!(par->TypTab = calloc((MaxTyp + 1), sizeof(TypSct))))
+   if(!(par->TypTab = LPL_calloc(par->lmb, (MaxTyp + 1), sizeof(TypSct))))
       return(0);
 
-   if(!(par->PipWrd = calloc(MaxTotPip/32, sizeof(int))))
+   if(!(par->PipWrd = LPL_calloc(par->lmb, MaxTotPip/32, sizeof(int))))
       return(0);
 
    par->NmbCpu = NmbCpu;
@@ -255,7 +268,7 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
       {
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
-         pth->UsrStk = malloc(pth->StkSiz);
+         pth->UsrStk = LPL_malloc(par->lmb, pth->StkSiz);
          pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
          pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
@@ -311,7 +324,7 @@ void StopParallel(int64_t ParIdx)
       pthread_join(pth->pth, NULL);
 
       if(pth->UsrStk)
-         free(pth->UsrStk);
+         LPL_free(par->lmb, pth->UsrStk);
    }
 
    pthread_mutex_destroy(&par->ParMtx);
@@ -327,9 +340,9 @@ void StopParallel(int64_t ParIdx)
       if(par->TypTab[i].NmbLin)
          FreeType(ParIdx, i);
 
-   free(par->PthTab);
-   free(par->TypTab);
-   free(par->PipWrd);
+   LPL_free(par->lmb, par->PthTab);
+   LPL_free(par->lmb, par->TypTab);
+   LPL_free(par->lmb, par->PipWrd);
    free(par);
 }
 
@@ -890,6 +903,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ = &par->TypTab[ TypIdx ];
    typ->NmbLin = NmbLin;
    typ->MaxNmbLin = NmbLin * par->SizMul;
+   typ->NexGrp = NULL;
 
    // Compute the size of small work-packages
    if(NmbLin >= NmbSmlBlk * par->NmbCpu)
@@ -906,7 +920,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
       typ->NmbSmlWrk = 1;
    }
 
-   if(!(typ->SmlWrkTab = calloc(typ->NmbSmlWrk * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->SmlWrkTab = LPL_calloc(par->lmb, typ->NmbSmlWrk * par->SizMul , sizeof(WrkSct))))
       return(0);
 
    // Set small work-packages
@@ -922,7 +936,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
    // Compute the size of big work-packages
-   if(!(typ->BigWrkTab = calloc(par->NmbCpu * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->BigWrkTab = LPL_calloc(par->lmb, par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
 
    return(TypIdx);
@@ -1028,6 +1042,7 @@ void FreeType(int64_t ParIdx, int TypIdx)
 {
    TypSct *typ;
    ParSct *par = (ParSct *)ParIdx;
+   GrpSct *grp, *NexGrp;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -1040,16 +1055,24 @@ void FreeType(int64_t ParIdx, int TypIdx)
    typ = &par->TypTab[ TypIdx ];
 
    if(typ->SmlWrkTab)
-      free(typ->SmlWrkTab);
+      LPL_free(par->lmb, typ->SmlWrkTab);
 
    if(typ->BigWrkTab)
-      free(typ->BigWrkTab);
+      LPL_free(par->lmb, typ->BigWrkTab);
 
    if(typ->RunDepTab)
-      free(typ->RunDepTab);
+      LPL_free(par->lmb, typ->RunDepTab);
 
    if(typ->DepWrdMat)
-      free(typ->DepWrdMat);
+      LPL_free(par->lmb, typ->DepWrdMat);
+
+   NexGrp = typ->NexGrp;
+
+   while((grp = NexGrp))
+   {
+      NexGrp = grp->nex;
+      LPL_free(par->lmb, grp);
+   }
 
    memset(typ, 0, sizeof(TypSct));
 }
@@ -1097,7 +1120,7 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
 
    // Allocate a global dependency table
    if(!(typ1->DepWrdMat =
-      calloc(typ1->NmbSmlWrk * typ1->NmbDepWrd * par->SizMul, sizeof(int))))
+      LPL_calloc(par->lmb, typ1->NmbSmlWrk * typ1->NmbDepWrd * par->SizMul, sizeof(int))))
    {
       return(0);
    }
@@ -1111,7 +1134,7 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
    }
 
    // Allocate a running tags table
-   if(!(typ1->RunDepTab = calloc(typ1->NmbDepWrd * par->SizMul, sizeof(int))))
+   if(!(typ1->RunDepTab = LPL_calloc(par->lmb, typ1->NmbDepWrd * par->SizMul, sizeof(int))))
       return(0);
 
    return(typ1->NmbDepWrd);
@@ -1513,15 +1536,15 @@ static int SetGrp(ParSct *par, TypSct *typ)
    typ->NexGrp = NULL;
 
    // Allocate a dependency word to contain all threads
-   if(!(GrpWrd = malloc(par->NmbCpu * siz * sizeof(int))))
+   if(!(GrpWrd = LPL_malloc(par->lmb, par->NmbCpu * siz * sizeof(int))))
       return(0);
 
    // Allocate a dependency word to concatenate all thread words
-   if(!(AllWrd = malloc(siz * sizeof(int))))
+   if(!(AllWrd = LPL_malloc(par->lmb, siz * sizeof(int))))
       return(0);
 
    // Allocate a working dependency word for testings
-   if(!(TstWrd = malloc(siz * sizeof(int))))
+   if(!(TstWrd = LPL_malloc(par->lmb, siz * sizeof(int))))
       return(0);
 
    // Link all WP together to make a free list
@@ -1540,7 +1563,7 @@ static int SetGrp(ParSct *par, TypSct *typ)
    do
    {
       // Allocate a new group and link it
-      if(!(grp = calloc(1, sizeof(GrpSct))))
+      if(!(grp = LPL_calloc(par->lmb, 1, sizeof(GrpSct))))
          return(0);
 
       grp->nex = typ->NexGrp;
@@ -1613,7 +1636,9 @@ static int SetGrp(ParSct *par, TypSct *typ)
       }while(IncFlg && NmbSmlWrk);
    }while(NmbSmlWrk);
 
-   free(GrpWrd);
+   LPL_free(par->lmb, GrpWrd);
+   LPL_free(par->lmb, AllWrd);
+   LPL_free(par->lmb, TstWrd);
 
    return(1);
 }
@@ -1678,7 +1703,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       return(0);
 
    // Allocate and setup a new pipe
-   if(!(NewPip = calloc(1, sizeof(PipSct))))
+   if(!(NewPip = LPL_calloc(par->lmb, 1, sizeof(PipSct))))
       return(0);
 
    NewPip->prc = prc;
@@ -1709,7 +1734,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    {
       pthread_attr_init(&NewPip->atr);
       NewPip->StkSiz = par->StkSiz;
-      NewPip->UsrStk = malloc(par->StkSiz);
+      NewPip->UsrStk = LPL_malloc(par->lmb, par->StkSiz);
       pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
       pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
       //pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
@@ -1814,7 +1839,7 @@ static void *PipHdl(void *ptr)
    SetBit(par->PipWrd, pip->idx);
    par->PenPip--;
    par->RunPip--;
-   free(pip);
+   LPL_free(par->lmb, pip);
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NULL);
@@ -2032,7 +2057,7 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
       NmbByt = NmbLin+1;
       NmbByt *= 2 * sizeof(int64_t);
    
-      tab = malloc(NmbByt);
+      tab = LPL_malloc(par->lmb, NmbByt);
 
       if(!tab)
          return(0);
@@ -2070,7 +2095,7 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
          idx[ tab[i-1][1] ][0] = i;
       }
 
-      free(tab);
+      LPL_free(par->lmb, tab);
    }
 
    return(1);
@@ -2179,6 +2204,62 @@ double GetWallClock()
    struct timeval tp;
    gettimeofday(&tp, NULL);
    return(tp.tv_sec + tp.tv_usec / 1000000.);
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc malloc      */
+/*----------------------------------------------------------------------------*/
+
+static void *LPL_malloc(void *lmb, int64_t siz)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   return(LmbAlcPag((LmbSct *)lmb, siz, 0, LMB_ALLOC_DONT_CLEAR));
+#else
+  return(malloc(siz));
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc calloc      */
+/*----------------------------------------------------------------------------*/
+
+static void *LPL_calloc(void *lmb, int64_t itm, int64_t siz)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   return(LmbAlcPag((LmbSct *)lmb, itm * siz, 0, LMB_ALLOC_AND_CLEAR));
+#else
+   return(calloc(itm, siz));
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc realloc     */
+/*----------------------------------------------------------------------------*/
+
+static void *LPL_realloc(void *lmb, void *adr, int64_t siz)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   return(LmbRszPag((LmbSct *)lmb, adr, siz));
+#else
+   return(realloc(adr, siz));
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc free        */
+/*----------------------------------------------------------------------------*/
+
+static void LPL_free(void *lmb, void *adr)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   LmbRlsPag((LmbSct *)lmb, adr);
+#else
+   free(adr);
 #endif
 }
 
