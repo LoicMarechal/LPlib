@@ -2,15 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.75                                  */
+/*                               LPlib V3.76                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*   Description:       Handles threads, scheduling                           */
-/*                      & dependencies                                        */
+/*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 07 2022                                           */
+/*   Last modification: aug 31 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -49,8 +48,6 @@
 
 #ifdef WITH_LIBMEMBLOCKS
 #include <libmemblocks1.h>
-#else
-#include <assert.h>
 #endif
 
 
@@ -179,7 +176,6 @@ static void    SetItlBlk   (ParSct *, TypSct *);
 static int     SetGrp      (ParSct *, TypSct *);
 static void   *LPL_malloc  (void *, int64_t);
 static void   *LPL_calloc  (void *, int64_t, int64_t);
-static void   *LPL_realloc (void *, void *, int64_t);
 static void    LPL_free    (void *, void *);
 
 
@@ -221,7 +217,7 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
       NmbCpu = MaxPth;
 
    // Allocate and build main parallel structure
-   if(!(par = calloc(1, sizeof(ParSct))))
+   if(!(par = LPL_calloc(lmb, 1, sizeof(ParSct))))
       return(0);
 
    // Pass along a potential libMemBlocks structure
@@ -384,69 +380,66 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
    // Read the argument list that must be terminated by a zero
    va_start(ArgLst, ParIdx);
 
-   do
+   ArgCod = va_arg(ArgLst, int);
+
+   switch(ArgCod)
    {
-      ArgCod = va_arg(ArgLst, int);
-
-      switch(ArgCod)
+      // Set the number of interleaved blocks in independant loops
+      case SetInterleavingFactor :
       {
-         // Set the number of interleaved blocks in independant loops
-         case SetInterleavingFactor :
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
          {
-            ArgVal = va_arg(ArgLst, int);
-
-            if(ArgVal > 0)
-            {
-               par->NmbItlBlk = ArgVal;
-               par->ItlBlkSiz = 0;
-               NmbArg++;
-            }
-         }break;
-
-         // Set the interleaved blocks size in independant loops
-         case SetInterleavingSize :
-         {
-            ArgVal = va_arg(ArgLst, int);
-
-            if(ArgVal > 0)
-            {
-               par->NmbItlBlk = 0;
-               par->ItlBlkSiz = ArgVal;
-               NmbArg++;
-            }
-         }break;
-
-         // Desable blocks interleaving (default)
-         case DisableInterleaving :
-         {
-            par->NmbItlBlk = 1;
+            par->NmbItlBlk = ArgVal;
             par->ItlBlkSiz = 0;
             NmbArg++;
-         }break;
+         }
+      }break;
 
-         // Sort depedancy-loop WP through their number of dependencies (default)
-         case EnableBlockSorting :
-         {
-            par->WrkSizSrt = 1;
-            NmbArg++;
-         }break;
+      // Set the interleaved blocks size in independant loops
+      case SetInterleavingSize :
+      {
+         ArgVal = va_arg(ArgLst, int);
 
-         // Disable WP sorting: it lowers concurrency but enhances cache reuse
-         case DisableBlockSorting :
+         if(ArgVal > 0)
          {
-            par->WrkSizSrt = 0;
+            par->NmbItlBlk = 0;
+            par->ItlBlkSiz = ArgVal;
             NmbArg++;
-         }break;
+         }
+      }break;
 
-         // Static scheduling makes the library deterministic
-         case StaticScheduling :
-         {
-            // WP sorting is useless in this mode so it is disabled
-            par->WrkSizSrt = par->DynSch = 0;
-            NmbArg++;
-         }break;
-      }
-   }while(ArgCod);
+      // Desable blocks interleaving (default)
+      case DisableInterleaving :
+      {
+         par->NmbItlBlk = 1;
+         par->ItlBlkSiz = 0;
+         NmbArg++;
+      }break;
+
+      // Sort depedancy-loop WP through their number of dependencies (default)
+      case EnableBlockSorting :
+      {
+         par->WrkSizSrt = 1;
+         NmbArg++;
+      }break;
+
+      // Disable WP sorting: it lowers concurrency but enhances cache reuse
+      case DisableBlockSorting :
+      {
+         par->WrkSizSrt = 0;
+         NmbArg++;
+      }break;
+
+      // Static scheduling makes the library deterministic
+      case StaticScheduling :
+      {
+         // WP sorting is useless in this mode so it is disabled
+         par->WrkSizSrt = par->DynSch = 0;
+         NmbArg++;
+      }break;
+   }
 
    va_end(ArgLst);
 
@@ -2232,20 +2225,6 @@ static void *LPL_calloc(void *lmb, int64_t itm, int64_t siz)
    return(LmbAlcPag((LmbSct *)lmb, itm * siz, 0, LMB_ALLOC_AND_CLEAR));
 #else
    return(calloc(itm, siz));
-#endif
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Encapsulate the selection between libMemBlock and regular libc realloc     */
-/*----------------------------------------------------------------------------*/
-
-static void *LPL_realloc(void *lmb, void *adr, int64_t siz)
-{
-#ifdef WITH_LIBMEMBLOCKS
-   return(LmbRszPag((LmbSct *)lmb, adr, siz));
-#else
-   return(realloc(adr, siz));
 #endif
 }
 

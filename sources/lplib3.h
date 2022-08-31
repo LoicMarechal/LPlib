@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 07 2022                                           */
+/*   Last modification: jul 08 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -19,6 +19,7 @@
 /*----------------------------------------------------------------------------*/
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #ifdef INT64
 #define itg int64_t
