@@ -9,7 +9,7 @@
 /*   Description:       direct and indirect memory writes                     */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     jan 15 2015                                           */
-/*   Last modification: oct 08 2020                                           */
+/*   Last modification: sep 27 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -151,7 +151,7 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    puts("");
-   printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n", \
+   printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n",
          msh.TetTyp, msh.VerTyp, NmbCpu);
 
    // Setup dependencies between tets and vertices 
@@ -184,14 +184,14 @@ int main(int ArgCnt, char **ArgVec)
    puts("");
    for(i=1;i<=NmbItr;i++)
    {
-      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp,
+      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, 0,
                                  (void *)TetTem, (void *)&msh)))
       {
          puts("Error while launching the parallel loop TetTem.");
          exit(1);
       }
 
-      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, 0, \
+      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp,
                                  (void *)VerTem, (void *)&msh)))
       {
          puts("Error while launching the parallel loop VerTem.");
