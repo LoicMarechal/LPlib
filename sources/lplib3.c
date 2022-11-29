@@ -2021,6 +2021,11 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    {
       LaunchParallel(ParIdx, NewTyp, 0, (void *)RenPrc, (void *)&arg);
 
+      qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
+
+      for(i=1;i<=NmbLin;i++)
+         idx[ idx[i][1] ][0] = i;
+      /*
       for(i=0;i<1<<HshBit;i++)
          stat[i] = 0;
 
@@ -2088,7 +2093,7 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
          idx[ tab[i-1][1] ][0] = i;
       }
 
-      LPL_free(par->lmb, tab);
+      LPL_free(par->lmb, tab);*/
    }
 
    return(1);
