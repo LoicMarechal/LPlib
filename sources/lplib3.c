@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.76                                  */
+/*                               LPlib V3.77                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: aug 31 2022                                           */
+/*   Last modification: jan 13 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -265,8 +265,12 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
          pth->UsrStk = LPL_malloc(par->lmb, pth->StkSiz);
+#ifdef _WIN32
          pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
          pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
+#else
+         pthread_attr_setstack(&pth->atr, pth->UsrStk, pth->StkSiz);
+#endif
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
       }
       else
@@ -1728,9 +1732,12 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       pthread_attr_init(&NewPip->atr);
       NewPip->StkSiz = par->StkSiz;
       NewPip->UsrStk = LPL_malloc(par->lmb, par->StkSiz);
+#ifdef _WIN32
       pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
       pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
-      //pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+#else
+      pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+#endif
       pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
    }
    else
