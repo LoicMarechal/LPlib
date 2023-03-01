@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.77                                  */
+/*                               LPlib V3.80                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jan 13 2023                                           */
+/*   Last modification: mar 01 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -57,8 +57,8 @@
 
 #define MaxLibPar 10
 #define MaxTyp    100
-#define NmbSmlBlk 128
-#define NmbDepBlk 512
+#define DefSmlBlk 64
+#define DefDepBlk 256
 #define MaxTotPip 65536
 #define MaxPipDep 100
 #define MaxHsh    10
@@ -126,6 +126,7 @@ typedef struct ParSct
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
    int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
+   int               NmbSmlBlk, NmbDepBlk;
    size_t            StkSiz, ClrLinSiz;
    void              *lmb, *F77ArgTab[ MaxF77Arg ];
    float             sta[2];
@@ -158,6 +159,7 @@ typedef struct
 
 static int     SetBit      (int *, int);
 static int     GetBit      (int *, int);
+static void    ClrBit      (int *, int);
 static int     AndWrd      (int, int *, int *);
 static void    AddWrd      (int, int *, int *);
 static void    SubWrd      (int, int *, int *);
@@ -239,6 +241,8 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
    par->NmbItlBlk = 1;
    par->WrkSizSrt = 1;
    par->DynSch = 1;
+   par->NmbSmlBlk = DefSmlBlk;
+   par->NmbDepBlk = DefDepBlk;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -443,6 +447,28 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
          par->WrkSizSrt = par->DynSch = 0;
          NmbArg++;
       }break;
+
+      case SetSmallBlock :
+      {
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
+         {
+            par->NmbSmlBlk = ArgVal;
+            NmbArg++;
+         }
+      }break;
+
+      case SetDependencyBlock :
+      {
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
+         {
+            par->NmbDepBlk = ArgVal;
+            NmbArg++;
+         }
+      }break;
    }
 
    va_end(ArgLst);
@@ -518,7 +544,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
          grp = grp->nex;
       }while(grp);
 
-      acc /= (float)(NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
+      acc /= (float)(par->NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
    }
    else if(TypIdx2 && par->DynSch)
    {
@@ -692,6 +718,13 @@ static void *PthHdl(void *ptr)
       // Wait for a wake-up signal from the main loop
       pthread_cond_wait(&pth->cnd, &pth->mtx);
 
+      // Update stats
+      par->sta[0]++;
+
+      for(i=0;i<par->NmbCpu;i++)
+         if(par->PthTab[i].wrk)
+            par->sta[1]++;
+
       switch(par->cmd)
       {
          // Call user's procedure with big WP
@@ -820,13 +853,6 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
    PthSct *pth = &par->PthTab[ PthIdx ];
    WrkSct *wrk;
 
-   // Update stats
-   par->sta[0]++;
-
-   for(i=0;i<par->NmbCpu;i++)
-      if(par->PthTab[i].wrk)
-         par->sta[1]++;
-
    // Remove previous work's tags
    if(pth->wrk)
       SubWrd(par->typ1->NmbDepWrd, pth->wrk->DepWrdTab, par->typ1->RunDepTab);
@@ -903,9 +929,9 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->NexGrp = NULL;
 
    // Compute the size of small work-packages
-   if(NmbLin >= NmbSmlBlk * par->NmbCpu)
+   if(NmbLin >= par->NmbSmlBlk * par->NmbCpu)
    {
-      typ->SmlWrkSiz = NmbLin / (NmbSmlBlk * par->NmbCpu);
+      typ->SmlWrkSiz = NmbLin / (par->NmbSmlBlk * par->NmbCpu);
       typ->NmbSmlWrk = NmbLin / typ->SmlWrkSiz;
 
       if(NmbLin != typ->NmbSmlWrk * typ->SmlWrkSiz)
@@ -1100,10 +1126,10 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
    }
 
    // Compute dependency table's size
-   if( (typ2->NmbLin >= NmbDepBlk * par->NmbCpu)
+   if( (typ2->NmbLin >= par->NmbDepBlk * par->NmbCpu)
    &&  (typ2->NmbLin >= typ1->DepWrkSiz * 32) )
    {
-      typ1->DepWrkSiz = typ2->NmbLin / (NmbDepBlk * par->NmbCpu);
+      typ1->DepWrkSiz = typ2->NmbLin / (par->NmbDepBlk * par->NmbCpu);
       typ1->NmbDepWrd = typ2->NmbLin / (typ1->DepWrkSiz * 32);
 
       if(typ2->NmbLin != typ1->NmbDepWrd * typ1->DepWrkSiz * 32)
@@ -1370,6 +1396,122 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
 
 
 /*----------------------------------------------------------------------------*/
+/* Halve the number of small blocks by compining pairs of consecutive blocks  */
+/*----------------------------------------------------------------------------*/
+
+int HalveSmallBlocks(int64_t ParIdx, int TypIdx1, int TypIdx2)
+{
+   int i, j;
+   ParSct *par = (ParSct *)ParIdx;
+   WrkSct *EvnWrk, *OddWrk, *NewWrk;
+   TypSct *typ1, *typ2;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(0);
+
+   // Check bounds
+   typ1 = &par->TypTab[ TypIdx1 ];
+   typ2 = &par->TypTab[ TypIdx2 ];
+
+   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp) || (TypIdx2 < 1)
+   ||  (TypIdx2 > MaxTyp) || (typ1 == typ2) || !typ1->NmbLin
+   ||  !typ2->NmbLin )
+   {
+      return(0);
+   }
+
+   // Do not halve the number of blocks if there is only one left
+   // nor if the small blocks have been sorted
+   if(typ1->NmbSmlWrk < 2 || par->WrkSizSrt)
+      return(0);
+
+   // For each new block, compute the logical OR between two consecutive old blocks
+   // The new data is copied on top of former one
+   for(i=0;i<typ1->NmbSmlWrk;i+=2)
+   {
+      EvnWrk = &typ1->SmlWrkTab[ i     ];
+      OddWrk = &typ1->SmlWrkTab[ i + 1 ];
+      NewWrk = &typ1->SmlWrkTab[ i / 2 ];
+      NewWrk->BegIdx = EvnWrk->BegIdx;
+      NewWrk->EndIdx = OddWrk->EndIdx;
+
+      for(j=0;j<typ1->NmbDepWrd;j++)
+         if(i+1 < typ1->NmbSmlWrk)
+            NewWrk->DepWrdTab[j] = EvnWrk->DepWrdTab[j] | OddWrk->DepWrdTab[j];
+         else
+            NewWrk->DepWrdTab[j] = EvnWrk->DepWrdTab[j];
+   }
+
+   // Halve the number of blocks and add one if the number was odd
+   typ1->SmlWrkSiz *= typ1->NmbSmlWrk;
+
+   if(typ1->NmbSmlWrk & 1)
+      typ1->NmbSmlWrk = typ1->NmbSmlWrk / 2 + 1;
+   else
+      typ1->NmbSmlWrk /= 2;
+
+   typ1->SmlWrkSiz /= typ1->NmbSmlWrk;
+
+   return(typ1->NmbSmlWrk);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Halve the number of dependency words by ORing consecutive pairs of bits    */
+/*----------------------------------------------------------------------------*/
+
+int HalveDependencyBlocks(int64_t ParIdx, int TypIdx1, int TypIdx2)
+{
+   int i, j;
+   WrkSct *wrk;
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *typ1, *typ2;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(0);
+
+   // Check bounds
+   typ1 = &par->TypTab[ TypIdx1 ];
+   typ2 = &par->TypTab[ TypIdx2 ];
+
+   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp) || (TypIdx2 < 1)
+   ||  (TypIdx2 > MaxTyp) || (typ1 == typ2) || !typ1->NmbLin
+   ||  !typ2->NmbLin )
+   {
+      return(0);
+   }
+
+   // Do not halve the number of blocks if there is only one left
+   if(typ1->NmbDepWrd < 2)
+      return(0);
+
+   for(i=0;i<typ1->NmbSmlWrk;i++)
+   {
+      wrk = &typ1->SmlWrkTab[i];
+
+      for(j=0;j<typ1->NmbDepWrd;j+=2)
+         if(GetBit(wrk->DepWrdTab, j) || GetBit(wrk->DepWrdTab, j+1))
+            SetBit(wrk->DepWrdTab, j/2);
+         else
+            ClrBit(wrk->DepWrdTab, j/2);
+   }
+
+   typ1->DepWrkSiz *= typ1->NmbDepWrd;
+
+   if(typ1->NmbDepWrd & 1)
+      typ1->NmbDepWrd = typ1->NmbDepWrd / 2 + 1;
+   else
+      typ1->NmbDepWrd /= 2;
+
+   typ1->DepWrkSiz /= typ1->NmbDepWrd;
+
+   return(typ1->NmbDepWrd * 32);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Return the block ID containing the given element ID                        */
 /*----------------------------------------------------------------------------*/
 
@@ -1425,6 +1567,16 @@ static int SetBit(int *tab, int idx)
 static int GetBit(int *tab, int idx)
 {
    return( tab[ idx >> 5 ] & (1UL << (idx & 31)) );
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Clear a bit in a multibyte word                                            */
+/*----------------------------------------------------------------------------*/
+
+static void ClrBit(int *tab, int idx)
+{
+   tab[ idx >> 5 ] &= ~(1UL << (idx & 31));
 }
 
 

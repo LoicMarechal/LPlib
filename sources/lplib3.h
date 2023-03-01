@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.75                                  */
+/*                               LPlib V3.80                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jul 08 2022                                           */
+/*   Last modification: mar 01 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -63,6 +63,8 @@ void     WaitPipeline            (int64_t);
 int      GetBlkIdx               (int64_t, int, int);
 int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
+int      HalveSmallBlocks        (int64_t, int, int);
+int      HalveDependencyBlocks   (int64_t, int, int);
 
 
 /*----------------------------------------------------------------------------*/
@@ -77,5 +79,7 @@ enum ArgAtr {
    DisableInterleaving,
    EnableBlockSorting,
    DisableBlockSorting,
-   StaticScheduling
+   StaticScheduling,
+   SetSmallBlock,
+   SetDependencyBlock
 };
