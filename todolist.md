@@ -20,3 +20,6 @@
 - make interleaved blocks optional as some parallel loops cannot work with it (i.e. TetrahedraNeighbours example)
 - add a procedure to set new parameters before calling LaunchParallel()
 - develop an optional static scheduling option that makes the process deterministic
+- develop a way to set default block sizes for dependency loops
+- develop a procedure to halve the number of small blocks or dependency blocks while the LPlib is running
+- add an example to illustrate the adaptive block sizing process
