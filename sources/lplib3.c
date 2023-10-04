@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.80                                  */
+/*                               LPlib V3.81                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 01 2023                                           */
+/*   Last modification: sep 11 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -638,7 +638,8 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       }
 
       // Update block interleaving according to the current attributes
-      SetItlBlk(par, typ1);
+      if( (par->NmbItlBlk != 1) || par->ItlBlkSiz)
+         SetItlBlk(par, typ1);
 
       for(i=0;i<par->NmbCpu;i++)
       {
@@ -901,7 +902,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, idx;
+   itg      i, idx, BigWrkSiz, NmbBigWrk;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -962,6 +963,30 @@ int NewType(int64_t ParIdx, itg NmbLin)
    if(!(typ->BigWrkTab = LPL_calloc(par->lmb, par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
 
+   // Compute the size of big work-packages
+	if(NmbLin >= par->NmbCpu)
+	{
+		BigWrkSiz = NmbLin / par->NmbCpu;
+		NmbBigWrk = par->NmbCpu;
+	}
+	else
+	{
+		BigWrkSiz = NmbLin;
+		NmbBigWrk = 1;
+	}
+
+	// Set big work-packages
+	idx = 0;
+
+	for(i=0;i<NmbBigWrk;i++)
+	{
+		typ->BigWrkTab[i].ItlTab[0][0] = idx + 1;
+		typ->BigWrkTab[i].ItlTab[0][1] = idx + BigWrkSiz;
+		idx += BigWrkSiz;
+	}
+
+	typ->BigWrkTab[ NmbBigWrk - 1 ].ItlTab[0][1] = NmbLin;
+
    return(TypIdx);
 }
 
@@ -972,7 +997,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, idx;
+   itg      i, idx, BigWrkSiz, NmbBigWrk;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -1004,6 +1029,30 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
    }
 
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
+
+   // Compute the size of big work-packages
+	if(NmbLin >= par->NmbCpu)
+	{
+		BigWrkSiz = NmbLin / par->NmbCpu;
+		NmbBigWrk = par->NmbCpu;
+	}
+	else
+	{
+		BigWrkSiz = NmbLin;
+		NmbBigWrk = 1;
+	}
+
+	// Set big work-packages
+	idx = 0;
+
+	for(i=0;i<NmbBigWrk;i++)
+	{
+		typ->BigWrkTab[i].ItlTab[0][0] = idx + 1;
+		typ->BigWrkTab[i].ItlTab[0][1] = idx + BigWrkSiz;
+		idx += BigWrkSiz;
+	}
+
+	typ->BigWrkTab[ NmbBigWrk - 1 ].ItlTab[0][1] = NmbLin;
 
    return(TypIdx);
 }

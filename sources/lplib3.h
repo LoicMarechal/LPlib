@@ -1,15 +1,17 @@
+#ifndef _LPLIB_H
+#define _LPLIB_H
 
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.80                                  */
+/*                               LPlib V3.81                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 01 2023                                           */
+/*   Last modification: oct 04 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,3 +85,6 @@ enum ArgAtr {
    SetSmallBlock,
    SetDependencyBlock
 };
+
+
+#endif  //-- define _LPLIB_H
