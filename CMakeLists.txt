@@ -5,19 +5,10 @@
 
 cmake_minimum_required (VERSION 3.7.2)
 set (LPlib_VERSION_MAJOR 3)
-set (LPlib_VERSION_MINOR 62)
+set (LPlib_VERSION_MINOR 80)
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
 option(WITH_CPACK "Enable cpack target to generate a zip file containing binaries" OFF)
-
-include (CheckLanguage)
-check_language (Fortran)
-if(CMAKE_Fortran_COMPILER)
-   enable_language(Fortran)
-   if (CMAKE_Fortran_COMPILER_ID STREQUAL GNU)
-      set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -std=legacy")
-   endif ()
-endif()
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)

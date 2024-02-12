@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LPlib  version 3.73
+## LPlib  version 3.81
 A parallelization framework for numerical simulation
 
 ## Overview
@@ -41,7 +41,7 @@ You may download some sample meshes to run the examples:
 
 ## Usage
 It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  
-It may be used in C, C++, Fortran 77 and 90 programs.  
+It may be used in C or C++ programs.  
 Tested on *Linux*, *macOS*, and *Windows 7->10*.
 
 Running a parallel loop is pretty easy.  

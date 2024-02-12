@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.22                               */
+/*                               HILBERT V 2.23                               */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .meshb files                                 */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   oct 14 2021                                           */
+/* Last modification:   mar 31 2022                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -141,14 +141,14 @@ int MaxDeg[ MAXELE ][2] = {
    { 2,   8},
    { 8,  32},
    { 4,  16},
-   {32, 128},
+   {28, 128},
    {16,  64},
    {16,  64},
    { 8,  32},
    { 2,   8},
    { 8,  32},
    { 4,  16},
-   {32, 128},
+   {28, 128},
    {16,  64},
    {16,  64},
    { 8,  32} };
@@ -217,7 +217,7 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v2.22 october 12 2021   Loic MARECHAL / INRIA");
+      puts("\nHILBERT v2.23 march 31 2022   Loic MARECHAL / INRIA");
       puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
       puts(" -in name    : input mesh(b) name");
       puts(" -out name   : output renumbered mesh(b)");

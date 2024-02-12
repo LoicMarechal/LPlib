@@ -2,18 +2,21 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.73                                  */
+/*                               LPlib V3.81                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*   Description:       Handles threads, scheduling                           */
-/*                      & dependencies                                        */
+/*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: nov 25 2021                                           */
+/*   Last modification: sep 11 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
+
+/*----------------------------------------------------------------------------*/
+/* Includes                                                                   */
+/*----------------------------------------------------------------------------*/
 
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS
@@ -39,6 +42,14 @@
 #include <pthread.h>
 #endif
 
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
+
+#ifdef WITH_LIBMEMBLOCKS
+#include <libmemblocks1.h>
+#endif
+
 
 /*----------------------------------------------------------------------------*/
 /* Defines                                                                    */
@@ -46,8 +57,8 @@
 
 #define MaxLibPar 10
 #define MaxTyp    100
-#define NmbSmlBlk 128
-#define NmbDepBlk 512
+#define DefSmlBlk 64
+#define DefDepBlk 256
 #define MaxTotPip 65536
 #define MaxPipDep 100
 #define MaxHsh    10
@@ -56,16 +67,6 @@
 #define WrkPerGrp 8
 
 enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, ClrMem, EndPth};
-
-
-/*----------------------------------------------------------------------------*/
-/* Includes                                                                   */
-/*----------------------------------------------------------------------------*/
-
-#include <math.h>
-#include <assert.h>
-#include <errno.h>
-#include <limits.h>
 
 
 /*----------------------------------------------------------------------------*/
@@ -125,8 +126,9 @@ typedef struct ParSct
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
    int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
+   int               NmbSmlBlk, NmbDepBlk;
    size_t            StkSiz, ClrLinSiz;
-   void              *F77ArgTab[ MaxF77Arg ];
+   void              *lmb, *F77ArgTab[ MaxF77Arg ];
    float             sta[2];
    void              (*prc)(itg, itg, int, void *), *arg;
    pthread_cond_t    ParCnd, PipCnd;
@@ -157,6 +159,7 @@ typedef struct
 
 static int     SetBit      (int *, int);
 static int     GetBit      (int *, int);
+static void    ClrBit      (int *, int);
 static int     AndWrd      (int, int *, int *);
 static void    AddWrd      (int, int *, int *);
 static void    SubWrd      (int, int *, int *);
@@ -170,9 +173,12 @@ void           PipSrt      (PipArgSct *);
 static void    CalF77Prc   (itg, itg, int, ParSct *);
 static void    CalF77Pip   (PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
-static int64_t IniPar      (int, size_t );
+static int64_t IniPar      (int, size_t, void *);
 static void    SetItlBlk   (ParSct *, TypSct *);
-static void    SetGrp      (ParSct *, TypSct *);
+static int     SetGrp      (ParSct *, TypSct *);
+static void   *LPL_malloc  (void *, int64_t);
+static void   *LPL_calloc  (void *, int64_t, int64_t);
+static void    LPL_free    (void *, void *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -181,19 +187,19 @@ static void    SetGrp      (ParSct *, TypSct *);
 
 int64_t InitParallel(int NmbCpu)
 {
-   return(IniPar(NmbCpu, 0));
+   return(IniPar(NmbCpu, 0, NULL));
 }
 
-int64_t InitParallelAttr(int NmbCpu, size_t StkSiz)
+int64_t InitParallelAttr(int NmbCpu, size_t StkSiz, void *lmb)
 {
 #ifdef PTHREAD_STACK_MIN
    if(StkSiz < PTHREAD_STACK_MIN)
       StkSiz = PTHREAD_STACK_MIN;
 #endif
-   return(IniPar(NmbCpu, StkSiz));
+   return(IniPar(NmbCpu, StkSiz, lmb));
 }
 
-static int64_t IniPar(int NmbCpu, size_t StkSiz)
+static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
 {
    int i;
    int64_t ParIdx;
@@ -213,16 +219,19 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
       NmbCpu = MaxPth;
 
    // Allocate and build main parallel structure
-   if(!(par = calloc(1, sizeof(ParSct))))
+   if(!(par = LPL_calloc(lmb, 1, sizeof(ParSct))))
       return(0);
 
-   if(!(par->PthTab = calloc(NmbCpu, sizeof(PthSct))))
+   // Pass along a potential libMemBlocks structure
+   par->lmb = lmb;
+
+   if(!(par->PthTab = LPL_calloc(par->lmb, NmbCpu, sizeof(PthSct))))
       return(0);
 
-   if(!(par->TypTab = calloc((MaxTyp + 1), sizeof(TypSct))))
+   if(!(par->TypTab = LPL_calloc(par->lmb, (MaxTyp + 1), sizeof(TypSct))))
       return(0);
 
-   if(!(par->PipWrd = calloc(MaxTotPip/32, sizeof(int))))
+   if(!(par->PipWrd = LPL_calloc(par->lmb, MaxTotPip/32, sizeof(int))))
       return(0);
 
    par->NmbCpu = NmbCpu;
@@ -232,6 +241,8 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
    par->NmbItlBlk = 1;
    par->WrkSizSrt = 1;
    par->DynSch = 1;
+   par->NmbSmlBlk = DefSmlBlk;
+   par->NmbDepBlk = DefDepBlk;
 
    // Set the size of WP buffer
    if(NmbCpu >= 4)
@@ -257,9 +268,13 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz)
       {
          pthread_attr_init(&pth->atr);
          pth->StkSiz = StkSiz;
-         pth->UsrStk = malloc(pth->StkSiz);
+         pth->UsrStk = LPL_malloc(par->lmb, pth->StkSiz);
+#ifdef _WIN32
          pthread_attr_setstackaddr(&pth->atr, pth->UsrStk);
          pthread_attr_setstacksize(&pth->atr, pth->StkSiz);
+#else
+         pthread_attr_setstack(&pth->atr, pth->UsrStk, pth->StkSiz);
+#endif
          pthread_create(&pth->pth, &pth->atr, PthHdl, (void *)pth);
       }
       else
@@ -313,7 +328,7 @@ void StopParallel(int64_t ParIdx)
       pthread_join(pth->pth, NULL);
 
       if(pth->UsrStk)
-         free(pth->UsrStk);
+         LPL_free(par->lmb, pth->UsrStk);
    }
 
    pthread_mutex_destroy(&par->ParMtx);
@@ -329,9 +344,9 @@ void StopParallel(int64_t ParIdx)
       if(par->TypTab[i].NmbLin)
          FreeType(ParIdx, i);
 
-   free(par->PthTab);
-   free(par->TypTab);
-   free(par->PipWrd);
+   LPL_free(par->lmb, par->PthTab);
+   LPL_free(par->lmb, par->TypTab);
+   LPL_free(par->lmb, par->PipWrd);
    free(par);
 }
 
@@ -373,69 +388,88 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
    // Read the argument list that must be terminated by a zero
    va_start(ArgLst, ParIdx);
 
-   do
+   ArgCod = va_arg(ArgLst, int);
+
+   switch(ArgCod)
    {
-      ArgCod = va_arg(ArgLst, int);
-
-      switch(ArgCod)
+      // Set the number of interleaved blocks in independant loops
+      case SetInterleavingFactor :
       {
-         // Set the number of interleaved blocks in independant loops
-         case SetInterleavingFactor :
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
          {
-            ArgVal = va_arg(ArgLst, int);
-
-            if(ArgVal > 0)
-            {
-               par->NmbItlBlk = ArgVal;
-               par->ItlBlkSiz = 0;
-               NmbArg++;
-            }
-         }break;
-
-         // Set the interleaved blocks size in independant loops
-         case SetInterleavingSize :
-         {
-            ArgVal = va_arg(ArgLst, int);
-
-            if(ArgVal > 0)
-            {
-               par->NmbItlBlk = 0;
-               par->ItlBlkSiz = ArgVal;
-               NmbArg++;
-            }
-         }break;
-
-         // Desable blocks interleaving (default)
-         case DisableInterleaving :
-         {
-            par->NmbItlBlk = 1;
+            par->NmbItlBlk = ArgVal;
             par->ItlBlkSiz = 0;
             NmbArg++;
-         }break;
+         }
+      }break;
 
-         // Sort depedancy-loop WP through their number of dependencies (default)
-         case EnableBlockSorting :
-         {
-            par->WrkSizSrt = 1;
-            NmbArg++;
-         }break;
+      // Set the interleaved blocks size in independant loops
+      case SetInterleavingSize :
+      {
+         ArgVal = va_arg(ArgLst, int);
 
-         // Disable WP sorting: it lowers concurrency but enhances cache reuse
-         case DisableBlockSorting :
+         if(ArgVal > 0)
          {
-            par->WrkSizSrt = 0;
+            par->NmbItlBlk = 0;
+            par->ItlBlkSiz = ArgVal;
             NmbArg++;
-         }break;
+         }
+      }break;
 
-         // Static scheduling makes the library deterministic
-         case StaticScheduling :
+      // Desable blocks interleaving (default)
+      case DisableInterleaving :
+      {
+         par->NmbItlBlk = 1;
+         par->ItlBlkSiz = 0;
+         NmbArg++;
+      }break;
+
+      // Sort depedancy-loop WP through their number of dependencies (default)
+      case EnableBlockSorting :
+      {
+         par->WrkSizSrt = 1;
+         NmbArg++;
+      }break;
+
+      // Disable WP sorting: it lowers concurrency but enhances cache reuse
+      case DisableBlockSorting :
+      {
+         par->WrkSizSrt = 0;
+         NmbArg++;
+      }break;
+
+      // Static scheduling makes the library deterministic
+      case StaticScheduling :
+      {
+         // WP sorting is useless in this mode so it is disabled
+         par->WrkSizSrt = par->DynSch = 0;
+         NmbArg++;
+      }break;
+
+      case SetSmallBlock :
+      {
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
          {
-            // WP sorting is useless in this mode so it is disabled
-            par->WrkSizSrt = par->DynSch = 0;
+            par->NmbSmlBlk = ArgVal;
             NmbArg++;
-         }break;
-      }
-   }while(ArgCod);
+         }
+      }break;
+
+      case SetDependencyBlock :
+      {
+         ArgVal = va_arg(ArgLst, int);
+
+         if(ArgVal > 0)
+         {
+            par->NmbDepBlk = ArgVal;
+            NmbArg++;
+         }
+      }break;
+   }
 
    va_end(ArgLst);
 
@@ -510,7 +544,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
          grp = grp->nex;
       }while(grp);
 
-      acc /= (float)(NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
+      acc /= (float)(par->NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
    }
    else if(TypIdx2 && par->DynSch)
    {
@@ -604,7 +638,8 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       }
 
       // Update block interleaving according to the current attributes
-      SetItlBlk(par, typ1);
+      if( (par->NmbItlBlk != 1) || par->ItlBlkSiz)
+         SetItlBlk(par, typ1);
 
       for(i=0;i<par->NmbCpu;i++)
       {
@@ -683,6 +718,13 @@ static void *PthHdl(void *ptr)
    {
       // Wait for a wake-up signal from the main loop
       pthread_cond_wait(&pth->cnd, &pth->mtx);
+
+      // Update stats
+      par->sta[0]++;
+
+      for(i=0;i<par->NmbCpu;i++)
+         if(par->PthTab[i].wrk)
+            par->sta[1]++;
 
       switch(par->cmd)
       {
@@ -812,13 +854,6 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
    PthSct *pth = &par->PthTab[ PthIdx ];
    WrkSct *wrk;
 
-   // Update stats
-   par->sta[0]++;
-
-   for(i=0;i<par->NmbCpu;i++)
-      if(par->PthTab[i].wrk)
-         par->sta[1]++;
-
    // Remove previous work's tags
    if(pth->wrk)
       SubWrd(par->typ1->NmbDepWrd, pth->wrk->DepWrdTab, par->typ1->RunDepTab);
@@ -867,7 +902,7 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 int NewType(int64_t ParIdx, itg NmbLin)
 {
    int      TypIdx = 0;
-   itg      i, idx;
+   itg      i, idx, BigWrkSiz, NmbBigWrk;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -892,11 +927,12 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ = &par->TypTab[ TypIdx ];
    typ->NmbLin = NmbLin;
    typ->MaxNmbLin = NmbLin * par->SizMul;
+   typ->NexGrp = NULL;
 
    // Compute the size of small work-packages
-   if(NmbLin >= NmbSmlBlk * par->NmbCpu)
+   if(NmbLin >= par->NmbSmlBlk * par->NmbCpu)
    {
-      typ->SmlWrkSiz = NmbLin / (NmbSmlBlk * par->NmbCpu);
+      typ->SmlWrkSiz = NmbLin / (par->NmbSmlBlk * par->NmbCpu);
       typ->NmbSmlWrk = NmbLin / typ->SmlWrkSiz;
 
       if(NmbLin != typ->NmbSmlWrk * typ->SmlWrkSiz)
@@ -908,7 +944,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
       typ->NmbSmlWrk = 1;
    }
 
-   if(!(typ->SmlWrkTab = calloc(typ->NmbSmlWrk * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->SmlWrkTab = LPL_calloc(par->lmb, typ->NmbSmlWrk * par->SizMul , sizeof(WrkSct))))
       return(0);
 
    // Set small work-packages
@@ -924,8 +960,32 @@ int NewType(int64_t ParIdx, itg NmbLin)
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
 
    // Compute the size of big work-packages
-   if(!(typ->BigWrkTab = calloc(par->NmbCpu * par->SizMul , sizeof(WrkSct))))
+   if(!(typ->BigWrkTab = LPL_calloc(par->lmb, par->NmbCpu * par->SizMul , sizeof(WrkSct))))
       return(0);
+
+   // Compute the size of big work-packages
+	if(NmbLin >= par->NmbCpu)
+	{
+		BigWrkSiz = NmbLin / par->NmbCpu;
+		NmbBigWrk = par->NmbCpu;
+	}
+	else
+	{
+		BigWrkSiz = NmbLin;
+		NmbBigWrk = 1;
+	}
+
+	// Set big work-packages
+	idx = 0;
+
+	for(i=0;i<NmbBigWrk;i++)
+	{
+		typ->BigWrkTab[i].ItlTab[0][0] = idx + 1;
+		typ->BigWrkTab[i].ItlTab[0][1] = idx + BigWrkSiz;
+		idx += BigWrkSiz;
+	}
+
+	typ->BigWrkTab[ NmbBigWrk - 1 ].ItlTab[0][1] = NmbLin;
 
    return(TypIdx);
 }
@@ -937,7 +997,7 @@ int NewType(int64_t ParIdx, itg NmbLin)
 
 int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
 {
-   itg      i, idx;
+   itg      i, idx, BigWrkSiz, NmbBigWrk;
    TypSct   *typ;
    ParSct   *par = (ParSct *)ParIdx;
 
@@ -969,6 +1029,30 @@ int ResizeType(int64_t ParIdx, int TypIdx, itg NmbLin)
    }
 
    typ->SmlWrkTab[ typ->NmbSmlWrk - 1 ].EndIdx = NmbLin;
+
+   // Compute the size of big work-packages
+	if(NmbLin >= par->NmbCpu)
+	{
+		BigWrkSiz = NmbLin / par->NmbCpu;
+		NmbBigWrk = par->NmbCpu;
+	}
+	else
+	{
+		BigWrkSiz = NmbLin;
+		NmbBigWrk = 1;
+	}
+
+	// Set big work-packages
+	idx = 0;
+
+	for(i=0;i<NmbBigWrk;i++)
+	{
+		typ->BigWrkTab[i].ItlTab[0][0] = idx + 1;
+		typ->BigWrkTab[i].ItlTab[0][1] = idx + BigWrkSiz;
+		idx += BigWrkSiz;
+	}
+
+	typ->BigWrkTab[ NmbBigWrk - 1 ].ItlTab[0][1] = NmbLin;
 
    return(TypIdx);
 }
@@ -1030,6 +1114,7 @@ void FreeType(int64_t ParIdx, int TypIdx)
 {
    TypSct *typ;
    ParSct *par = (ParSct *)ParIdx;
+   GrpSct *grp, *NexGrp;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -1042,16 +1127,24 @@ void FreeType(int64_t ParIdx, int TypIdx)
    typ = &par->TypTab[ TypIdx ];
 
    if(typ->SmlWrkTab)
-      free(typ->SmlWrkTab);
+      LPL_free(par->lmb, typ->SmlWrkTab);
 
    if(typ->BigWrkTab)
-      free(typ->BigWrkTab);
+      LPL_free(par->lmb, typ->BigWrkTab);
 
    if(typ->RunDepTab)
-      free(typ->RunDepTab);
+      LPL_free(par->lmb, typ->RunDepTab);
 
    if(typ->DepWrdMat)
-      free(typ->DepWrdMat);
+      LPL_free(par->lmb, typ->DepWrdMat);
+
+   NexGrp = typ->NexGrp;
+
+   while((grp = NexGrp))
+   {
+      NexGrp = grp->nex;
+      LPL_free(par->lmb, grp);
+   }
 
    memset(typ, 0, sizeof(TypSct));
 }
@@ -1082,10 +1175,10 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
    }
 
    // Compute dependency table's size
-   if( (typ2->NmbLin >= NmbDepBlk * par->NmbCpu)
+   if( (typ2->NmbLin >= par->NmbDepBlk * par->NmbCpu)
    &&  (typ2->NmbLin >= typ1->DepWrkSiz * 32) )
    {
-      typ1->DepWrkSiz = typ2->NmbLin / (NmbDepBlk * par->NmbCpu);
+      typ1->DepWrkSiz = typ2->NmbLin / (par->NmbDepBlk * par->NmbCpu);
       typ1->NmbDepWrd = typ2->NmbLin / (typ1->DepWrkSiz * 32);
 
       if(typ2->NmbLin != typ1->NmbDepWrd * typ1->DepWrkSiz * 32)
@@ -1099,7 +1192,7 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
 
    // Allocate a global dependency table
    if(!(typ1->DepWrdMat =
-      calloc(typ1->NmbSmlWrk * typ1->NmbDepWrd * par->SizMul, sizeof(int))))
+      LPL_calloc(par->lmb, typ1->NmbSmlWrk * typ1->NmbDepWrd * par->SizMul, sizeof(int))))
    {
       return(0);
    }
@@ -1113,7 +1206,7 @@ int BeginDependency(int64_t ParIdx, int TypIdx1, int TypIdx2)
    }
 
    // Allocate a running tags table
-   if(!(typ1->RunDepTab = calloc(typ1->NmbDepWrd * par->SizMul, sizeof(int))))
+   if(!(typ1->RunDepTab = LPL_calloc(par->lmb, typ1->NmbDepWrd * par->SizMul, sizeof(int))))
       return(0);
 
    return(typ1->NmbDepWrd);
@@ -1288,8 +1381,9 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    if(par->WrkSizSrt && par->DynSch)
       qsort(typ1->SmlWrkTab, typ1->NmbSmlWrk, sizeof(WrkSct), CmpWrk);
 
-   if(!par->DynSch)
-      SetGrp(par, typ1);
+   // If the dynamic scheduling is disabled, set static WP
+   if(!par->DynSch && !SetGrp(par, typ1))
+      return(0);
 
    return(1);
 }
@@ -1351,6 +1445,122 @@ void GetDependencyStats(int64_t ParIdx, int TypIdx1,
 
 
 /*----------------------------------------------------------------------------*/
+/* Halve the number of small blocks by compining pairs of consecutive blocks  */
+/*----------------------------------------------------------------------------*/
+
+int HalveSmallBlocks(int64_t ParIdx, int TypIdx1, int TypIdx2)
+{
+   int i, j;
+   ParSct *par = (ParSct *)ParIdx;
+   WrkSct *EvnWrk, *OddWrk, *NewWrk;
+   TypSct *typ1, *typ2;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(0);
+
+   // Check bounds
+   typ1 = &par->TypTab[ TypIdx1 ];
+   typ2 = &par->TypTab[ TypIdx2 ];
+
+   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp) || (TypIdx2 < 1)
+   ||  (TypIdx2 > MaxTyp) || (typ1 == typ2) || !typ1->NmbLin
+   ||  !typ2->NmbLin )
+   {
+      return(0);
+   }
+
+   // Do not halve the number of blocks if there is only one left
+   // nor if the small blocks have been sorted
+   if(typ1->NmbSmlWrk < 2 || par->WrkSizSrt)
+      return(0);
+
+   // For each new block, compute the logical OR between two consecutive old blocks
+   // The new data is copied on top of former one
+   for(i=0;i<typ1->NmbSmlWrk;i+=2)
+   {
+      EvnWrk = &typ1->SmlWrkTab[ i     ];
+      OddWrk = &typ1->SmlWrkTab[ i + 1 ];
+      NewWrk = &typ1->SmlWrkTab[ i / 2 ];
+      NewWrk->BegIdx = EvnWrk->BegIdx;
+      NewWrk->EndIdx = OddWrk->EndIdx;
+
+      for(j=0;j<typ1->NmbDepWrd;j++)
+         if(i+1 < typ1->NmbSmlWrk)
+            NewWrk->DepWrdTab[j] = EvnWrk->DepWrdTab[j] | OddWrk->DepWrdTab[j];
+         else
+            NewWrk->DepWrdTab[j] = EvnWrk->DepWrdTab[j];
+   }
+
+   // Halve the number of blocks and add one if the number was odd
+   typ1->SmlWrkSiz *= typ1->NmbSmlWrk;
+
+   if(typ1->NmbSmlWrk & 1)
+      typ1->NmbSmlWrk = typ1->NmbSmlWrk / 2 + 1;
+   else
+      typ1->NmbSmlWrk /= 2;
+
+   typ1->SmlWrkSiz /= typ1->NmbSmlWrk;
+
+   return(typ1->NmbSmlWrk);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Halve the number of dependency words by ORing consecutive pairs of bits    */
+/*----------------------------------------------------------------------------*/
+
+int HalveDependencyBlocks(int64_t ParIdx, int TypIdx1, int TypIdx2)
+{
+   int i, j;
+   WrkSct *wrk;
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *typ1, *typ2;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(0);
+
+   // Check bounds
+   typ1 = &par->TypTab[ TypIdx1 ];
+   typ2 = &par->TypTab[ TypIdx2 ];
+
+   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp) || (TypIdx2 < 1)
+   ||  (TypIdx2 > MaxTyp) || (typ1 == typ2) || !typ1->NmbLin
+   ||  !typ2->NmbLin )
+   {
+      return(0);
+   }
+
+   // Do not halve the number of blocks if there is only one left
+   if(typ1->NmbDepWrd < 2)
+      return(0);
+
+   for(i=0;i<typ1->NmbSmlWrk;i++)
+   {
+      wrk = &typ1->SmlWrkTab[i];
+
+      for(j=0;j<typ1->NmbDepWrd;j+=2)
+         if(GetBit(wrk->DepWrdTab, j) || GetBit(wrk->DepWrdTab, j+1))
+            SetBit(wrk->DepWrdTab, j/2);
+         else
+            ClrBit(wrk->DepWrdTab, j/2);
+   }
+
+   typ1->DepWrkSiz *= typ1->NmbDepWrd;
+
+   if(typ1->NmbDepWrd & 1)
+      typ1->NmbDepWrd = typ1->NmbDepWrd / 2 + 1;
+   else
+      typ1->NmbDepWrd /= 2;
+
+   typ1->DepWrkSiz /= typ1->NmbDepWrd;
+
+   return(typ1->NmbDepWrd * 32);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Return the block ID containing the given element ID                        */
 /*----------------------------------------------------------------------------*/
 
@@ -1406,6 +1616,16 @@ static int SetBit(int *tab, int idx)
 static int GetBit(int *tab, int idx)
 {
    return( tab[ idx >> 5 ] & (1UL << (idx & 31)) );
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Clear a bit in a multibyte word                                            */
+/*----------------------------------------------------------------------------*/
+
+static void ClrBit(int *tab, int idx)
+{
+   tab[ idx >> 5 ] &= ~(1UL << (idx & 31));
 }
 
 
@@ -1501,7 +1721,7 @@ int CmpWrk(const void *ptr1, const void *ptr2)
 /* Generate static scheduling groups of small WP for each thread              */
 /*----------------------------------------------------------------------------*/
 
-static void SetGrp(ParSct *par, TypSct *typ)
+static int SetGrp(ParSct *par, TypSct *typ)
 {
    int      i, NmbSmlWrk, *GrpWrd, *AllWrd, *TstWrd;
    int      IncFlg, siz = typ->NmbDepWrd;
@@ -1514,16 +1734,16 @@ static void SetGrp(ParSct *par, TypSct *typ)
    typ->NexGrp = NULL;
 
    // Allocate a dependency word to contain all threads
-   GrpWrd = malloc(par->NmbCpu * siz * sizeof(int));
-   assert(GrpWrd);
+   if(!(GrpWrd = LPL_malloc(par->lmb, par->NmbCpu * siz * sizeof(int))))
+      return(0);
 
    // Allocate a dependency word to concatenate all thread words
-   AllWrd = malloc(siz * sizeof(int));
-   assert(AllWrd);
+   if(!(AllWrd = LPL_malloc(par->lmb, siz * sizeof(int))))
+      return(0);
 
    // Allocate a working dependency word for testings
-   TstWrd = malloc(siz * sizeof(int));
-   assert(TstWrd);
+   if(!(TstWrd = LPL_malloc(par->lmb, siz * sizeof(int))))
+      return(0);
 
    // Link all WP together to make a free list
    NexWrk = &typ->SmlWrkTab[0];
@@ -1541,8 +1761,9 @@ static void SetGrp(ParSct *par, TypSct *typ)
    do
    {
       // Allocate a new group and link it
-      grp = calloc(1, sizeof(GrpSct));
-      assert(grp);
+      if(!(grp = LPL_calloc(par->lmb, 1, sizeof(GrpSct))))
+         return(0);
+
       grp->nex = typ->NexGrp;
       typ->NexGrp = grp;
       grp->idx = ++typ->NmbGrp;
@@ -1613,7 +1834,11 @@ static void SetGrp(ParSct *par, TypSct *typ)
       }while(IncFlg && NmbSmlWrk);
    }while(NmbSmlWrk);
 
-   free(GrpWrd);
+   LPL_free(par->lmb, GrpWrd);
+   LPL_free(par->lmb, AllWrd);
+   LPL_free(par->lmb, TstWrd);
+
+   return(1);
 }
 
 
@@ -1676,7 +1901,7 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
       return(0);
 
    // Allocate and setup a new pipe
-   if(!(NewPip = calloc(1, sizeof(PipSct))))
+   if(!(NewPip = LPL_calloc(par->lmb, 1, sizeof(PipSct))))
       return(0);
 
    NewPip->prc = prc;
@@ -1707,10 +1932,13 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    {
       pthread_attr_init(&NewPip->atr);
       NewPip->StkSiz = par->StkSiz;
-      NewPip->UsrStk = malloc(par->StkSiz);
+      NewPip->UsrStk = LPL_malloc(par->lmb, par->StkSiz);
+#ifdef _WIN32
       pthread_attr_setstackaddr(&NewPip->atr, NewPip->UsrStk);
       pthread_attr_setstacksize(&NewPip->atr, NewPip->StkSiz);
-      //pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+#else
+      pthread_attr_setstack(&NewPip->atr, NewPip->UsrStk, NewPip->StkSiz);
+#endif
       pthread_create(&NewPip->pth, &NewPip->atr, PipHdl, (void *)NewPip);
    }
    else
@@ -1812,7 +2040,7 @@ static void *PipHdl(void *ptr)
    SetBit(par->PipWrd, pip->idx);
    par->PenPip--;
    par->RunPip--;
-   free(pip);
+   LPL_free(par->lmb, pip);
    pthread_mutex_unlock(&par->PipMtx);
 
    return(NULL);
@@ -2001,6 +2229,11 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
    {
       LaunchParallel(ParIdx, NewTyp, 0, (void *)RenPrc, (void *)&arg);
 
+      qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
+
+      for(i=1;i<=NmbLin;i++)
+         idx[ idx[i][1] ][0] = i;
+      /*
       for(i=0;i<1<<HshBit;i++)
          stat[i] = 0;
 
@@ -2030,7 +2263,7 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
       NmbByt = NmbLin+1;
       NmbByt *= 2 * sizeof(int64_t);
    
-      tab = malloc(NmbByt);
+      tab = LPL_malloc(par->lmb, NmbByt);
 
       if(!tab)
          return(0);
@@ -2068,7 +2301,7 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
          idx[ tab[i-1][1] ][0] = i;
       }
 
-      free(tab);
+      LPL_free(par->lmb, tab);*/
    }
 
    return(1);
@@ -2177,6 +2410,48 @@ double GetWallClock()
    struct timeval tp;
    gettimeofday(&tp, NULL);
    return(tp.tv_sec + tp.tv_usec / 1000000.);
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc malloc      */
+/*----------------------------------------------------------------------------*/
+
+static void *LPL_malloc(void *lmb, int64_t siz)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   return(LmbAlcPag((LmbSct *)lmb, siz, 0, LMB_ALLOC_DONT_CLEAR));
+#else
+  return(malloc(siz));
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc calloc      */
+/*----------------------------------------------------------------------------*/
+
+static void *LPL_calloc(void *lmb, int64_t itm, int64_t siz)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   return(LmbAlcPag((LmbSct *)lmb, itm * siz, 0, LMB_ALLOC_AND_CLEAR));
+#else
+   return(calloc(itm, siz));
+#endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Encapsulate the selection between libMemBlock and regular libc free        */
+/*----------------------------------------------------------------------------*/
+
+static void LPL_free(void *lmb, void *adr)
+{
+#ifdef WITH_LIBMEMBLOCKS
+   LmbRlsPag((LmbSct *)lmb, adr);
+#else
+   free(adr);
 #endif
 }
 

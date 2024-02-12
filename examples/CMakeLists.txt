@@ -15,19 +15,6 @@ add_executable(indirect_writes indirect_writes.c)
 target_link_libraries(indirect_writes LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 install (TARGETS indirect_writes DESTINATION share/LPlib/examples COMPONENT examples)
 
-
-########################
-# BUILD FORTRAN EXAMPLES
-########################
-
-if (CMAKE_Fortran_COMPILER)
-   add_executable(basic_test_f77 basic_test.f)
-   target_link_directories(basic_test_f77 PRIVATE ${libMeshb_LINK_DIRS})
-   target_link_libraries(basic_test_f77 LP.3 gfortran ${libMeshb_Fortran_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-   install (TARGETS basic_test_f77 DESTINATION share/LPlib/examples COMPONENT examples)
-
-   add_executable(indirect_writes_f77 indirect_writes.f)
-   target_link_directories(indirect_writes_f77 PRIVATE ${libMeshb_LINK_DIRS})
-   target_link_libraries(indirect_writes_f77 LP.3 gfortran ${libMeshb_Fortran_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-   install (TARGETS indirect_writes_f77 DESTINATION share/LPlib/examples COMPONENT examples)
-endif ()
+add_executable(adaptive_blocking adaptive_blocking.c)
+target_link_libraries(adaptive_blocking LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+install (TARGETS adaptive_blocking DESTINATION share/LPlib/examples COMPONENT examples)

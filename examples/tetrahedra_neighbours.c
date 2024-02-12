@@ -2,15 +2,15 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                   PARALLEL NEIGHBOURS USING the LPlib                      */
+/*                   PARALLEL NEIGHBOURS USING THE LPLIB                      */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       extract a triangulated surface mesh                   */
-/*                      from a volumic tetrahedral mesh                       */
+/*                      from a volume only tetrahedral mesh                   */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: aug 04 2021                                           */
+/*   Last modification: feb 17 2023                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -77,7 +77,7 @@ typedef struct
 typedef struct
 {
    char *FlgTab;
-   int beg, end, HshSiz, HshPos, ColPos, NmbCpu, (*NgbTab)[4];
+   int beg, end, HshSiz, HshPos, HshMsk, ColPos, NmbCpu, (*NgbTab)[4];
    HshSct *tab;
    MshSct *msh;
 }ParSct;
@@ -119,7 +119,7 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\ntetrahedra_neighbours v1.02 jan 20 2015   Loic MARECHAL / INRIA");
+      puts("\ntetrahedra_neighbours v1.03 february 17 2023   Loic MARECHAL / INRIA");
       puts(" Usage      : tetrahedra_neighbours -in volume_mesh -out surface_mesh");
       puts(" -in name   : name of the input tetrahedral-only mesh");
       puts(" -out name  : name of the output surface mesh");
@@ -184,7 +184,7 @@ int main(int ArgCnt, char **ArgVec)
    ScaMsh(InpNam, &msh);
    GetTim(&timer);
    printf("%g s\n", timer);
-   printf("\nInput mesh : version = %d, %d vertices, %d tets\n", \
+   printf("Input mesh          : version = %d, vertices = %d, tets = %d\n",
          msh.MshVer, msh.NmbVer, msh.NmbTet);
 
    // Setup LP3 lib and datatypes
@@ -334,7 +334,7 @@ static void RecMsh(char *OutNam, MshSct *msh)
 static void SetNgb(MshSct *msh, int64_t LibParIdx)
 {
    char *FlgTab;
-   int i, j, k, NgbIdx, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];
+   int i, j, k, dec, NgbIdx, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];
    int tvpf[4][3] = { {1,2,3}, {2,0,3}, {3,0,1}, {0,2,1} };
    double timer;
    ParSct par[ MaxPth ];
@@ -345,7 +345,8 @@ static void SetNgb(MshSct *msh, int64_t LibParIdx)
 
    // Allocate a hash table and overflow buffer
    GetLplibInformation(LibParIdx, &NmbCpu, &NmbTyp);
-   HshSiz =  (msh->NmbTet * 2)  / NmbCpu;
+   dec = ceil(log(1. + 2. * msh->NmbTet / NmbCpu) / log(2));
+   HshSiz =  1 << dec;
    MshSiz =  msh->NmbTet / NmbCpu;
    FlgTab = calloc( (msh->NmbTet+1), sizeof(char) );
    NgbTab = calloc( (msh->NmbTet+1), 4 * sizeof(int) );
@@ -357,6 +358,7 @@ static void SetNgb(MshSct *msh, int64_t LibParIdx)
       par[i].end = (i+1) * MshSiz;
       par[i].HshSiz = HshSiz;
       par[i].ColPos = HshSiz;
+      par[i].HshMsk = HshSiz - 1;
       par[i].msh = msh;
       par[i].FlgTab = FlgTab;
       par[i].NmbCpu = NmbCpu;
@@ -415,7 +417,7 @@ static void SetNgb(MshSct *msh, int64_t LibParIdx)
    for(i=0;i<NmbCpu;i++)
       free(par[i].tab);
 
-   printf("%d boundary triangles extracted\n", msh->NmbTri);
+   printf("Boundary extraction : %d triangles\n", msh->NmbTri);
 }
 
 
@@ -452,8 +454,7 @@ static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
             }
 
          mid = 6 - min - max - j;
-         key = (3 * tet->idx[ min ] + 5 * tet->idx[ mid ] + 7 * tet->idx[ max ]) \
-               % par[c].HshSiz;
+         key = (31 * tet->idx[ min ] + 7 * tet->idx[ mid ] + 3 * tet->idx[ max ]) & par[c].HshMsk;
 
          // If the bucket is empty, store the face
          if(!tab[ key ].tet)
@@ -471,11 +472,10 @@ static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
          {
             ngb = &msh->tet[ tab[ key ].tet ];
 
-            /* If the same face is found in the hash table, 
-               setup a link between both tetrahedra */
-
-            if( (ngb->idx[ (int)tab[ key ].min ] == tet->idx[ min ]) \
-            &&  (ngb->idx[ (int)tab[ key ].mid ] == tet->idx[ mid ]) \
+            // If the same face is found in the hash table, 
+            // setup a link between both tetrahedra
+            if( (ngb->idx[ (int)tab[ key ].min ] == tet->idx[ min ])
+            &&  (ngb->idx[ (int)tab[ key ].mid ] == tet->idx[ mid ])
             &&  (ngb->idx[ (int)tab[ key ].max ] == tet->idx[ max ]) )
             {
                NgbTab[i][j] = tab[ key ].tet;
@@ -485,9 +485,8 @@ static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
                break;
             }
 
-            /* If not, allocate a new bucket from the overflow table \
-               and link it to the main entry */
-
+            // If not, allocate a new bucket from the overflow table
+            // and link it to the main entry
             if(tab[ key ].nex)
                key = tab[ key ].nex;
             else
@@ -521,9 +520,8 @@ static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
 
    for(i=par[c].beg; i<=par[c].end; i++)
    {
-      /* If a tetrahedron has already 4 links,
-         there is no need to find a missing ones */
-
+      // If a tetrahedron has already 4 links,
+      // there is no need to find a missing ones
       if(par[c].FlgTab[i] == 4)
          continue;
 
@@ -531,9 +529,8 @@ static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
 
       for(j=0;j<4;j++)
       {
-         /* If there is no neighbour through this face,
-            try to find on among other subdomains local hash tables */
-
+         // If there is no neighbour through this face,
+         // try to find on among other subdomains local hash tables
          if(NgbTab[i][j])
             continue;
 
@@ -550,8 +547,7 @@ static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
 
          mid = 6 - min - max - j;
          flg = 0;
-         BasKey = (3 * tet->idx[ min ] + 5 * tet->idx[ mid ] + 7 * tet->idx[ max ]) \
-               % par[c].HshSiz;
+         BasKey = (31 * tet->idx[ min ] + 7 * tet->idx[ mid ] + 3 * tet->idx[ max ]) & par[c].HshMsk;
    
          for(n=0; n<par[c].NmbCpu; n++)
          {
@@ -565,8 +561,8 @@ static void ParNgb2(int BegIdx, int EndIdx, int c, ParSct *par)
             {
                ngb = &msh->tet[ tab[ key ].tet ];
    
-               if( (ngb->idx[ (int)tab[ key ].min ] == tet->idx[ min ]) \
-               &&  (ngb->idx[ (int)tab[ key ].mid ] == tet->idx[ mid ]) \
+               if( (ngb->idx[ (int)tab[ key ].min ] == tet->idx[ min ])
+               &&  (ngb->idx[ (int)tab[ key ].mid ] == tet->idx[ mid ])
                &&  (ngb->idx[ (int)tab[ key ].max ] == tet->idx[ max ]) )
                {
                   NgbTab[i][j] = tab[ key ].tet;

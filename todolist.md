@@ -6,6 +6,8 @@
 - develop a lattice scheduling based on geometric blocks, not on element indices blocs
 - link dependency block at creation and do not unlink them while running the parallel loop
 - interleaved procedures: allow multiple procedures to be launched in parallel and processed in a pipelined way
+- print a warning when the number of arguments is beyond 20 in multi args calls
+- implement a data reuse weight in the scheduler
 
 ### DONE
 - handle 64-bit integers
@@ -19,3 +21,6 @@
 - make interleaved blocks optional as some parallel loops cannot work with it (i.e. TetrahedraNeighbours example)
 - add a procedure to set new parameters before calling LaunchParallel()
 - develop an optional static scheduling option that makes the process deterministic
+- develop a way to set default block sizes for dependency loops
+- develop a procedure to halve the number of small blocks or dependency blocks while the LPlib is running
+- add an example to illustrate the adaptive block sizing process
