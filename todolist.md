@@ -6,7 +6,7 @@
 - develop a lattice scheduling based on geometric blocks, not on element indices blocs
 - link dependency block at creation and do not unlink them while running the parallel loop
 - interleaved procedures: allow multiple procedures to be launched in parallel and processed in a pipelined way
-- print a warning when the number of arguments is beyond 20 in F77 and C multi args calls
+- print a warning when the number of arguments is beyond 20 in multi args calls
 - implement a data reuse weight in the scheduler
 
 ### DONE
