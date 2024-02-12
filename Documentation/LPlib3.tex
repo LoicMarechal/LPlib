@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large February 2022 \\
-\normalsize Document v1.73, library v3.73
+\Large February 2024 \\
+\normalsize Document v1.74, library v3.81
 \end{flushright}
 
 \end{titlepage}
@@ -82,13 +82,6 @@ Direct call to pthreads commands is still too tedious and non-transparent from a
 The \emph{LPlib} allows for easy parallelizing of loops running over tables and structures featuring direct or indirect memory accesses. These account for most of the computing time in numerical simulation software dealing with meshes.
 
 A programmer does not need to rewrite his code but only needs to encapsulate loops into independent procedures and briefly describe the data structure they will run over (such as the size of the tables and whether they will be accessed directly or not).
-
-A full Fortran 77 interface is provided in the library file, you only need to include the lplib3.ins.
-
-CAUTION: some Fortran compilers allocate local procedure variables globally, so these procedures are not thread safe and cannot be called from the LPlib.
-You need to force the compiler to allocate local variables on the stack to make them thread-safe.
-
-With Intel IFC, add the "-recursive" option, with Gfortran use "-frecursive ".
 
 \subsection{Features}
 
