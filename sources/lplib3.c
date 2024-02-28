@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 11 2023                                           */
+/*   Last modification: feb 28 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 

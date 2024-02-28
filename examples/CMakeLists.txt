@@ -18,3 +18,7 @@ install (TARGETS indirect_writes DESTINATION share/LPlib/examples COMPONENT exam
 add_executable(adaptive_blocking adaptive_blocking.c)
 target_link_libraries(adaptive_blocking LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 install (TARGETS adaptive_blocking DESTINATION share/LPlib/examples COMPONENT examples)
+
+add_executable(build_edges build_edges.c)
+target_link_libraries(build_edges LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+install (TARGETS build_edges DESTINATION share/LPlib/examples COMPONENT examples)
