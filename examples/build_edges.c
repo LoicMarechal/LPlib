@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 13 2015                                           */
-/*   Last modification: feb 28 2024                                           */
+/*   Last modification: mar 06 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -108,6 +108,7 @@ void ParEdg2   (itg, itg, int, ParSct *);
 void ScaMsh    (char *, MshSct *);
 void RecMsh    (char *, MshSct *);
 void GetTim    (double *);
+void PrtVerDeg (MshSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -124,7 +125,7 @@ const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
 int main(int ArgCnt, char **ArgVec)
 {
    char *PtrArg, *TmpStr, InpNam[1000], OutNam[1000];
-   int i, NmbCpu = 0;
+   int i, NmbCpu = 0, VecMod = 0;
    MshSct msh;
 
    // Command line parsing
@@ -136,6 +137,7 @@ int main(int ArgCnt, char **ArgVec)
       puts(" Usage       : build_edges -in volume_mesh -out edge_mesh");
       puts(" -in  name   : name of the input tetrahedral-only mesh");
       puts(" -out name   : name of the output mesh that will contain tets, edges and vertices");
+      puts(" -vector     : print statistics on vertex connectivity and vector padding");
       puts(" -serial     : use the serial optimized version (different from -nproc 1)");
       puts(" -nproc n    : n is the number of threads (default = all available threads)\n");
       exit(0);
@@ -166,6 +168,12 @@ int main(int ArgCnt, char **ArgVec)
          if(!strstr(OutNam, ".mesh"))
             strcat(OutNam, ".meshb");
 
+         continue;
+      }
+
+      if(!strcmp(PtrArg,"-vector"))
+      {
+         VecMod = 1;
          continue;
       }
 
@@ -205,6 +213,10 @@ int main(int ArgCnt, char **ArgVec)
       SetEdgSer(&msh);
    else
       SetEdgPar(&msh, NmbCpu);
+
+   // Print statistics on vertex connectivity
+   if(VecMod)
+      PrtVerDeg(&msh);
 
    // Mesh writing
    RecMsh(OutNam, &msh);
@@ -688,4 +700,59 @@ void RecMsh(char *OutNam, MshSct *msh)
 
    GetTim(&timer);
    printf("%g s\n\n", timer);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Print statistics about vertex connectivity                                 */
+/*----------------------------------------------------------------------------*/
+
+void PrtVerDeg(MshSct *msh)
+{
+   int i, j, *DegTab = calloc(msh->NmbVer+1, sizeof(int));
+   int64_t DegTot=0, VecTot=0, deg16=0, deg32=0, deg64=0, deg128=0, deg256=0, ovf=0;
+
+   assert(DegTab);
+
+   for(i=1;i<=msh->NmbEdg;i++)
+      for(j=0;j<2;j++)
+         DegTab[ msh->edg[i].idx[j] ]++;
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      DegTot += DegTab[i];
+
+      if(DegTab[i] <= 16)
+         deg16++;
+      else if(DegTab[i] <= 32)
+         deg32++;
+      else if(DegTab[i] <= 64)
+         deg64++;
+      else if(DegTab[i] <= 128)
+         deg128++;
+      else if(DegTab[i] <= 256)
+         deg256++;
+      else
+         ovf++;
+   }
+
+   free(DegTab);
+
+   VecTot = 16*deg16 + 32*deg32 + 64*deg64 + 128*deg128 + 256*deg256;
+
+   puts("");
+   puts  ("vector |  %age  | number");
+   puts  ("----------------------------");
+   printf("   16  | %6.2f | %10lld\n", (float)(100 * deg16 ) / msh->NmbVer, deg16);
+   printf("   32  | %6.2f | %10lld\n", (float)(100 * deg32 ) / msh->NmbVer, deg32);
+   printf("   64  | %6.2f | %10lld\n", (float)(100 * deg64 ) / msh->NmbVer, deg64);
+   printf("  128  | %6.2f | %10lld\n", (float)(100 * deg128) / msh->NmbVer, deg128);
+   printf("  256  | %6.2f | %10lld\n", (float)(100 * deg256) / msh->NmbVer, deg256);
+   printf("  OUT  | %6.2f | %10lld\n", (float)(100 * ovf   ) / msh->NmbVer, ovf);
+
+   puts("");
+   printf("vector filling : %3.2f%%\n", (float)(100*DegTot)/VecTot);
+   printf("real non-zero  : %10lld\n", DegTot);
+   printf("vector non-zero: %10lld\n", VecTot);
+   puts("");
 }
