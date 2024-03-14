@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 04 2023                                           */
+/*   Last modification: mar 14 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stddef.h>
 
 #ifdef INT64
 #define itg int64_t
