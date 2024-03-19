@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 13 2015                                           */
-/*   Last modification: mar 06 2024                                           */
+/*   Last modification: mar 07 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -240,7 +240,7 @@ void SetEdgSer(MshSct *msh)
    HshSct *hsh, *buc;
 
    // Allocate the hash table to store all edges
-   hsh = malloc(6 * siz * sizeof(HshSct));
+   hsh = malloc(7 * siz * sizeof(HshSct));
    assert(hsh);
 
    // Start timer
@@ -301,6 +301,7 @@ void SetEdgSer(MshSct *msh)
                key = col++;
                hsh[ key ].MinIdx = MinIdx;
                hsh[ key ].MaxIdx = MaxIdx;
+               hsh[ key ].NexBuc = 0;
                msh->NmbEdg++;
                break;
             }
@@ -426,7 +427,7 @@ void ParEdg1(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
    TetSct *tet;
 
    // allocate a thread local hash table
-   hsh = par[ PthIdx ].HshTab = malloc(6 * siz * sizeof(HshSct));
+   hsh = par[ PthIdx ].HshTab = malloc(7 * siz * sizeof(HshSct));
    assert(hsh);
 
    // Clear the hash table's direct entries,
@@ -482,6 +483,7 @@ void ParEdg1(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
                key = col++;
                hsh[ key ].MinIdx = MinIdx;
                hsh[ key ].MaxIdx = MaxIdx;
+               hsh[ key ].NexBuc = 0;
                break;
             }
          }while(1);

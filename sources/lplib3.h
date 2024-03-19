@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 14 2024                                           */
+/*   Last modification: mar 18 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -28,6 +28,10 @@
 #define itg int64_t
 #else
 #define itg int32_t
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 
@@ -68,6 +72,11 @@ int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
 int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
+
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 
 /*----------------------------------------------------------------------------*/

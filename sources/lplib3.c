@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: feb 28 2024                                           */
+/*   Last modification: mar 18 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -850,7 +850,6 @@ static void *PthHdl(void *ptr)
 
 static WrkSct *NexWrk(ParSct *par, int PthIdx)
 {
-   int i;
    PthSct *pth = &par->PthTab[ PthIdx ];
    WrkSct *wrk;
 
@@ -2190,14 +2189,9 @@ void PipSrt(PipArgSct *arg)
 int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
                         double (*crd)[3], uint64_t (*idx)[2] )
 {
-   itg i;
-   int j, NewTyp, stat[ (1<<HshBit)+1 ], NmbPip;
-   uint64_t bound[ MaxPth ][2], cpt, sum, (*tab)[2];
-   size_t NmbByt;
-   double len = pow(2,64);
-   ParSct *par = (ParSct *)ParIdx;
-   ArgSct arg;
-   PipArgSct PipArg[ MaxPth ];
+   int      i, NewTyp;
+   double   len = pow(2,64);
+   ArgSct   arg;
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -2217,92 +2211,14 @@ int HilbertRenumbering( int64_t ParIdx, itg NmbLin, double box[6],
 
 
    if(NmbLin < 10000)
-   {
       RenPrc(1, NmbLin, 0, (void *)&arg);
-
-      qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
-
-      for(i=1;i<=NmbLin;i++)
-         idx[ idx[i][1] ][0] = i;
-   }
    else
-   {
       LaunchParallel(ParIdx, NewTyp, 0, (void *)RenPrc, (void *)&arg);
 
-      qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
+   qsort(&idx[1][0], NmbLin, 2 * sizeof(int64_t), CmpPrc);
 
-      for(i=1;i<=NmbLin;i++)
-         idx[ idx[i][1] ][0] = i;
-      /*
-      for(i=0;i<1<<HshBit;i++)
-         stat[i] = 0;
-
-      for(i=1;i<=NmbLin;i++)
-         stat[ idx[i][0] >> (64 - HshBit) ]++;
-
-      for(i=0;i<MaxPth;i++)
-         bound[i][0] = bound[i][1] = 0;
-
-      NmbPip = 0;
-      sum = cpt = 0;
-   
-      for(i=0;i<1<<HshBit;i++)
-      {
-         bound[ NmbPip ][0] += stat[i];
-         cpt++;
-
-         if(bound[ NmbPip ][0] >= (size_t)NmbLin / par->NmbCpu)
-         {
-            bound[ NmbPip ][1] = cpt << (64 - HshBit);
-            NmbPip++;
-         }
-      }
-
-      bound[ NmbPip ][1] = 1LL<<63;
-   
-      NmbByt = NmbLin+1;
-      NmbByt *= 2 * sizeof(int64_t);
-   
-      tab = LPL_malloc(par->lmb, NmbByt);
-
-      if(!tab)
-         return(0);
-
-      for(i=0;i<=NmbPip;i++)
-      {
-         cpt = bound[i][0];
-         bound[i][0] = sum;
-         sum += cpt;
-
-         PipArg[i].base = &tab[ bound[i][0] ];
-         PipArg[i].nel = cpt;
-         PipArg[i].width = 2 * sizeof(int64_t);
-         PipArg[i].compar = CmpPrc;
-      }
-
-      for(i=1;i<=NmbLin;i++)
-         for(j=0;j<=NmbPip;j++)
-            if(idx[i][0] <= bound[j][1])
-            {
-               tab[ bound[j][0] ][0] = idx[i][0];
-               tab[ bound[j][0] ][1] = i;
-               bound[j][0]++;
-               break;
-            }
-
-      for(i=0;i<NmbPip;i++)
-         LaunchPipeline(ParIdx, PipSrt, &PipArg[i], 0, NULL);
-
-      WaitPipeline(ParIdx);
-
-      for(i=1;i<=NmbLin;i++)
-      {
-         idx[i][1] = tab[i-1][1];
-         idx[ tab[i-1][1] ][0] = i;
-      }
-
-      LPL_free(par->lmb, tab);*/
-   }
+   for(i=1;i<=NmbLin;i++)
+      idx[ idx[i][1] ][0] = i;
 
    return(1);
 }
