@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.81                                  */
+/*                               LPlib V3.82                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 18 2024                                           */
+/*   Last modification: may 27 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -63,6 +63,7 @@
 #define MaxPipDep 100
 #define MaxHsh    10
 #define HshBit    16
+#define MaxVarArg 20
 #define MaxF77Arg 20
 #define WrkPerGrp 8
 
@@ -112,8 +113,8 @@ typedef struct
 
 typedef struct PipSct
 {
-   int               idx, NmbF77Arg, NmbDep, DepTab[ MaxPipDep ];
-   void              *prc, *arg, *F77ArgTab[ MaxF77Arg ];
+   int               idx, NmbVarArg, NmbDep, DepTab[ MaxPipDep ];
+   void              *prc, *arg, *VarArgTab[ MaxVarArg ];
    size_t            StkSiz;
    void              *UsrStk;
    pthread_attr_t    atr;
@@ -124,11 +125,11 @@ typedef struct PipSct
 typedef struct ParSct
 {
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
-   int               req, cmd, *PipWrd, SizMul, NmbF77Arg, NmbVarArg;
+   int               req, cmd, *PipWrd, SizMul, NmbVarArg;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
    int               NmbSmlBlk, NmbDepBlk;
    size_t            StkSiz, ClrLinSiz;
-   void              *lmb, *F77ArgTab[ MaxF77Arg ];
+   void              *lmb, *VarArgTab[ MaxVarArg ];
    float             sta[2];
    void              (*prc)(itg, itg, int, void *), *arg;
    pthread_cond_t    ParCnd, PipCnd;
@@ -170,8 +171,7 @@ static void   *PipHdl      (void *);
 static void   *PthHdl      (void *);
 static WrkSct *NexWrk      (ParSct *, int);
 void           PipSrt      (PipArgSct *);
-static void    CalF77Prc   (itg, itg, int, ParSct *);
-static void    CalF77Pip   (PipSct *, void *);
+static void    CalVarArgPip(PipSct *, void *);
 static void    CalVarArgPrc(itg, itg, int, ParSct *);
 static int64_t IniPar      (int, size_t, void *);
 static void    SetItlBlk   (ParSct *, TypSct *);
@@ -685,7 +685,7 @@ float LaunchParallelMultiArg( int64_t ParIdx, int TypIdx1, int TypIdx2,
    va_start(ArgLst, NmbArg);
 
    for(i=0;i<NmbArg;i++)
-      par->F77ArgTab[i] = va_arg(ArgLst, void *);
+      par->VarArgTab[i] = va_arg(ArgLst, void *);
 
    va_end(ArgLst);
 
@@ -741,9 +741,7 @@ static void *PthHdl(void *ptr)
                   continue;
 
                // Launch a single big wp and signal completion to the scheduler
-               if(par->NmbF77Arg)
-                  CalF77Prc(beg, end, pth->idx, par);
-               else if(par->NmbVarArg)
+               if(par->NmbVarArg)
                   CalVarArgPrc(beg, end, pth->idx, par);
                else
                   par->prc(beg, end, pth->idx, par->arg);
@@ -764,9 +762,7 @@ static void *PthHdl(void *ptr)
             do
             {
                // Run the WP
-               if(par->NmbF77Arg)
-                  CalF77Prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
-               else if(par->NmbVarArg)
+               if(par->NmbVarArg)
                   CalVarArgPrc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par);
                else
                   par->prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->idx, par->arg);
@@ -801,9 +797,7 @@ static void *PthHdl(void *ptr)
                beg = pth->DetWrkTab[i]->BegIdx;
                end = pth->DetWrkTab[i]->EndIdx;
 
-               if(par->NmbF77Arg)
-                  CalF77Prc(beg, end, pth->idx, par);
-               else if(par->NmbVarArg)
+               if(par->NmbVarArg)
                   CalVarArgPrc(beg, end, pth->idx, par);
                else
                   par->prc(beg, end, pth->idx, par->arg);
@@ -1913,12 +1907,12 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
 
    // In case variable arguments where passed through the common LPlib structure
    // Copy them in the pipeline's own arguments table
-   if(par->NmbF77Arg)
+   if(par->NmbVarArg)
    {
-      NewPip->NmbF77Arg = par->NmbF77Arg;
+      NewPip->NmbVarArg = par->NmbVarArg;
 
-      for(i=0;i<par->NmbF77Arg;i++)
-         NewPip->F77ArgTab[i] = par->F77ArgTab[i];
+      for(i=0;i<par->NmbVarArg;i++)
+         NewPip->VarArgTab[i] = par->VarArgTab[i];
    }
 
    // Lock pipe mutex, increment pipe counter
@@ -1962,24 +1956,24 @@ int LaunchPipelineMultiArg(int64_t ParIdx, int NmbDep, int *DepTab,
    va_list ArgLst;
    ParSct *par = (ParSct *)ParIdx;
 
-   if(NmbArg > MaxF77Arg)
+   if(NmbArg > MaxVarArg)
       return(-1);
 
    // Get the variable arguments and store then in the common LPlib structure
    // This is a temporary storage as the will be copied to the pipeline's own
    // arguments table after it has been allocated by LaunchPipeline()
-   par->NmbF77Arg = NmbArg;
+   par->NmbVarArg = NmbArg;
    va_start(ArgLst, NmbArg);
 
    for(i=0;i<NmbArg;i++)
-      par->F77ArgTab[i] = va_arg(ArgLst, void *);
+      par->VarArgTab[i] = va_arg(ArgLst, void *);
 
    va_end(ArgLst);
 
    ret = LaunchPipeline(ParIdx, prc, NULL, NmbDep, DepTab);
 
    // Clear the temporary arguments table
-   par->NmbF77Arg = 0;
+   par->NmbVarArg = 0;
 
    return(ret);
 }
@@ -2030,8 +2024,8 @@ static void *PipHdl(void *ptr)
 
    pthread_mutex_unlock(&par->PipMtx);
 
-   if(pip->NmbF77Arg)
-      CalF77Pip(pip, pip->prc);
+   if(pip->NmbVarArg)
+      CalVarArgPip(pip, pip->prc);
    else
       prc(pip->arg);
 
@@ -2423,157 +2417,6 @@ static void LPL_free(void *lmb, void *adr)
 
 
 /*----------------------------------------------------------------------------*/
-/* Call a fortran thread with 1 to 20 arguments                               */
-/*----------------------------------------------------------------------------*/
-
-static void CalF77Prc(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
-{
-   switch(par->NmbF77Arg)
-   {
-      case 1 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 1)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 1)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 1));
-      }break;
-
-      case 2 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 2)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 2)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 2));
-      }break;
-
-      case 3 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 3)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 3)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 3));
-      }break;
-
-      case 4 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 4)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 4)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 4));
-      }break;
-
-      case 5 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 5)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 5)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 5));
-      }break;
-
-      case 6 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 6)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 6)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 6));
-      }break;
-
-      case 7 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 7)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 7)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 7));
-      }break;
-
-      case 8 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 8)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 8)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 8));
-      }break;
-
-      case 9 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 9)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 9)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 9));
-      }break;
-
-      case 10 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 10)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 10)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 10));
-      }break;
-
-      case 11 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 11)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 11)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 11));
-      }break;
-
-      case 12 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 12)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 12)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 12));
-      }break;
-
-      case 13 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 13)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 13)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 13));
-      }break;
-
-      case 14 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 14)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 14)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 14));
-      }break;
-
-      case 15 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 15)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 15)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 15));
-      }break;
-
-      case 16 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 16)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 16)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 16));
-      }break;
-
-      case 17 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 17)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 17)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 17));
-      }break;
-
-      case 18 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 18)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 18)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 18));
-      }break;
-
-      case 19 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 19)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 19)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 19));
-      }break;
-
-      case 20 :
-      {
-         void (*prc1)(itg *, itg *, int *, DUP(void *, 20)) =
-            (void (*)(itg *, itg *, int *, DUP(void *, 20)))par->prc;
-         prc1(&BegIdx, &EndIdx, &PthIdx, ARG(par->F77ArgTab, 20));
-      }break;
-   }
-}
-
-
-/*----------------------------------------------------------------------------*/
 /* Call a C thread with 1 to 20 arguments                                     */
 /*----------------------------------------------------------------------------*/
 
@@ -2585,418 +2428,271 @@ static void CalVarArgPrc(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
       {
          void (*prc1)(itg, itg, int, DUP(void *, 1)) =
             (void (*)(itg, itg, int, DUP(void *, 1)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 1));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 1));
       }break;
 
       case 2 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 2)) =
             (void (*)(itg, itg, int, DUP(void *, 2)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 2));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 2));
       }break;
 
       case 3 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 3)) =
             (void (*)(itg, itg, int, DUP(void *, 3)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 3));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 3));
       }break;
 
       case 4 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 4)) =
             (void (*)(itg, itg, int, DUP(void *, 4)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 4));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 4));
       }break;
 
       case 5 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 5)) =
             (void (*)(itg, itg, int, DUP(void *, 5)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 5));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 5));
       }break;
 
       case 6 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 6)) =
             (void (*)(itg, itg, int, DUP(void *, 6)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 6));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 6));
       }break;
 
       case 7 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 7)) =
             (void (*)(itg, itg, int, DUP(void *, 7)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 7));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 7));
       }break;
 
       case 8 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 8)) =
             (void (*)(itg, itg, int, DUP(void *, 8)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 8));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 8));
       }break;
 
       case 9 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 9)) =
             (void (*)(itg, itg, int, DUP(void *, 9)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 9));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 9));
       }break;
 
       case 10 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 10)) =
             (void (*)(itg, itg, int, DUP(void *, 10)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 10));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 10));
       }break;
 
       case 11 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 11)) =
             (void (*)(itg, itg, int, DUP(void *, 11)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 11));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 11));
       }break;
 
       case 12 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 12)) =
             (void (*)(itg, itg, int, DUP(void *, 12)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 12));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 12));
       }break;
 
       case 13 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 13)) =
             (void (*)(itg, itg, int, DUP(void *, 13)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 13));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 13));
       }break;
 
       case 14 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 14)) =
             (void (*)(itg, itg, int, DUP(void *, 14)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 14));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 14));
       }break;
 
       case 15 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 15)) =
             (void (*)(itg, itg, int, DUP(void *, 15)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 15));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 15));
       }break;
 
       case 16 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 16)) =
             (void (*)(itg, itg, int, DUP(void *, 16)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 16));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 16));
       }break;
 
       case 17 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 17)) =
             (void (*)(itg, itg, int, DUP(void *, 17)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 17));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 17));
       }break;
 
       case 18 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 18)) =
             (void (*)(itg, itg, int, DUP(void *, 18)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 18));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 18));
       }break;
 
       case 19 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 19)) =
             (void (*)(itg, itg, int, DUP(void *, 19)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 19));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 19));
       }break;
 
       case 20 :
       {
          void (*prc1)(itg, itg, int, DUP(void *, 20)) =
             (void (*)(itg, itg, int, DUP(void *, 20)))par->prc;
-         prc1(BegIdx, EndIdx, PthIdx, ARG(par->F77ArgTab, 20));
+         prc1(BegIdx, EndIdx, PthIdx, ARG(par->VarArgTab, 20));
       }break;
    }
 }
 
 
 /*----------------------------------------------------------------------------*/
-/* Call a fortran pipeline with 1 to 20 arguments                             */
+/* Call a C pipeline with 1 to 20 arguments                                   */
 /*----------------------------------------------------------------------------*/
 
-static void CalF77Pip(PipSct *pip, void *prc)
+static void CalVarArgPip(PipSct *pip, void *prc)
 {
-   switch(pip->NmbF77Arg)
+   switch(pip->NmbVarArg)
    {
       case 1 :
       {
          void (*prc1)(DUP(void *, 1)) = (void (*)(DUP(void *, 1)))prc;
-         prc1(ARG(pip->F77ArgTab, 1));
+         prc1(ARG(pip->VarArgTab, 1));
       }break;
 
       case 2 :
       {
          void (*prc1)(DUP(void *, 2)) = (void (*)(DUP(void *, 2)))prc;
-         prc1(ARG(pip->F77ArgTab, 2));
+         prc1(ARG(pip->VarArgTab, 2));
       }break;
 
       case 3 :
       {
          void (*prc1)(DUP(void *, 3)) = (void (*)(DUP(void *, 3)))prc;
-         prc1(ARG(pip->F77ArgTab, 3));
+         prc1(ARG(pip->VarArgTab, 3));
       }break;
 
       case 4 :
       {
          void (*prc1)(DUP(void *, 4)) = (void (*)(DUP(void *, 4)))prc;
-         prc1(ARG(pip->F77ArgTab, 4));
+         prc1(ARG(pip->VarArgTab, 4));
       }break;
 
       case 5 :
       {
          void (*prc1)(DUP(void *, 5)) = (void (*)(DUP(void *, 5)))prc;
-         prc1(ARG(pip->F77ArgTab, 5));
+         prc1(ARG(pip->VarArgTab, 5));
       }break;
 
       case 6 :
       {
          void (*prc1)(DUP(void *, 6)) = (void (*)(DUP(void *, 6)))prc;
-         prc1(ARG(pip->F77ArgTab, 6));
+         prc1(ARG(pip->VarArgTab, 6));
       }break;
 
       case 7 :
       {
          void (*prc1)(DUP(void *, 7)) = (void (*)(DUP(void *, 7)))prc;
-         prc1(ARG(pip->F77ArgTab, 7));
+         prc1(ARG(pip->VarArgTab, 7));
       }break;
 
       case 8 :
       {
          void (*prc1)(DUP(void *, 8)) = (void (*)(DUP(void *, 8)))prc;
-         prc1(ARG(pip->F77ArgTab, 8));
+         prc1(ARG(pip->VarArgTab, 8));
       }break;
 
       case 9 :
       {
          void (*prc1)(DUP(void *, 9)) = (void (*)(DUP(void *, 9)))prc;
-         prc1(ARG(pip->F77ArgTab, 9));
+         prc1(ARG(pip->VarArgTab, 9));
       }break;
 
       case 10 :
       {
          void (*prc1)(DUP(void *, 10)) = (void (*)(DUP(void *, 10)))prc;
-         prc1(ARG(pip->F77ArgTab, 10));
+         prc1(ARG(pip->VarArgTab, 10));
       }break;
 
       case 11 :
       {
          void (*prc1)(DUP(void *, 11)) = (void (*)(DUP(void *, 11)))prc;
-         prc1(ARG(pip->F77ArgTab, 11));
+         prc1(ARG(pip->VarArgTab, 11));
       }break;
 
       case 12 :
       {
          void (*prc1)(DUP(void *, 12)) = (void (*)(DUP(void *, 12)))prc;
-         prc1(ARG(pip->F77ArgTab, 12));
+         prc1(ARG(pip->VarArgTab, 12));
       }break;
 
       case 13 :
       {
          void (*prc1)(DUP(void *, 13)) = (void (*)(DUP(void *, 13)))prc;
-         prc1(ARG(pip->F77ArgTab, 13));
+         prc1(ARG(pip->VarArgTab, 13));
       }break;
 
       case 14 :
       {
          void (*prc1)(DUP(void *, 14)) = (void (*)(DUP(void *, 14)))prc;
-         prc1(ARG(pip->F77ArgTab, 14));
+         prc1(ARG(pip->VarArgTab, 14));
       }break;
 
       case 15 :
       {
          void (*prc1)(DUP(void *, 15)) = (void (*)(DUP(void *, 15)))prc;
-         prc1(ARG(pip->F77ArgTab, 15));
+         prc1(ARG(pip->VarArgTab, 15));
       }break;
 
       case 16 :
       {
          void (*prc1)(DUP(void *, 16)) = (void (*)(DUP(void *, 16)))prc;
-         prc1(ARG(pip->F77ArgTab, 16));
+         prc1(ARG(pip->VarArgTab, 16));
       }break;
 
       case 17 :
       {
          void (*prc1)(DUP(void *, 17)) = (void (*)(DUP(void *, 17)))prc;
-         prc1(ARG(pip->F77ArgTab, 17));
+         prc1(ARG(pip->VarArgTab, 17));
       }break;
 
       case 18 :
       {
          void (*prc1)(DUP(void *, 18)) = (void (*)(DUP(void *, 18)))prc;
-         prc1(ARG(pip->F77ArgTab, 18));
+         prc1(ARG(pip->VarArgTab, 18));
       }break;
 
       case 19 :
       {
          void (*prc1)(DUP(void *, 19)) = (void (*)(DUP(void *, 19)))prc;
-         prc1(ARG(pip->F77ArgTab, 19));
+         prc1(ARG(pip->VarArgTab, 19));
       }break;
 
       case 20 :
       {
          void (*prc1)(DUP(void *, 20)) = (void (*)(DUP(void *, 20)))prc;
-         prc1(ARG(pip->F77ArgTab, 20));
+         prc1(ARG(pip->VarArgTab, 20));
       }break;
    }
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Fortran 77 API                                                             */
-/*----------------------------------------------------------------------------*/
-
-
-#if defined(F77_NO_UNDER_SCORE)
-#define call(x) x
-#else
-#define call(x) x ## _
-#endif
-
-
-int64_t call(initparallel)(int *NmbCpu)
-{
-   return(InitParallel(*NmbCpu));
-}
-
-void call(stopparallel)(int64_t *ParIdx)
-{
-   StopParallel(*ParIdx);
-}
-
-int call(newtype)(int64_t *ParIdx, itg *NmbLin)
-{
-   return(NewType(*ParIdx, *NmbLin));
-}
-
-void call(freetype)(int64_t *ParIdx, int *TypIdx)
-{
-   FreeType(*ParIdx, *TypIdx);
-}
-
-int call(begindependency)(int64_t *ParIdx, int *TypIdx1, int *TypIdx2)
-{
-   return(BeginDependency(*ParIdx, *TypIdx1, *TypIdx2));
-}
-
-
-void call(adddependency)(int64_t *ParIdx, itg *idx1, itg *idx2)
-{
-   AddDependency(*ParIdx, *idx1, *idx2);
-}
-
-
-void call(enddependency)(int64_t *ParIdx, float *DepSta)
-{
-   EndDependency(*ParIdx, DepSta);
-}
-
-
-float call( launchparallel)(int64_t *ParIdx, int *typ1,
-            int *typ2, void *prc, int *NmbArg, ... )
-{
-   int i;
-   float acc;
-   va_list ArgLst;
-   ParSct *par = (ParSct *)*ParIdx;
-
-   par->NmbF77Arg = *NmbArg;
-   va_start(ArgLst, NmbArg);
-
-   for(i=0;i<*NmbArg;i++)
-      par->F77ArgTab[i] = va_arg(ArgLst, void *);
-
-   va_end(ArgLst);
-
-   acc = LaunchParallel(*ParIdx, *typ1, *typ2, prc, NULL);
-   par->NmbF77Arg = 0;
-
-   return(acc);
-}
-
-
-void call(parallelmemclear)(int64_t *ParIdx, void *ptr, size_t *siz)
-{
-   ParallelMemClear(*ParIdx, ptr, (size_t)*siz);
-}
-
-
-void call(getlplibinformation)(int64_t *ParIdx, int *NmbCpu, int *NmbTyp)
-{
-   GetLplibInformation(*ParIdx, NmbCpu, NmbTyp);
-}
-
-int call(launchpipeline)(  int64_t *ParIdx, int *NmbDep,
-                           int *DepTab, void *prc, int *NmbArg, ... )
-{
-   int i, ret;
-   va_list ArgLst;
-   ParSct *par = (ParSct *)*ParIdx;
-
-   par->NmbF77Arg = *NmbArg;
-   va_start(ArgLst, NmbArg);
-
-   for(i=0;i<*NmbArg;i++)
-      par->F77ArgTab[i] = va_arg(ArgLst, void *);
-
-   va_end(ArgLst);
-   ret = LaunchPipeline(*ParIdx, prc, NULL, *NmbDep, DepTab);
-   return(ret);
-}
-
-void call(waitpipeline)(int64_t *ParIdx)
-{
-   WaitPipeline(*ParIdx);
-}
-
-double call(hilbertrenumbering)( int64_t *ParIdx, itg *NmbLin, double box[6],
-                                 double (*crd)[3], uint64_t *Old2New)
-{
-   int i;
-   uint64_t (*idx)[2];
-
-   // Alloc a temporary renumbering index table
-   if(!(idx = malloc((size_t)(*NmbLin+1) * 2 * sizeof(int64_t))))
-     return(0.);
-
-   // First entry of crd should not be used, crd(1) in F77 is crd[0] in C
-   if(!HilbertRenumbering((int)*ParIdx, (int)*NmbLin, box, &crd[-1], idx))
-     return(0.);
-
-   // Copy the old to new only in the fortran table and free the temp idx table
-   for(i=1;i<=*NmbLin;i++)
-      Old2New[i-1] = idx[i][0];
-
-   free(idx);
-
-   return(1.);
-}
-
-void call(hilbertrenumbering2d)( int64_t *ParIdx, itg *NmbLin, double box[4],
-                                 double (*crd)[2], uint64_t (*idx)[2])
-{
-   HilbertRenumbering2D(*ParIdx, *NmbLin, box, &crd[-1], &idx[-1]);
-}
-
-int call(getnumberofcores)()
-{
-   return(GetNumberOfCores());
-}
-
-double call(getwallclock)()
-{
-   return(GetWallClock());
 }
