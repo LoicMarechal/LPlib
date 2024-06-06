@@ -10,7 +10,7 @@
 /*                      from a volume only tetrahedral mesh                   */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: feb 17 2023                                           */
+/*   Last modification: jun 06 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -62,8 +62,9 @@ typedef struct
 
 typedef struct
 {
-   int tet, nex;
+   int tet;
    char voy, min, mid, max;
+   size_t nex;
 }HshSct;
 
 typedef struct
@@ -77,7 +78,8 @@ typedef struct
 typedef struct
 {
    char *FlgTab;
-   int beg, end, HshSiz, HshPos, HshMsk, ColPos, NmbCpu, (*NgbTab)[4];
+   int beg, end, NmbCpu, (*NgbTab)[4];
+   int64_t HshSiz, HshPos, HshMsk, ColPos;
    HshSct *tab;
    MshSct *msh;
 }ParSct;
@@ -334,8 +336,9 @@ static void RecMsh(char *OutNam, MshSct *msh)
 static void SetNgb(MshSct *msh, int64_t LibParIdx)
 {
    char *FlgTab;
-   int i, j, k, dec, NgbIdx, NmbCpu, NmbTyp, HshSiz, MshSiz, (*NgbTab)[4];
+   int i, j, k, dec, NgbIdx, NmbCpu, NmbTyp, MshSiz, (*NgbTab)[4];
    int tvpf[4][3] = { {1,2,3}, {2,0,3}, {3,0,1}, {0,2,1} };
+   size_t HshSiz;
    double timer;
    ParSct par[ MaxPth ];
 
@@ -346,7 +349,7 @@ static void SetNgb(MshSct *msh, int64_t LibParIdx)
    // Allocate a hash table and overflow buffer
    GetLplibInformation(LibParIdx, &NmbCpu, &NmbTyp);
    dec = ceil(log(1. + 2. * msh->NmbTet / NmbCpu) / log(2));
-   HshSiz =  1 << dec;
+   HshSiz =  1LL << dec;
    MshSiz =  msh->NmbTet / NmbCpu;
    FlgTab = calloc( (msh->NmbTet+1), sizeof(char) );
    NgbTab = calloc( (msh->NmbTet+1), 4 * sizeof(int) );
@@ -428,11 +431,12 @@ static void SetNgb(MshSct *msh, int64_t LibParIdx)
 static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
 {
    char *FlgTab = par[c].FlgTab;
-   int i, j, k, key, (*NgbTab)[4] = par[c].NgbTab;
+   int i, j, k, (*NgbTab)[4] = par[c].NgbTab;
    unsigned int min, mid, max;
+   int64_t key;
    TetSct *tet, *ngb;
    MshSct *msh = par[c].msh;
-   HshSct *tab = par[c].tab = calloc(5 * par[c].HshSiz, sizeof(HshSct));
+   HshSct *tab = par[c].tab = calloc(5LL * par[c].HshSiz, sizeof(HshSct));
 
    // Allocate a local hash table and loop over the local elements
    for(i=par[c].beg; i<=par[c].end; i++)
@@ -454,7 +458,9 @@ static void ParNgb1(int BegIdx, int EndIdx, int c, ParSct *par)
             }
 
          mid = 6 - min - max - j;
-         key = (31 * tet->idx[ min ] + 7 * tet->idx[ mid ] + 3 * tet->idx[ max ]) & par[c].HshMsk;
+         key = (31LL * (int64_t)tet->idx[ min ]
+               + 7LL * (int64_t)tet->idx[ mid ]
+               + 3LL * (int64_t)tet->idx[ max ]) & par[c].HshMsk;
 
          // If the bucket is empty, store the face
          if(!tab[ key ].tet)
