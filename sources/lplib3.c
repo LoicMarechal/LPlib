@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.82                                  */
+/*                               LPlib V4.00                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: may 27 2024                                           */
+/*   Last modification: oct 22 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -67,7 +67,7 @@
 #define MaxF77Arg 20
 #define WrkPerGrp 8
 
-enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, ClrMem, EndPth};
+enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, EndPth};
 
 
 /*----------------------------------------------------------------------------*/
@@ -77,7 +77,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, ClrMem, EndPth};
 typedef struct WrkSct
 {
    itg               BegIdx, EndIdx, ItlTab[ MaxPth ][2];
-   int               NmbDep, *DepWrdTab, GrpIdx;
+   int               NmbDep, *DepWrdTab, GrpIdx, rnd;
    struct WrkSct     *pre, *nex;
 }WrkSct;
 
@@ -91,15 +91,15 @@ typedef struct GrpSct
 typedef struct
 {
    itg               NmbLin, MaxNmbLin;
-   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp;
-   int               NmbDepWrd, *DepWrdMat, *RunDepTab;
+   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp, NmbCol, NmbGrn;
+   int               NmbDepWrd, *DepWrdMat, *RunDepTab, (*ColTab)[2], (*GrnTab)[2];
    WrkSct            *SmlWrkTab, *BigWrkTab;
    GrpSct            *NexGrp;
 }TypSct;
 
 typedef struct
 {
-   int               idx, NmbDetWrk;
+   int               idx, NmbDetWrk, GrnIdx;
    char              *ClrAdr;
    size_t            StkSiz;
    void *            *UsrStk;
@@ -113,7 +113,7 @@ typedef struct
 
 typedef struct PipSct
 {
-   int               idx, NmbVarArg, NmbDep, DepTab[ MaxPipDep ];
+   int               idx, NmbVarArg, NmbDep, DepTab[ MaxPipDep ], BegIdx, EndIdx, GrnIdx;
    void              *prc, *arg, *VarArgTab[ MaxVarArg ];
    size_t            StkSiz;
    void              *UsrStk;
@@ -125,9 +125,9 @@ typedef struct PipSct
 typedef struct ParSct
 {
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
-   int               req, cmd, *PipWrd, SizMul, NmbVarArg;
-   int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
-   int               NmbSmlBlk, NmbDepBlk;
+   int               req, cmd, *PipWrd, SizMul, NmbVarArg, NmbDep;
+   int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt, CurCol;
+   int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon;
    size_t            StkSiz, ClrLinSiz;
    void              *lmb, *VarArgTab[ MaxVarArg ];
    float             sta[2];
@@ -245,9 +245,9 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
    par->NmbDepBlk = DefDepBlk;
 
    // Set the size of WP buffer
-   if(NmbCpu >= 4)
+   /*if(NmbCpu >= 4)
       par->BufMax = NmbCpu / 4;
-   else
+   else*/
       par->BufMax = 1;
 
    pthread_mutex_init(&par->ParMtx, NULL);
@@ -484,8 +484,8 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
 float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
-   int      i;
-   float    acc;
+   int      i, col, GrnIdx;
+   float    acc = 0.;
    PthSct   *pth;
    ParSct   *par = (ParSct *)ParIdx;
    TypSct   *typ1, *typ2 = NULL;
@@ -496,7 +496,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       return(-1.);
 
    // Check bounds
-   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp) || (TypIdx2 < 0)
+   if( (TypIdx1 < 1) || (TypIdx1 > MaxTyp)
    ||  (TypIdx2 > MaxTyp) || (TypIdx1 == TypIdx2) )
    {
       return(-1.);
@@ -505,10 +505,9 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
    typ1 =  &par->TypTab[ TypIdx1 ];
 
    // Launch small WP with static scheduling
-   if(TypIdx2 && !par->DynSch)
+   if( (TypIdx2 > 0) && !par->DynSch )
    {
       grp = typ1->NexGrp;
-      acc = 0.;
 
       do
       {
@@ -546,7 +545,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       acc /= (float)(par->NmbSmlBlk * typ1->NmbGrp) / (float)WrkPerGrp;
    }
-   else if(TypIdx2 && par->DynSch)
+   else if( (TypIdx2 > 0) && par->DynSch )
    {
       // Launch small WP with dynamic scheduling
 
@@ -563,6 +562,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       par->WrkCpt = 0;
       par->sta[0] = par->sta[1] = 0.;
       par->req = 0;
+      par->NmbDep = 0;
 
       // Clear running wp
       for(i=0;i<par->NmbCpu;i++)
@@ -617,7 +617,7 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       // Compute the average concurrency factor
       acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0;
    }
-   else
+   else if(!TypIdx2)
    {
       // Launch big WP with static scheduling
 
@@ -656,6 +656,25 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       // Arbitrary set the average concurrency factor
       acc = (float)par->NmbCpu;
    }
+   else if(TypIdx2 == ColorGrainScheduling)
+   {
+      //puts("ColorGrainScheduling");
+
+      for(col=1;col<=typ1->NmbCol;col++)
+      {
+         //printf("START color %d, grains %d -> %d\n", col, typ1->ColTab[ col ][0], typ1->ColTab[ col ][1]);
+
+         for(i=typ1->ColTab[ col ][0];i<=typ1->ColTab[ col ][1];i++)
+            LaunchPipeline(ParIdx, prc, PtrArg, -i, typ1->GrnTab[i]);
+
+         //WaitPipeline(ParIdx);
+
+         //puts("DONE");
+      }
+      WaitPipeline(ParIdx);
+   }
+   else
+      return(-1.);
 
    // Clear the main datatyp loop to indicate that no LaunchParallel is running
    par->typ1 = 0;
@@ -716,6 +735,7 @@ static void *PthHdl(void *ptr)
    // Enter main loop until StopParallel is send
    do
    {
+      printf("thread %d waiting\n", pth->idx);
       // Wait for a wake-up signal from the main loop
       pthread_cond_wait(&pth->cnd, &pth->mtx);
 
@@ -725,7 +745,7 @@ static void *PthHdl(void *ptr)
       for(i=0;i<par->NmbCpu;i++)
          if(par->PthTab[i].wrk)
             par->sta[1]++;
-
+      printf("thread %d wakes-up with command %d\n", pth->idx, par->cmd);
       switch(par->cmd)
       {
          // Call user's procedure with big WP
@@ -1343,6 +1363,7 @@ int EndDependency(int64_t ParIdx, float DepSta[2])
    for(i=0;i<typ1->NmbSmlWrk;i++)
    {
       TotNmbDep += typ1->SmlWrkTab[i].NmbDep;
+      typ1->SmlWrkTab[i].rnd = rand();
 
       if(typ1->SmlWrkTab[i].NmbDep > DepSta[1])
          DepSta[1] = (float)typ1->SmlWrkTab[i].NmbDep;
@@ -1836,6 +1857,35 @@ static int SetGrp(ParSct *par, TypSct *typ)
 
 
 /*----------------------------------------------------------------------------*/
+/* Prodide the LPlib with color and grain index for each entities             */
+/*----------------------------------------------------------------------------*/
+
+void SetColorGrains( int64_t ParIdx, int TypIdx,
+                     int NmbCol, int *ColTab,
+                     int NmbGrn, int *GrnTab )
+{
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *typ;
+
+   // Check bounds and free mem
+   if( (TypIdx < 1) || (TypIdx > MaxTyp) )
+      return;
+
+   typ = &par->TypTab[ TypIdx ];
+
+   typ->NmbCol = NmbCol;
+   typ->ColTab = malloc( (NmbCol+1) * 2 * sizeof(int));
+   //assert(typ->ColTab);
+   memcpy(typ->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
+
+   typ->NmbGrn = NmbGrn;
+   typ->GrnTab = malloc((NmbGrn+1) * 2 * sizeof(int));
+   //assert(typ->GrnTab);
+   memcpy(typ->GrnTab, GrnTab, (NmbGrn+1) * 2 * sizeof(int));
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Launch the loop prc on typ1 element depending on typ2                      */
 /*----------------------------------------------------------------------------*/
 
@@ -1900,10 +1950,21 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    NewPip->prc = prc;
    NewPip->arg = PtrArg;
    NewPip->par = par;
-   NewPip->NmbDep = NmbDep;
 
-   for(i=0;i<NmbDep;i++)
-      NewPip->DepTab[i] = DepTab[i];
+   if(NmbDep < 0)
+   {
+      NewPip->NmbDep = 0;
+      NewPip->GrnIdx = -NmbDep;
+      NewPip->BegIdx = DepTab[0];
+      NewPip->EndIdx = DepTab[1];
+   }
+   else
+   {
+      NewPip->NmbDep = NmbDep;
+
+      for(i=0;i<NmbDep;i++)
+         NewPip->DepTab[i] = DepTab[i];
+   }
 
    // In case variable arguments where passed through the common LPlib structure
    // Copy them in the pipeline's own arguments table
@@ -1988,7 +2049,7 @@ static void *PipHdl(void *ptr)
    int RunFlg=0, i;
    PipSct *pip = (PipSct *)ptr;
    ParSct *par = pip->par;
-   void (*prc)(void *);
+   void (*prc)(void *), (*prcgrn)(int, int, int, void *);
 
    // Wait for conditions to be met
    do
@@ -2019,17 +2080,32 @@ static void *PipHdl(void *ptr)
    }while(!RunFlg);
 
    // Execute the user's procedure and set the flag to 2 (done)
-   prc = (void (*)(void *))pip->prc;
-   par->RunPip++;
+   if(!pip->GrnIdx)
+   {
+      prc = (void (*)(void *))pip->prc;
+      par->RunPip++;
 
-   pthread_mutex_unlock(&par->PipMtx);
+      pthread_mutex_unlock(&par->PipMtx);
 
-   if(pip->NmbVarArg)
-      CalVarArgPip(pip, pip->prc);
+      if(pip->NmbVarArg)
+         CalVarArgPip(pip, pip->prc);
+      else
+         prc(pip->arg);
+
+      pthread_mutex_lock(&par->PipMtx);
+   }
    else
-      prc(pip->arg);
+   {
+      prcgrn = (void (*)(int, int, int, void *))pip->prc;
+      par->RunPip++;
 
-   pthread_mutex_lock(&par->PipMtx);
+      pthread_mutex_unlock(&par->PipMtx);
+
+      prcgrn(pip->BegIdx, pip->EndIdx, pip->GrnIdx, pip->arg);
+
+      pthread_mutex_lock(&par->PipMtx);
+   }
+
    SetBit(par->PipWrd, pip->idx);
    par->PenPip--;
    par->RunPip--;
@@ -2061,7 +2137,8 @@ void WaitPipeline(int64_t ParIdx)
 #ifdef _WIN32
       Sleep(1);
 #else
-      usleep(1000);
+      //usleep(1000);
+      usleep(10);
 #endif
    }while(PenPip);
 }

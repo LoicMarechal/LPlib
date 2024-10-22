@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V 2.30                               */
+/*                               HILBERT V3.00                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/* Description:         renumber .meshb files                                 */
+/* Description:         renumber .mesh(b) files                               */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   apr 29 2024                                           */
+/* Last modification:   sep 27 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -45,6 +45,7 @@
 #define RNDMOD    2
 
 enum {TypEdg, TypTri, TypQad, TypTet, TypPyr, TypPri, TypHex};
+enum {HilMod=0, OctMod, RndMod, IniMod};
 
 
 /*----------------------------------------------------------------------------*/
@@ -63,13 +64,13 @@ typedef struct
 {
    uint64_t cod;
    double   crd[3];
-   int      idx, ref, dom, gid, lid;
+   int      idx, ref, col, grn, deg;
 }VerSct;
 
 typedef struct
 {
    uint64_t cod;
-   int      *idx, siz, ref, gid, dom, lid;
+   int      *idx, siz, col, grn, ref, gid;
 }EleSct;
 
 typedef struct PtrBuc
@@ -88,8 +89,12 @@ typedef struct
 {
    int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp, GmlMod;
    int      NmbEle[ MAXELE ], *IdxTab[ MAXELE ], EleTyp[ MAXELE ];
-   int      MaxDeg[ MAXELE ], DegVec[ MAXELE ], HghDeg, OvrDeg;
-   int      MtsEleTyp, MtsNmbDom;
+   int      MaxDeg[ MAXELE ], DegVec[ MAXELE ], HghDeg, OvrDeg, ColGrnMsh;
+   int      ColGrnMod, NmbGrnPar, NmbTypGrnPar[ MAXELE ], (*GrnPar)[ MAXELE ][4];
+   int      NmbColPar, NmbTypColPar[ MAXELE ], (*ColPar)[ MAXELE ][3];
+   int      ColBit, GrnBit, DegBit, RefBit, VerHilBit, FacHilBit, VolHilBit;
+   int      ColLft, GrnLft, DegLft, RefLft, VerHilRgt, FacHilRgt, VolHilRgt;
+   uint64_t ColMsk, GrnMsk, DegMsk, RefMsk;
    double   box[6];
    VerSct   *ver;
    EleSct   *ele[ MAXELE ];
@@ -173,21 +178,21 @@ const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
 /* Prototypes of local procedures                                             */
 /*----------------------------------------------------------------------------*/
 
-void     ScaMsh(char *, MshSct *);
-void     RecMsh(char *, MshSct *);
-uint64_t HilCod(double *, double *, int, int);
-void     GetTim(double *);
-int      CmpFnc(const void *, const void *);
-void     RenVer(int, int, int, MshSct *);
-void     RenEle(int, int, int, MshSct *);
-void     PrtSta(MshSct *, int64_t);
-void     SwpMem(MshSct *, int);
-char    *SetNgb(MshSct *);
-void     SrtFac(EleSct *, int, int, int [3]);
-void     SrtBal(MshSct *);
-void     SrtMat(MshSct *);
-void     ScaMts(char *, char *, MshSct *);
-int      SetDeg(MshSct *, int *);
+void     ScaMsh   (char *, MshSct *);
+void     RecMsh   (char *, MshSct *);
+uint64_t HilCod   (double *, double *, int, int);
+void     GetTim   (double *);
+int      CmpFnc   (const void *, const void *);
+void     RenVer   (int, int, int, MshSct *);
+void     RenEle   (int, int, int, MshSct *);
+void     PrtSta   (MshSct *, int64_t);
+void     SwpMem   (MshSct *, int);
+char    *SetNgb   (MshSct *);
+void     SrtFac   (EleSct *, int, int, int [3]);
+void     SetVerDeg(MshSct *);
+void     SetMatSlc(MshSct *);
+void     ScaMts   (char *, char *, MshSct *);
+int      SetDeg   (MshSct *, int *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -198,7 +203,9 @@ int main(int ArgCnt, char **ArgVec)
 {
    char     *PtrArg, *TmpStr, *BndTab, InpNam[1000], OutNam[1000];
    char     MtsNodNam[1000], MtsEleNam[1000];
+   char     *SchStr[4] = {"Hilbert", "Z-curve", "random", "initial"};
    int      i, j, t, NmbCpu=0, StaFlg=0, BndFlg=0, *IdxTab, NmbSrf, NmbVol;
+   int      NmbGrn, CurGrn, NmbCol, CurCol;
    int64_t  LibParIdx;
    double   timer = 0.;
    MshSct   msh;
@@ -213,21 +220,26 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v2.30 april 17 2024   Loic MARECHAL / INRIA");
-      puts(" Usage       : hilbert -in input_mesh -out renumbered_mesh");
-      puts(" -in name    : input mesh(b) name");
-      puts(" -out name   : output renumbered mesh(b)");
-      puts(" -stats      : print element blocks dependencies stats before and after renumbering");
-      puts(" -fixbnd     : do not renumber boundary nodes");
-      puts(" -scheme n   : renumbering scheme: 0 = Hilbert, 1 = Z curve, 2 = random, (default = 0)");
-      puts(" -nproc n    : n is the number of threads to be launched (default = all threads)");
-      puts(" -gmlib type : special vertex sorting to make the mesh fit for the GMlib");
-      puts("               if type = ball, the vertex degree is the size of it's ball of elements");
-      puts("               if type = matrix, the vertex degree is the nnz values in the matrix");
-      puts(" -ndom n     : n: number of domains generated by Metis");
-      puts(" -npart pf   : pf: Metis node partition filename");
-      puts(" -epart pf t : pf: Metis element partition filename, t: element type");
-      puts("");
+      puts("\nHILBERT v3.00 september 30 2024   Loic MARECHAL / INRIA\n");
+      puts(" Usage         : hilbert -in input_mesh -out renumbered_mesh");
+      puts("   -in name    : input mesh(b) name");
+      puts("   -out name   : output renumbered mesh(b)");
+      puts("   -stats      : print element blocks dependencies stats before and after renumbering");
+      puts("   -fixbnd     : do not renumber boundary nodes");
+      puts("   -nproc n    : n is the number of threads to be launched (default = all threads)\n");
+      puts(" Sorting       : optional arguments to control the entities sorting (see bottom explanation)");
+      puts("   -colors     : use color as rank4 and grain as rank3 if such fields are present in the input file");
+      puts("   -gmlib type : special vertex sorting to make the mesh fit for the GMlib depending on type");
+      puts("                 generic: set rank2 with high/low degree for vertices and reference for faces");
+      puts("                 matrix : set rank2 with the matrix slice size for each vertex");
+      puts("   -scheme s   : set rank1 with a value computed by a renumbering scheme");
+      puts("                 0: Hilbert (default)");
+      puts("                 1: Z curve (octree like numbering)");
+      puts("                 2: random");
+      puts("                 3: no sort (preserve initial numbering\n");
+      puts(" All entities are sorted against four keys ranging from rank 4 (highest) to 1 (lowest)");
+      puts(" rank4: color, rank3: grain, rank2: vertex degree or face ref, rank1: local scheme");
+      puts(" all ranks are optional and cam be controled by the above arguments\n");
       exit(0);
    }
 
@@ -235,6 +247,7 @@ int main(int ArgCnt, char **ArgVec)
    {
       PtrArg = *++ArgVec;
 
+      // Get input file name and add the .meshb extension if unspecified
       if(!strcmp(PtrArg,"-in"))
       {
          TmpStr = *++ArgVec;
@@ -247,6 +260,7 @@ int main(int ArgCnt, char **ArgVec)
          continue;
       }
 
+      // Get output file name and add the .meshb extension if unspecified
       if(!strcmp(PtrArg,"-out"))
       {
          TmpStr = *++ArgVec;
@@ -259,50 +273,37 @@ int main(int ArgCnt, char **ArgVec)
          continue;
       }
 
+      // Print statistics about blocks collisions before and after renumbering
       if(!strcmp(PtrArg,"-stats"))
       {
          StaFlg = 1;
          continue;
       }
 
+      // Do not renumber boundary nodes and elements
       if(!strcmp(PtrArg,"-fixbnd"))
       {
          BndFlg = 1;
          continue;
       }
 
-      if(!strcmp(PtrArg,"-ndom"))
+      // Use the color and grain information stored at vertices if present in the file
+      // and use those two fields as primary and secondary keys to the sorting step
+      if(!strcmp(PtrArg,"-colors"))
       {
-         msh.MtsNmbDom = atoi(*++ArgVec);
-         msh.MtsNmbDom = MIN(msh.MtsNmbDom, MAXDOM);
-         ArgCnt--;
+          msh.ColGrnMod = 1;
          continue;
       }
 
-      if(!strcmp(PtrArg,"-npart"))
-      {
-         TmpStr = *++ArgVec;
-         ArgCnt--;
-         strcpy(MtsNodNam, TmpStr);
-         continue;
-      }
-
-      if(!strcmp(PtrArg,"-epart"))
-      {
-         TmpStr = *++ArgVec;
-         ArgCnt--;
-         strcpy(MtsEleNam, TmpStr);
-         msh.MtsEleTyp = atoi(*++ArgVec);
-         ArgCnt--;
-         continue;
-      }
-
+      // Compute the vertex degrees and sort them against it
+      // ball mode is for general purpose high/low degree vertex sorting
+      // matrix mode slices the matrix in 5 slabs of 16,32,64,128,256 size
       if(!strcmp(PtrArg,"-gmlib"))
       {
          TmpStr = *++ArgVec;
          ArgCnt--;
 
-         if(!strcmp(TmpStr,"ball"))
+         if(!strcmp(TmpStr,"generic"))
             msh.GmlMod = 1;
          else if(!strcmp(TmpStr,"matrix"))
             msh.GmlMod = 2;
@@ -310,20 +311,24 @@ int main(int ArgCnt, char **ArgVec)
          continue;
       }
 
+      // Select the renumbering scheme: default if Hibert
+      // but Z-curve and random can be specified
       if(!strcmp(PtrArg,"-scheme"))
       {
          msh.mod = atoi(*++ArgVec);
          msh.mod = MAX(msh.mod, 0);
-         msh.mod = MIN(msh.mod, 2);
+         msh.mod = MIN(msh.mod, 3);
          ArgCnt--;
          continue;
       }
 
+      // Set the number of threads used by the renumbering step
+      // 0 uses all available system's cores
       if(!strcmp(PtrArg,"-nproc"))
       {
          NmbCpu = atoi(*++ArgVec);
          NmbCpu = MAX(NmbCpu, 1);
-         NmbCpu = MIN(NmbCpu, 128);
+         NmbCpu = MIN(NmbCpu, MaxPth);
          ArgCnt--;
          continue;
       }
@@ -362,6 +367,14 @@ int main(int ArgCnt, char **ArgVec)
 
    puts("");
 
+   // If the color renumbering is set but no colors or grains are present in the
+   // input file, the mode is disabled and set to default hilbert renumbering
+   if(msh.ColGrnMod && !msh.ColGrnMsh)
+   {
+      msh.ColGrnMod = 0;
+      puts("Could not find colors and grains information: switching back to default renumbering");
+   }
+
 
    // --------------------------------------------
    // Compute initial block dependenies statistics
@@ -382,44 +395,116 @@ int main(int ArgCnt, char **ArgVec)
    }
 
 
+   // ---------------------------------------------------------
+   // Set the size of bit fields needed by color and grain data
+   // ---------------------------------------------------------
+
+   if(msh.ColGrnMod)
+   {
+      msh.NmbColPar = msh.NmbGrnPar = 0;
+
+      for(i=1;i<=msh.NmbVer;i++)
+      {
+         msh.NmbColPar = MAX(msh.NmbColPar, msh.ver[i].col);
+         msh.NmbGrnPar = MAX(msh.NmbGrnPar, msh.ver[i].grn);
+      }
+
+      printf("Found %d colors and %d grains in the input file\n", msh.NmbColPar, msh.NmbGrnPar);
+
+      // Derive element's colors and grains from the vertices
+      for(t=0;t<MAXELE;t++)
+      {
+         for(i=1;i<=msh.NmbEle[t];i++)
+         {
+            msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[0] ].col;
+            msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[0] ].grn;
+
+            for(j=1;j<EleTab[t][0];j++)
+            {
+               if( (msh.ver[ msh.ele[t][i].idx[j] ].col < msh.ele[t][i].col)
+               &&  (msh.ver[ msh.ele[t][i].idx[j] ].grn < msh.ele[t][i].grn) )
+               {
+                  msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[j] ].col;
+                  msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[j] ].grn;
+               }
+            }
+         }
+      }
+
+      // Set the bit field size, maks and left shift to store the color value
+      msh.ColBit = ceil(log(msh.NmbColPar) / log(2));
+      msh.ColMsk = (1ULL << msh.ColBit) - 1ULL;
+      msh.ColLft = 64 - msh.ColBit;
+
+      // Set the bit field size, maks and left shift to store the grain value
+      msh.GrnBit = ceil(log(msh.NmbGrnPar) / log(2));
+      msh.GrnMsk = (1ULL << msh.GrnBit) - 1ULL;
+      msh.GrnLft = 64 - msh.ColBit - msh.GrnBit;
+   }
+
+
    // ----------------------------------------------------------------------
    // Prepare references and degree related data for the GMlib modified sort
    // ----------------------------------------------------------------------
 
    if(msh.GmlMod == 1)
    {
-      if(msh.MtsNmbDom)
-         ScaMts(MtsNodNam, MtsEleNam, &msh);
+      SetVerDeg(&msh);
 
-      SrtBal(&msh);
+      // Only one bit is need to encode the high or low degree information
+      msh.DegBit = 1;
+      msh.DegMsk = 1ULL;
+      msh.DegLft = 64 - msh.ColBit - msh.GrnBit - msh.DegBit;
 
-      if(StaFlg)
-      {
-         printf(  "High-connected vertices      : %3.6f%%\n",
-                  (100. * (float)msh.HghDeg) / (float)msh.NmbVer );
-
-         printf(  "Over-connected vertices      : %3.6f%%\n",
-                  (100. * (float)msh.OvrDeg) / (float)msh.NmbVer );
-
-         for(j=0;j<MAXELE;j++)
-            if(msh.MaxDeg[j])
-               printf(  "Ball of %s     : max deg = %3d, vec size = %3d\n",
-                        EleNam[j], msh.MaxDeg[j],  msh.DegVec[j] );
-
-         puts("");
-      }
+      // Use the 8 leftmost bits to store face ref as boundary condition tag
+      msh.RefBit = 8;
+      msh.RefMsk = (1ULL << msh.RefBit) - 1ULL;
+      msh.RefLft = 64 - msh.RefBit;
    }
    else if(msh.GmlMod == 2)
    {
-      SrtMat(&msh);
+      SetMatSlc(&msh);
+
+      // three bits are needed to encode the 5 possible vertex degrees
+      msh.DegBit = 3;
+      msh.RefMsk = (1ULL << msh.DegBit) - 1ULL;
+      msh.DegLft = 64 - msh.ColBit - msh.GrnBit - msh.DegBit;
    }
+
+
+   // ------------------------------------------------------
+   // Finaly, set the Hilbert bit field size and right shift
+   // ------------------------------------------------------
+
+   // The hilbert code is right shifted with the number of bit
+   // used by all other sorting keys
+   msh.VerHilBit = 64 - msh.ColBit - msh.GrnBit - msh.DegBit;
+   msh.VerHilRgt = msh.ColBit + msh.GrnBit + msh.DegBit;
+
+   msh.FacHilBit = 64 - msh.ColBit - msh.GrnBit - msh.RefBit;
+   msh.FacHilRgt = msh.ColBit + msh.GrnBit + msh.RefBit;
+
+   msh.VolHilBit = 64 - msh.ColBit - msh.GrnBit;
+   msh.VolHilRgt = msh.ColBit + msh.GrnBit;
 
 
    // --------------------
    // Vertices renumbering
    // --------------------
 
-   printf("Renumbering vertices         : ");
+   printf("Sorting keys table: number of bit per key for each dimension of mesh entities\n");
+   printf(" Entity | rank4 (color) | rank3 (grain) | rank2 (degree or ref) | rank1 (%s)\n",
+            SchStr[ msh.mod ]);
+   printf(" Vertex |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh.ColBit, msh.GrnBit, msh.DegBit, msh.VerHilBit);
+
+   printf(" Face   |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh.ColBit, msh.GrnBit, msh.RefBit, msh.FacHilBit);
+
+   printf(" Volume |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh.ColBit, msh.GrnBit, 0, msh.VolHilBit);
+
+   printf("\nRenumbering vertices         : ");
    timer = 0.;
    GetTim(&timer);
 
@@ -504,6 +589,124 @@ int main(int ArgCnt, char **ArgVec)
          GetTim(&timer);
          printf("%g s\n", timer);
       }
+
+   //
+
+   if(msh.ColGrnMod)
+   {
+      msh.ColPar = malloc( (msh.NmbColPar + 1) * MAXELE * 3 * sizeof(int) );
+      assert(msh.ColPar);
+
+      msh.GrnPar = malloc( (msh.NmbGrnPar + 1) * MAXELE * 4 * sizeof(int) );
+      assert(msh.GrnPar);
+
+      CurGrn = msh.ver[1].grn;
+      NmbGrn = 1;
+      msh.GrnPar[ NmbGrn ][0][0] = 1;
+      msh.GrnPar[ NmbGrn ][0][2] = msh.ver[1].col;
+      msh.GrnPar[ NmbGrn ][0][3] = msh.ver[1].grn;
+
+      CurCol = msh.ver[1].col;
+      NmbCol = 1;
+      msh.ColPar[ NmbCol ][0][0] = 1;
+      msh.ColPar[ NmbCol ][0][2] = NmbGrn;
+
+      for(i=1;i<msh.NmbVer;i++)
+      {
+         if(msh.ver[i].grn != CurGrn)
+         {
+            msh.GrnPar[ NmbGrn ][0][1] = i - 1;
+            NmbGrn++;
+            msh.GrnPar[ NmbGrn ][0][0] = i;
+            CurGrn = msh.ver[i].grn;
+            msh.GrnPar[ NmbGrn ][0][2] = msh.ver[i].col;
+            msh.GrnPar[ NmbGrn ][0][3] = msh.ver[i].grn;
+
+            if(msh.ver[i].col != CurCol)
+            {
+               msh.ColPar[ NmbCol ][0][1] = NmbGrn - 1;
+               NmbCol++;
+               msh.ColPar[ NmbCol ][0][0] = NmbGrn;
+               CurCol = msh.ver[i].col;
+               msh.ColPar[ NmbCol ][0][2] = msh.ver[i].col;
+            }
+         }
+      }
+
+      msh.GrnPar[ NmbGrn ][0][1] = msh.NmbVer;
+      msh.ColPar[ NmbCol ][0][1] = NmbGrn;
+      msh.NmbTypGrnPar[0] = NmbGrn;
+      msh.NmbTypColPar[0] = NmbCol;
+
+      for(i=1;i<=NmbGrn;i++)
+         printf("vertex grain %3d (%3d/%3d): %8d -> %8d, size: %8d\n",
+                  i, msh.GrnPar[i][0][2], msh.GrnPar[i][0][3],
+                  msh.GrnPar[i][0][0], msh.GrnPar[i][0][1],
+                  msh.GrnPar[i][0][1] - msh.GrnPar[i][0][0] + 1);
+
+      for(i=1;i<=NmbCol;i++)
+         printf("vertex color %3d (%3d): %8d -> %8d, size: %8d\n",
+                  i, msh.ColPar[i][0][2],
+                  msh.ColPar[i][0][0], msh.ColPar[i][0][1],
+                  msh.ColPar[i][0][1] - msh.ColPar[i][0][0] + 1);
+
+      for(t=0;t<MAXELE;t++)
+      {
+         if(!msh.NmbEle[t])
+            continue;
+
+         CurGrn = msh.ele[t][1].grn;
+         NmbGrn = 1;
+         msh.GrnPar[ NmbGrn ][t][0] = 1;
+         msh.GrnPar[ NmbGrn ][t][2] = msh.ele[t][1].col;
+         msh.GrnPar[ NmbGrn ][t][3] = msh.ele[t][1].grn;
+
+         CurCol = msh.ele[t][1].col;
+         NmbCol = 1;
+         msh.ColPar[ NmbCol ][0][0] = 1;
+         msh.ColPar[ NmbCol ][0][2] = NmbGrn;
+
+         for(i=1;i<msh.NmbEle[t];i++)
+         {
+            if(msh.ele[t][i].grn != CurGrn)
+            {
+               msh.GrnPar[ NmbGrn ][t][1] = i - 1;
+               NmbGrn++;
+               msh.GrnPar[ NmbGrn ][t][0] = i;
+               CurGrn = msh.ele[t][i].grn;
+               msh.GrnPar[ NmbGrn ][t][2] = msh.ele[t][i].col;
+               msh.GrnPar[ NmbGrn ][t][3] = msh.ele[t][i].grn;
+
+               if(msh.ele[t][i].col != CurCol)
+               {
+                  msh.ColPar[ NmbCol ][t][1] = NmbGrn - 1;
+                  NmbCol++;
+                  msh.ColPar[ NmbCol ][t][0] = NmbGrn;
+                  CurCol = msh.ele[t][i].col;
+                  msh.ColPar[ NmbCol ][t][2] = msh.ele[t][i].col;
+               }
+            }
+         }
+
+         msh.GrnPar[ NmbGrn ][t][1] = msh.NmbEle[t];
+         msh.ColPar[ NmbCol ][t][1] = NmbGrn;
+         msh.NmbTypGrnPar[t] = NmbGrn;
+         msh.NmbTypColPar[t] = NmbCol;
+
+         for(i=1;i<=NmbGrn;i++)
+            printf(  "%s grain %3d (%3d/%3d): %8d -> %8d, size: %8d\n",
+                     EleNam[t], i,
+                     msh.GrnPar[i][t][2], msh.GrnPar[i][t][3],
+                     msh.GrnPar[i][t][0], msh.GrnPar[i][t][1],
+                     msh.GrnPar[i][t][1] - msh.GrnPar[i][t][0] + 1 );
+
+        for(i=1;i<=NmbCol;i++)
+           printf("%s color %3d (%3d): %8d -> %8d, size: %8d\n",
+                    EleNam[t], i, msh.ColPar[i][t][2],
+                    msh.ColPar[i][t][0], msh.ColPar[i][t][1],
+                    msh.ColPar[i][t][1] - msh.ColPar[i][t][0] + 1);
+      }
+   }
 
 
    // --------------------------------------
@@ -613,6 +816,17 @@ void ScaMsh(char *InpNam, MshSct *msh)
       // normalize the bounding box to map the geometry on a 64 bit cube
       for(j=0;j<3;j++)
          msh->box[j+3] = pow(2,64) / (msh->box[j+3] - msh->box[j]);
+
+      if((GmfStatKwd(InpMsh, GmfVerticesColour) == msh->NmbVer)
+      && (GmfStatKwd(InpMsh, GmfVerticesGrain)  == msh->NmbVer))
+      {
+         msh->ColGrnMsh = 1;
+         GmfGetBlock(InpMsh, GmfVerticesColour, 1, msh->NmbVer, 0, NULL, NULL,
+                     GmfInt, &msh->ver[1].col, &msh->ver[ msh->NmbVer ].col);
+
+         GmfGetBlock(InpMsh, GmfVerticesGrain, 1, msh->NmbVer, 0, NULL, NULL,
+                     GmfInt, &msh->ver[1].grn, &msh->ver[ msh->NmbVer ].grn);
+      }
    }
 
    // Allocate and read elements
@@ -677,25 +891,24 @@ void RecMsh(char *OutNam, MshSct *msh)
                   GmfInt,                 &msh->ele[t][1].ref, &msh->ele[t][n].ref);
    }
 
-   if(msh->GmlMod)
+   if(msh->ColGrnMod)
    {
-      // Save the number of domains
-      GmfSetKwd(OutMsh, GmfDomains, 1);
-      GmfSetLin(OutMsh, GmfDomains, 0, msh->MtsNmbDom);
+      GmfSetKwd(OutMsh, GmfVertexGrainPartitions, msh->NmbTypGrnPar[0]);
+      GmfSetBlock(OutMsh, GmfVertexGrainPartitions, 1, msh->NmbTypGrnPar[0], 0, NULL, NULL,
+                  GmfIntVec, 2, msh->GrnPar[1][0], msh->GrnPar[ msh->NmbTypGrnPar[0] ][0]);
 
-      // Save the vertices Global ID / Domain / Local ID
-      GmfSetKwd(OutMsh, GmfVerticesGID, msh->NmbVer);
-      GmfSetBlock(OutMsh, GmfVerticesGID, 1, msh->NmbVer, 0, NULL, NULL,
-                  GmfInt, &msh->ver[1].gid, &msh->ver[ msh->NmbVer ].gid,
-                  GmfInt, &msh->ver[1].dom, &msh->ver[ msh->NmbVer ].dom,
-                  GmfInt, &msh->ver[1].lid, &msh->ver[ msh->NmbVer ].lid);
+      if(msh->NmbEle[ TypTet ])
+      {
+         GmfSetKwd(OutMsh, GmfTetrahedronGrainPartitions, msh->NmbTypGrnPar[ TypTet ]);
+         GmfSetBlock(OutMsh, GmfTetrahedronGrainPartitions, 1,
+                     msh->NmbTypGrnPar[ TypTet ], 0, NULL, NULL,
+                     GmfIntVec, 2, msh->GrnPar[1][ TypTet ],
+                     msh->GrnPar[ msh->NmbTypGrnPar[ TypTet ] ][ TypTet ]);
+      }
 
-      // Save the tets Global ID / Domain / Local ID
-      GmfSetKwd(OutMsh, GmfTetrahedraGID, msh->NmbEle[3]);
-      GmfSetBlock(OutMsh, GmfTetrahedraGID, 1, msh->NmbEle[3], 0, NULL, NULL,
-                  GmfInt, &msh->ele[3][1].gid, &msh->ele[3][ msh->NmbEle[3] ].gid,
-                  GmfInt, &msh->ele[3][1].dom, &msh->ele[3][ msh->NmbEle[3] ].dom,
-                  GmfInt, &msh->ele[3][1].lid, &msh->ele[3][ msh->NmbEle[3] ].lid);
+      GmfSetKwd(OutMsh, GmfColorPartitions, msh->NmbColPar);
+      GmfSetBlock(OutMsh, GmfColorPartitions, 1, msh->NmbColPar, 0, NULL, NULL,
+                  GmfIntVec, 2, msh->ColPar[1], msh->ColPar[ msh->NmbColPar ]);
    }
 
    GmfCloseMesh(OutMsh);
@@ -798,15 +1011,30 @@ int CmpFnc(const void *a, const void *b)
 void RenVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
    int i;
+   uint64_t ColCod = 0, GrnCod = 0, DegCod = 0, SchCod = 0;
 
    // Set the vertex code with the hilbert code, shifted by 11 bits in the case of
    // GMlib mode to make room for the high degree bit and the 10 bit ref hash tag
-   if(msh->GmlMod)
-      for(i=BegIdx; i<=EndIdx; i++)
-         msh->ver[i].cod |= HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod) >> 8;
-   else
-      for(i=BegIdx; i<=EndIdx; i++)
-         msh->ver[i].cod = HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
+   for(i=BegIdx; i<=EndIdx; i++)
+   {
+      if(msh->ColGrnMod)
+      {
+         ColCod = (msh->ver[i].col & msh->ColMsk) << msh->ColLft;
+         GrnCod = (msh->ver[i].grn & msh->GrnMsk) << msh->GrnLft;
+      }
+
+      if(msh->GmlMod)
+         DegCod = (msh->ver[i].deg & msh->DegMsk) << msh->DegLft;
+
+      if(msh->mod == IniMod)
+         SchCod = i;
+      else
+         SchCod = HilCod(msh->ver[i].crd, msh->box, MAXITR, msh->mod);
+
+      SchCod = SchCod >> msh->VerHilRgt;
+
+      msh->ver[i].cod = ColCod | GrnCod | DegCod | SchCod;
+   }
 }
 
 
@@ -850,25 +1078,48 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 
 void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   int      i;
+   char *BytPtr;
+   int      i, ref;
    double   crd[3];
+   uint64_t ColCod = 0, GrnCod = 0, RefCod = 0, SchCod = 0;
 
-   // Set the elements code with their barycenter hilbert code, shifted
-   // by 10 bits in GMlib mode to make room for the 10 bits ref hash tag
-   if(msh->GmlMod)
-      for(i=BegIdx; i<=EndIdx; i++)
+   // Set the elements SFC code from their barycenter
+   for(i=BegIdx; i<=EndIdx; i++)
+   {
+      SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
+
+      if(msh->ColGrnMod)
       {
-         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
-         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-         msh->ele[ msh->TypIdx ][i].cod |= HilCod(crd, msh->box, MAXITR, msh->mod) >> 10;
+         ColCod = (msh->ele[ msh->TypIdx ][i].col & msh->ColMsk) << msh->ColLft;
+         GrnCod = (msh->ele[ msh->TypIdx ][i].grn & msh->GrnMsk) << msh->GrnLft;
       }
-   else
-      for(i=BegIdx; i<=EndIdx; i++)
+
+      if(msh->GmlMod && ((msh->TypIdx == TypTri || (msh->TypIdx == TypQad))))
       {
-         SetNewIdx(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh->Old2New);
-         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
-         msh->ele[ msh->TypIdx ][i].cod = HilCod(crd, msh->box, MAXITR, msh->mod);
+         BytPtr = (char *)&msh->ele[ msh->TypIdx ][i].ref;
+         ref = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+         RefCod = (ref & msh->RefMsk) << msh->RefLft;
       }
+      else
+         RefCod = 0;
+
+      if(msh->mod == IniMod)
+         SchCod = i;
+      else
+      {
+         SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
+         SchCod = HilCod(crd, msh->box, MAXITR, msh->mod);
+      }
+
+      if((msh->TypIdx == TypTri) || (msh->TypIdx == TypQad))
+         SchCod = SchCod >> msh->FacHilRgt;
+      else if((msh->TypIdx >= TypTet) && (msh->TypIdx <= TypHex))
+         SchCod = SchCod >> msh->VolHilRgt;
+      else
+         SchCod = 0;
+
+      msh->ele[ msh->TypIdx ][i].cod = ColCod | GrnCod | RefCod | SchCod;
+   }
 }
 
 
@@ -1115,123 +1366,44 @@ void SrtFac(EleSct *ele, int typ, int fac, int nod[3])
 
 
 /*----------------------------------------------------------------------------*/
-/* Read the nodes and elements domain from the Metis files                    */
-/*----------------------------------------------------------------------------*/
-
-void ScaMts(char *MtsNodNam, char *MtsEleNam, MshSct *msh)
-{
-   int      i, ref, dom, VerCpt[ MAXDOM ], TetCpt[ MAXDOM ];
-   FILE     *mts;
-   VerSct   *ver;
-   EleSct   *tet;
-
-   // Read the Metis vertex domain and build the local idx / domain information
-   printf("Reading node partitions from %s\n", MtsNodNam);
-   if(!(mts = fopen(MtsNodNam, "r")))
-      return;
-
-   for(i=0;i<msh->MtsNmbDom;i++)
-      VerCpt[i] = 0;
-
-   // Deduce the local ID from the Global ID and the domain ID
-   for(i=1;i<=msh->NmbVer;i++)
-   {
-      ver = &msh->ver[i];
-      fscanf(mts, "%d", &dom);
-      dom = MIN(dom, msh->MtsNmbDom - 1);
-      dom = MAX(dom, 0);
-      VerCpt[ dom ]++;
-      ver->gid = i;
-      ver->dom = dom;
-      ver->lid = VerCpt[ dom ];
-   }
-
-   fclose(mts);
-
-   printf("Reading element %d partitions from %s\n", msh->MtsEleTyp, MtsNodNam);
-   if(!(mts = fopen(MtsEleNam, "r")))
-      return;
-
-   if( (msh->MtsEleTyp != GmfTetrahedra) || !msh->NmbEle[3] )
-      return;
-
-   for(i=1;i<=msh->MtsNmbDom;i++)
-      TetCpt[i] = 0;
-
-   // Deduce the local ID from the Global ID and the domain ID
-   for(i=1;i<=msh->NmbEle[3];i++)
-   {
-      tet = &msh->ele[3][i];
-      fscanf(mts, "%d", &dom);
-      dom = MIN(dom, msh->MtsNmbDom - 1);
-      dom = MAX(dom, 0);
-      TetCpt[ dom ]++;
-      tet->gid = i;
-      tet->dom = dom;
-      tet->lid = TetCpt[ dom ];
-   }
-
-   fclose(mts);
-}
-
-
-/*----------------------------------------------------------------------------*/
 /* Set the code 10 upper bit with a hash key based on element's ref           */
 /*----------------------------------------------------------------------------*/
 
-void SrtBal(MshSct *msh)
+void SetVerDeg(MshSct *msh)
 {
-   char *BytPtr;
    int i, j, t, (*DegTab)[ MAXELE ];
    uint64_t cod;
    VerSct *ver;
    EleSct *ele;
 
-   // Allocate a degree table with one scalar per kind of element
+   // Allocate a vertex degree table with one scalar per kind of element
    DegTab = calloc( (size_t)(msh->NmbVer + 1), MAXELE * sizeof(int));
    assert(DegTab);
 
    // Add each element's vertices to the degree associated to its kind
-   // And compute each elements hash tag based on their ref
    for(t=0;t<MAXELE;t++)
-   {
-      if(!msh->EleTyp[t])
-         continue;
-
       for(i=1;i<=msh->NmbEle[t];i++)
-      {
-         // Compute the element ref hash tag as bits 54 to 63
-         ele = &msh->ele[t][i];
-         BytPtr = (char *)&ele->ref;
-         cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
-         ele->cod = cod << 54;
-
-         // Increment the vertex degrees
          for(j=0;j<EleTab[t][0];j++)
-            DegTab[ ele->idx[j] ][t]++;
-      }
-   }
+            DegTab[ msh->ele[t][i].idx[j] ][t]++;
 
-   // Compute the same ref hash tag for each vertices as bits 53 to 62
-   // and set a special high degree flag as leftmost bit (63rd)
+   // Set the high or low degree flag
    for(i=1;i<=msh->NmbVer;i++)
    {
       ver = &msh->ver[i];
-      BytPtr = (char *)&ver->ref;
-      cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
-      ver->cod = cod << 53;
 
       if( (DegTab[i][1] > MaxDeg[1][0])
       ||  (DegTab[i][2] > MaxDeg[2][0])
       ||  (DegTab[i][3] > MaxDeg[3][0])
       ||  (DegTab[i][6] > MaxDeg[6][0]) )
       {
-         ver->cod |= 1L<<63;
+         ver->deg = 1;
          msh->HghDeg++;
 
          for(j=0;j<MAXELE;j++)
             msh->MaxDeg[j] = MAX(msh->MaxDeg[j], DegTab[i][j]);
       }
+      else
+         ver->deg = 0;
 
       // Count the number of over connected vertices
       if( (DegTab[i][1] > MaxDeg[1][1])
@@ -1247,6 +1419,20 @@ void SrtBal(MshSct *msh)
    for(j=0;j<MAXELE;j++)
       if(msh->MaxDeg[j])
          msh->DegVec[j] = pow(2., ceil(log2(msh->MaxDeg[j])));
+
+   // Print statistics about vertex connectivity
+   printf(  "High-connected vertices      : %3.6f%%\n",
+            (100. * (float)msh->HghDeg) / (float)msh->NmbVer );
+
+   printf(  "Over-connected vertices      : %3.6f%%\n",
+            (100. * (float)msh->OvrDeg) / (float)msh->NmbVer );
+
+   for(j=0;j<MAXELE;j++)
+      if(msh->MaxDeg[j])
+         printf(  "Ball of %s     : max deg = %3d, vec size = %3d\n",
+                  EleNam[j], msh->MaxDeg[j],  msh->DegVec[j] );
+
+   puts("");
 }
 
 
@@ -1254,23 +1440,13 @@ void SrtBal(MshSct *msh)
 /* Set the code 10 upper bit with a hash key based on element's ref           */
 /*----------------------------------------------------------------------------*/
 
-void SrtMat(MshSct *msh)
+void SetMatSlc(MshSct *msh)
 {
    char     *BytPtr;
    int      i, NmbEdg, *DegTab, VecCnt[6] = {0};
    uint64_t cod, DegTot = 0, VecTot = 0;
    VerSct   *ver;
    EleSct   *ele;
-
-   // Compute each elements hash tag based on their ref
-   for(i=1;i<=msh->NmbEle[ TypTet ];i++)
-   {
-      // Compute the element ref hash tag as bits 54 to 63
-      ele = &msh->ele[ TypTet ][i];
-      BytPtr = (char *)&ele->ref;
-      cod = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
-      ele->cod = cod << 54;
-   }
 
    // Allocate a degree table with one scalar per kind of element
    DegTab = calloc( (size_t)(msh->NmbVer + 1), sizeof(int));
@@ -1279,8 +1455,7 @@ void SrtMat(MshSct *msh)
    NmbEdg = SetDeg(msh, DegTab);
    printf("Unique edges extracted       : %d\n", NmbEdg);
 
-   // Compute the same ref hash tag for each vertices as bits 53 to 62
-   // and set a special high degree flag as leftmost bit (63rd)
+   // Set the vertex degree with its slice vector size code: 1 -> 5
    for(i=1;i<=msh->NmbVer;i++)
    {
       ver = &msh->ver[i];
@@ -1296,11 +1471,10 @@ void SrtMat(MshSct *msh)
       else
          cod = 5;
 
-      ver->cod = cod << 60;
+      ver->deg = cod;
       VecCnt[ cod ]++;
       DegTot += DegTab[i];
    }
-
 
    VecTot = 16 * VecCnt[1] + 32 * VecCnt[2] + 64 * VecCnt[3]
          + 128 * VecCnt[4] + 256 * VecCnt[5];

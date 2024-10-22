@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.81                                  */
+/*                               LPlib V4.00                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 18 2024                                           */
+/*   Last modification: sep 04 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -72,7 +72,7 @@ int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
 int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
-
+void     SetColorGrains          (int64_t, int, int, int *, int, int *);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -84,6 +84,7 @@ int      HalveDependencyBlocks   (int64_t, int, int);
 /*----------------------------------------------------------------------------*/
 
 #define MaxPth 256
+#define ColorGrainScheduling -1
 
 enum ArgAtr {
    SetInterleavingFactor = 1,
