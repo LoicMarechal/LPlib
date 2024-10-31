@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 22 2024                                           */
+/*   Last modification: oct 31 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -122,6 +122,14 @@ typedef struct PipSct
    struct ParSct     *par;
 }PipSct;
 
+typedef struct
+{
+   int               BegIdx, EndIdx, GrnIdx;
+   void              *prc, *arg;
+   pthread_t         pth;
+   struct ParSct     *par;
+}GrnSct;
+
 typedef struct ParSct
 {
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
@@ -179,6 +187,7 @@ static int     SetGrp      (ParSct *, TypSct *);
 static void   *LPL_malloc  (void *, int64_t);
 static void   *LPL_calloc  (void *, int64_t, int64_t);
 static void    LPL_free    (void *, void *);
+static void   *GrnHdl      (void *ptr);
 
 
 /*----------------------------------------------------------------------------*/
@@ -484,7 +493,7 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
 float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
                      void *prc, void *PtrArg )
 {
-   int      i, col, GrnIdx;
+   int      i;
    float    acc = 0.;
    PthSct   *pth;
    ParSct   *par = (ParSct *)ParIdx;
@@ -656,23 +665,6 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
       // Arbitrary set the average concurrency factor
       acc = (float)par->NmbCpu;
    }
-   else if(TypIdx2 == ColorGrainScheduling)
-   {
-      //puts("ColorGrainScheduling");
-
-      for(col=1;col<=typ1->NmbCol;col++)
-      {
-         //printf("START color %d, grains %d -> %d\n", col, typ1->ColTab[ col ][0], typ1->ColTab[ col ][1]);
-
-         for(i=typ1->ColTab[ col ][0];i<=typ1->ColTab[ col ][1];i++)
-            LaunchPipeline(ParIdx, prc, PtrArg, -i, typ1->GrnTab[i]);
-
-         //WaitPipeline(ParIdx);
-
-         //puts("DONE");
-      }
-      WaitPipeline(ParIdx);
-   }
    else
       return(-1.);
 
@@ -735,7 +727,6 @@ static void *PthHdl(void *ptr)
    // Enter main loop until StopParallel is send
    do
    {
-      printf("thread %d waiting\n", pth->idx);
       // Wait for a wake-up signal from the main loop
       pthread_cond_wait(&pth->cnd, &pth->mtx);
 
@@ -745,7 +736,7 @@ static void *PthHdl(void *ptr)
       for(i=0;i<par->NmbCpu;i++)
          if(par->PthTab[i].wrk)
             par->sta[1]++;
-      printf("thread %d wakes-up with command %d\n", pth->idx, par->cmd);
+
       switch(par->cmd)
       {
          // Call user's procedure with big WP
@@ -1857,31 +1848,130 @@ static int SetGrp(ParSct *par, TypSct *typ)
 
 
 /*----------------------------------------------------------------------------*/
-/* Prodide the LPlib with color and grain index for each entities             */
+/*Loop over the type's color and launch a thread for each grain               */
 /*----------------------------------------------------------------------------*/
 
-void SetColorGrains( int64_t ParIdx, int TypIdx,
+int LaunchColorGrains(int64_t ParIdx, int TypIdx, void *prc, void *PtrArg)
+{
+   int      i, col, ret, NmbPth;
+   void     *sta;
+   ParSct   *par = (ParSct *)ParIdx;
+   TypSct   *typ;
+   GrnSct   *grn, GrnTab[ 100 ];
+   pthread_attr_t attr;
+
+   // Get and check lib parallel instance
+   if(!ParIdx)
+      return(1);
+
+   // Check bounds
+   if( (TypIdx < 1) || (TypIdx > MaxTyp) )
+      return(2);
+
+   typ =  &par->TypTab[ TypIdx ];
+
+   // Setup a thread arguments structure to set them as joinable
+   pthread_attr_init(&attr);
+   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+   // Loop over the colors
+   for(col=1;col<=typ->NmbCol;col++)
+   {
+      NmbPth = 0;
+
+      // Loop overt the color's grains
+      for(i=typ->ColTab[ col ][0]; i<=typ->ColTab[ col ][1]; i++)
+      {
+         // Point to the next local grain structure
+         grn = &GrnTab[ NmbPth++ ];
+
+         grn->GrnIdx = i;
+         grn->BegIdx = typ->GrnTab[i][0];
+         grn->EndIdx = typ->GrnTab[i][1];
+         grn->par = par;
+         grn->prc = prc;
+         grn->arg = PtrArg;
+
+         // Reset the thread structure
+         memset(&grn->pth, 0, sizeof(pthread_t));
+
+         // Launch the cleared thread with the curent grain information
+         pthread_create(&grn->pth, &attr, GrnHdl, (void *)grn);
+      }
+
+      NmbPth = 0;
+
+      // Loop over the grain threads and wait for their completion
+      for(i=typ->ColTab[ col ][0]; i<=typ->ColTab[ col ][1]; i++)
+      {
+         grn = &GrnTab[ NmbPth++ ];
+         ret = pthread_join(grn->pth, &sta);
+
+         if(ret)
+         {
+            printf("ERROR; return code from pthread_join() is %d\n", ret);
+            exit(-1);
+         }
+      }
+   }
+
+   pthread_attr_destroy(&attr);
+
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Thread handler launching and waiting for user's procedure completion       */
+/*----------------------------------------------------------------------------*/
+
+static void *GrnHdl(void *ptr)
+{
+   GrnSct *grn = (GrnSct *)ptr;
+   void (*prc)(int, int, int, void *) = grn->prc;
+
+   prc(grn->BegIdx, grn->EndIdx, grn->GrnIdx, grn->arg);
+
+   return(NULL);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Provide the LPlib with color and grain index for each entities             */
+/*----------------------------------------------------------------------------*/
+
+int SetColorGrains(  int64_t ParIdx, int TypIdx,
                      int NmbCol, int *ColTab,
                      int NmbGrn, int *GrnTab )
 {
    ParSct *par = (ParSct *)ParIdx;
    TypSct *typ;
 
-   // Check bounds and free mem
+   // Check type validity
    if( (TypIdx < 1) || (TypIdx > MaxTyp) )
-      return;
+      return(1);
 
    typ = &par->TypTab[ TypIdx ];
 
+   // Allocate and copy memory to store colors information
    typ->NmbCol = NmbCol;
-   typ->ColTab = malloc( (NmbCol+1) * 2 * sizeof(int));
-   //assert(typ->ColTab);
+   typ->ColTab = LPL_malloc(par->lmb, (NmbCol+1) * 2 * sizeof(int));
+
+   if(!typ->ColTab)
+      return(2);
+
    memcpy(typ->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
 
+   // Allocate and copy memory to store grains information
    typ->NmbGrn = NmbGrn;
-   typ->GrnTab = malloc((NmbGrn+1) * 2 * sizeof(int));
-   //assert(typ->GrnTab);
+   typ->GrnTab = LPL_malloc(par->lmb, (NmbGrn+1) * 2 * sizeof(int));
+
+   if(!typ->GrnTab)
+      return(3);
+
    memcpy(typ->GrnTab, GrnTab, (NmbGrn+1) * 2 * sizeof(int));
+
+   return(0);
 }
 
 
@@ -1950,21 +2040,10 @@ int LaunchPipeline(  int64_t ParIdx, void *prc,
    NewPip->prc = prc;
    NewPip->arg = PtrArg;
    NewPip->par = par;
+   NewPip->NmbDep = NmbDep;
 
-   if(NmbDep < 0)
-   {
-      NewPip->NmbDep = 0;
-      NewPip->GrnIdx = -NmbDep;
-      NewPip->BegIdx = DepTab[0];
-      NewPip->EndIdx = DepTab[1];
-   }
-   else
-   {
-      NewPip->NmbDep = NmbDep;
-
-      for(i=0;i<NmbDep;i++)
-         NewPip->DepTab[i] = DepTab[i];
-   }
+   for(i=0;i<NmbDep;i++)
+      NewPip->DepTab[i] = DepTab[i];
 
    // In case variable arguments where passed through the common LPlib structure
    // Copy them in the pipeline's own arguments table
@@ -2051,37 +2130,50 @@ static void *PipHdl(void *ptr)
    ParSct *par = pip->par;
    void (*prc)(void *), (*prcgrn)(int, int, int, void *);
 
-   // Wait for conditions to be met
-   do
+   if(pip->GrnIdx)
    {
+      prcgrn = (void (*)(int, int, int, void *))pip->prc;
+      par->RunPip++;
+
+      prcgrn(pip->BegIdx, pip->EndIdx, pip->GrnIdx, pip->arg);
+
       pthread_mutex_lock(&par->PipMtx);
-
-      if(par->RunPip < par->NmbCpu)
+      par->PenPip--;
+      par->RunPip--;
+      LPL_free(par->lmb, pip);
+      pthread_mutex_unlock(&par->PipMtx);
+   }
+   else
+   {
+      // Wait for conditions to be met
+      do
       {
-         RunFlg = 1;
+         pthread_mutex_lock(&par->PipMtx);
 
-         for(i=0;i<pip->NmbDep;i++)
-            if(!GetBit(par->PipWrd, pip->DepTab[i]))
-            {
-               RunFlg = 0;
-               break;
-            }
-      }
+         if(par->RunPip < par->NmbCpu)
+         {
+            RunFlg = 1;
 
-      if(!RunFlg)
-      {
-         pthread_mutex_unlock(&par->PipMtx);
+            for(i=0;i<pip->NmbDep;i++)
+               if(!GetBit(par->PipWrd, pip->DepTab[i]))
+               {
+                  RunFlg = 0;
+                  break;
+               }
+         }
+
+         if(!RunFlg)
+         {
+            pthread_mutex_unlock(&par->PipMtx);
 #ifdef _WIN32
-         Sleep(1);
+            Sleep(1);
 #else
-         usleep(1000);
+            usleep(1000);
 #endif
-      }
-   }while(!RunFlg);
+         }
+      }while(!RunFlg);
 
    // Execute the user's procedure and set the flag to 2 (done)
-   if(!pip->GrnIdx)
-   {
       prc = (void (*)(void *))pip->prc;
       par->RunPip++;
 
@@ -2093,24 +2185,14 @@ static void *PipHdl(void *ptr)
          prc(pip->arg);
 
       pthread_mutex_lock(&par->PipMtx);
-   }
-   else
-   {
-      prcgrn = (void (*)(int, int, int, void *))pip->prc;
-      par->RunPip++;
 
+      SetBit(par->PipWrd, pip->idx);
+
+      par->PenPip--;
+      par->RunPip--;
+      LPL_free(par->lmb, pip);
       pthread_mutex_unlock(&par->PipMtx);
-
-      prcgrn(pip->BegIdx, pip->EndIdx, pip->GrnIdx, pip->arg);
-
-      pthread_mutex_lock(&par->PipMtx);
    }
-
-   SetBit(par->PipWrd, pip->idx);
-   par->PenPip--;
-   par->RunPip--;
-   LPL_free(par->lmb, pip);
-   pthread_mutex_unlock(&par->PipMtx);
 
    return(NULL);
 }

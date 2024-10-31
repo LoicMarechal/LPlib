@@ -68,7 +68,7 @@ void ColGrnPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int      i, ref, NmbCpu = 0, ver, dim;
+   int      i, ref, NmbCpu = 0, ver, dim, ret;
    int64_t  InpMsh;
    float    sta[2], acc = 0;
    double   tim = 0;
@@ -169,7 +169,15 @@ int main(int ArgCnt, char **ArgVec)
                   msh.NmbGrn, (int *)msh.TetGrnPar);
 
    for(i=1;i<=1000;i++)
-      LaunchParallel(msh.ParIdx, msh.TetTyp, ColorGrainScheduling, ColGrnPar, &msh);
+   {
+      ret = LaunchColorGrains(msh.ParIdx, msh.TetTyp, ColGrnPar, &msh);
+
+      if(ret)
+      {
+         printf("LaunchColorGrains exited with error code %d\n", ret);
+         exit(1);
+      }
+   }
 
    for(i=1;i<=10;i++)
       printf("Ver %d, deg %d\n", i, msh.VerDeg[i]);

@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 04 2024                                           */
+/*   Last modification: oct 31 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -72,7 +72,8 @@ int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
 int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
-void     SetColorGrains          (int64_t, int, int, int *, int, int *);
+int      SetColorGrains          (int64_t, int, int, int *, int, int *);
+int      LaunchColorGrains       (int64_t, int, void *, void *);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -84,7 +85,6 @@ void     SetColorGrains          (int64_t, int, int, int *, int, int *);
 /*----------------------------------------------------------------------------*/
 
 #define MaxPth 256
-#define ColorGrainScheduling -1
 
 enum ArgAtr {
    SetInterleavingFactor = 1,
