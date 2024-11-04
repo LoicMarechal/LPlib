@@ -1976,6 +1976,69 @@ int SetColorGrains(  int64_t ParIdx, int TypIdx,
 
 
 /*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
+                           int EleSiz, int *EleTab, int **EleCol, int **EleGrn )
+{
+   int i, j, col, grn, *VerCol, *VerGrn;
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *VerTyp, *EleTyp;
+
+   if(VerTypIdx < 1 || VerTypIdx > MaxTyp || EleTypIdx < 1 || EleTypIdx > MaxTyp)
+      return(1);
+
+   VerTyp = &par->TypTab[ VerTypIdx ];
+   EleTyp = &par->TypTab[ EleTypIdx ];
+
+   if(!VerTyp->NmbCol || !VerTyp->NmbGrn)
+      return(2);
+
+   VerCol = LPL_malloc(par->lmb, (VerTyp->NmbLin + 1) * sizeof(int));
+   VerGrn = LPL_malloc(par->lmb, (VerTyp->NmbLin + 1) * sizeof(int));
+   *EleCol = LPL_malloc(par->lmb, (EleTyp->NmbLin + 1) * sizeof(int));
+   *EleGrn = LPL_malloc(par->lmb, (EleTyp->NmbLin + 1) * sizeof(int));
+
+   if(!VerCol || !VerGrn || !(*EleCol) || !(*EleGrn) )
+      return(3);
+
+   for(col=1;col<=VerTyp->NmbCol;col++)
+      for(grn=VerTyp->ColTab[ col ][0]; grn<=VerTyp->ColTab[ col ][1]; grn++)
+         for(i=VerTyp->GrnTab[ grn ][0]; i<=VerTyp->GrnTab[ grn ][1]; i++)
+            VerCol[i] = col;
+
+   for(grn=1;grn<=VerTyp->NmbGrn;grn++)
+      for(i=VerTyp->GrnTab[ grn ][0]; i<=VerTyp->GrnTab[ grn ][1]; i++)
+         VerGrn[i] = grn;
+   /*
+   for(i=1;i<=VerTyp->NmbLin;i++)
+      printf("vertex %d, col %d, grn %d\n", i, VerCol[i], VerGrn[i]);
+*/
+
+   for(i=1;i<=EleTyp->NmbLin;i++)
+   {
+      col = VerCol[ EleTab[ i * EleSiz ] ];
+      grn = VerGrn[ EleTab[ i * EleSiz ] ];
+
+      for(j=1;j<EleSiz;j++)
+         if(VerCol[ EleTab[ i * EleSiz + j ] ] < col)
+         {
+            col = VerCol[ EleTab[ i * EleSiz + j ] ];
+            grn = VerGrn[ EleTab[ i * EleSiz + j ] ];
+         }
+
+      (*EleCol)[i] = col;
+      (*EleGrn)[i] = grn;
+   }
+
+   LPL_free(par->lmb, VerCol);
+   LPL_free(par->lmb, VerGrn);
+
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Launch the loop prc on typ1 element depending on typ2                      */
 /*----------------------------------------------------------------------------*/
 

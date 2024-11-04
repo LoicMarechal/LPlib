@@ -74,6 +74,7 @@ int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
 int      SetColorGrains          (int64_t, int, int, int *, int, int *);
 int      LaunchColorGrains       (int64_t, int, void *, void *);
+int      SetElementsColorGrain   (int64_t, int, int, int , int *, int **, int **);
 
 #ifdef __cplusplus
 } // end extern "C"

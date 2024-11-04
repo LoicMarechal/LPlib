@@ -712,6 +712,7 @@ int main(int ArgCnt, char **ArgVec)
    // --------------------------------------
    // Compute dependencies after renumbering
    // --------------------------------------
+
    if(StaFlg)
    {
       puts("\nDependencies after renumbering (average / MAX) :");
