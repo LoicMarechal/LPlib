@@ -142,7 +142,7 @@ int main(int ArgCnt, char **ArgVec)
    GmfCloseMesh(InpMsh);
 
    // Extract internal edges
-/*   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
+   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
                                     (int *)msh.TetTab, (int **)&msh.EdgTab );
 
    if(!msh.NmbEdg)
@@ -150,7 +150,7 @@ int main(int ArgCnt, char **ArgVec)
       puts("Failed to extract internal edges");
       exit(4);
    }
-*/
+
    // Assign a color and a grain to each edge
 
    // And renumber the edges against the color, grain and hilbert code
@@ -158,7 +158,7 @@ int main(int ArgCnt, char **ArgVec)
    printf("Input mesh: nmb vertices = %d\n", msh.NmbVer);
    printf("Input mesh: nmb colors   = %d\n", msh.NmbCol);
    printf("Input mesh: nmb grains   = %d\n", msh.NmbGrn);
-   //printf("Input mesh: nmb edges    = %d\n", msh.NmbEdg);
+   printf("Input mesh: nmb edges    = %d\n", msh.NmbEdg);
    printf("Input mesh: nmb tets     = %d\n", msh.NmbTet);
 
 
@@ -179,12 +179,12 @@ int main(int ArgCnt, char **ArgVec)
       exit(6);
    }
 
-/*   if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
+   if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
    {
       puts("Error while creating edges data type.");
       exit(7);
    }
-*/
+
    if(!(msh.VerTyp = NewType(msh.ParIdx, msh.NmbVer)))
    {
       puts("Error while creating vertices data type.");
@@ -203,7 +203,7 @@ int main(int ArgCnt, char **ArgVec)
    SetColorGrains(msh.ParIdx, msh.TetTyp, msh.NmbCol, (int *)msh.ColPar,
                   msh.NmbGrn, (int *)msh.TetGrnPar);
 
-/*   ret = SetElementsColorGrain(  msh.ParIdx,  msh.VerTyp,  msh.EdgTyp,
+   ret = SetElementsColorGrain(  msh.ParIdx,  msh.VerTyp,  msh.EdgTyp,
                                  2, (int *)msh.EdgTab, &EdgCol, &EdgGrn );
 
    if(ret || !EdgCol || !EdgGrn)
@@ -211,7 +211,7 @@ int main(int ArgCnt, char **ArgVec)
       printf(  "SetElementsColorGrain failed with code %d, EdgCol=%p, EdgGrn=%p\n",
                ret, EdgCol, EdgGrn );
       exit(9);
-   }*/
+   }
 
 
    // -------------------

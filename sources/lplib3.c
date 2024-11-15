@@ -1857,7 +1857,7 @@ int LaunchColorGrains(int64_t ParIdx, int TypIdx, void *prc, void *PtrArg)
    void     *sta;
    ParSct   *par = (ParSct *)ParIdx;
    TypSct   *typ;
-   GrnSct   *grn, GrnTab[ 100 ];
+   GrnSct   *grn, GrnTab[ 1100 ];
    pthread_attr_t attr;
 
    // Get and check lib parallel instance
