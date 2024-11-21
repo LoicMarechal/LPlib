@@ -418,16 +418,6 @@ int main(int ArgCnt, char **ArgVec)
          {
             msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[0] ].col;
             msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[0] ].grn;
-
-            for(j=1;j<EleTab[t][0];j++)
-            {
-               if( (msh.ver[ msh.ele[t][i].idx[j] ].col < msh.ele[t][i].col)
-               &&  (msh.ver[ msh.ele[t][i].idx[j] ].grn < msh.ele[t][i].grn) )
-               {
-                  msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[j] ].col;
-                  msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[j] ].grn;
-               }
-            }
          }
       }
 
@@ -692,7 +682,7 @@ int main(int ArgCnt, char **ArgVec)
          msh.ColPar[ NmbCol ][t][1] = NmbGrn;
          msh.NmbTypGrnPar[t] = NmbGrn;
          msh.NmbTypColPar[t] = NmbCol;
-
+         /*
          for(i=1;i<=NmbGrn;i++)
             printf(  "%s grain %3d (%3d/%3d): %8d -> %8d, size: %8d\n",
                      EleNam[t], i,
@@ -704,7 +694,7 @@ int main(int ArgCnt, char **ArgVec)
            printf("%s color %3d (%3d): %8d -> %8d, size: %8d\n",
                     EleNam[t], i, msh.ColPar[i][t][2],
                     msh.ColPar[i][t][0], msh.ColPar[i][t][1],
-                    msh.ColPar[i][t][1] - msh.ColPar[i][t][0] + 1);
+                    msh.ColPar[i][t][1] - msh.ColPar[i][t][0] + 1);*/
       }
    }
 

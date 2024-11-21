@@ -1979,9 +1979,9 @@ int SetColorGrains(  int64_t ParIdx, int TypIdx,
 /*----------------------------------------------------------------------------*/
 
 int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
-                           int EleSiz, int *EleTab, int **EleCol, int **EleGrn )
+                           int EleSiz, int *EleTab )
 {
-   int i, j, col, grn, *VerCol, *VerGrn;
+   int i, VerIdx, CurGrn = 1, BegIdx = 1;
    ParSct *par = (ParSct *)ParIdx;
    TypSct *VerTyp, *EleTyp;
 
@@ -1994,45 +1994,36 @@ int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
    if(!VerTyp->NmbCol || !VerTyp->NmbGrn)
       return(2);
 
-   VerCol = LPL_malloc(par->lmb, (VerTyp->NmbLin + 1) * sizeof(int));
-   VerGrn = LPL_malloc(par->lmb, (VerTyp->NmbLin + 1) * sizeof(int));
-   *EleCol = LPL_malloc(par->lmb, (EleTyp->NmbLin + 1) * sizeof(int));
-   *EleGrn = LPL_malloc(par->lmb, (EleTyp->NmbLin + 1) * sizeof(int));
-
-   if(!VerCol || !VerGrn || !(*EleCol) || !(*EleGrn) )
+   if(!(EleTyp->ColTab = LPL_calloc(par->lmb, VerTyp->NmbCol + 1, 2 * sizeof(int))))
       return(3);
 
-   for(col=1;col<=VerTyp->NmbCol;col++)
-      for(grn=VerTyp->ColTab[ col ][0]; grn<=VerTyp->ColTab[ col ][1]; grn++)
-         for(i=VerTyp->GrnTab[ grn ][0]; i<=VerTyp->GrnTab[ grn ][1]; i++)
-            VerCol[i] = col;
+   if(!(EleTyp->GrnTab = LPL_calloc(par->lmb, VerTyp->NmbGrn + 1, 2 * sizeof(int))))
+      return(4);
 
-   for(grn=1;grn<=VerTyp->NmbGrn;grn++)
-      for(i=VerTyp->GrnTab[ grn ][0]; i<=VerTyp->GrnTab[ grn ][1]; i++)
-         VerGrn[i] = grn;
-   /*
-   for(i=1;i<=VerTyp->NmbLin;i++)
-      printf("vertex %d, col %d, grn %d\n", i, VerCol[i], VerGrn[i]);
-*/
+   EleTyp->NmbCol = VerTyp->NmbCol;
+   EleTyp->NmbGrn = VerTyp->NmbGrn;
+
+   for(i=1;i<=VerTyp->NmbCol;i++)
+   {
+      EleTyp->ColTab[i][0] = VerTyp->ColTab[i][0];
+      EleTyp->ColTab[i][1] = VerTyp->ColTab[i][1];
+   }
 
    for(i=1;i<=EleTyp->NmbLin;i++)
    {
-      col = VerCol[ EleTab[ i * EleSiz ] ];
-      grn = VerGrn[ EleTab[ i * EleSiz ] ];
+      VerIdx = EleTab[ i * EleSiz ];
 
-      for(j=1;j<EleSiz;j++)
-         if(VerCol[ EleTab[ i * EleSiz + j ] ] < col)
-         {
-            col = VerCol[ EleTab[ i * EleSiz + j ] ];
-            grn = VerGrn[ EleTab[ i * EleSiz + j ] ];
-         }
-
-      (*EleCol)[i] = col;
-      (*EleGrn)[i] = grn;
+      if(VerIdx > VerTyp->GrnTab[ CurGrn ][1])
+      {
+         EleTyp->GrnTab[ CurGrn ][0] = BegIdx;
+         EleTyp->GrnTab[ CurGrn ][1] = i - 1;
+         CurGrn++;
+         BegIdx = i;
+      }
    }
 
-   LPL_free(par->lmb, VerCol);
-   LPL_free(par->lmb, VerGrn);
+   EleTyp->GrnTab[ CurGrn ][0] = BegIdx;
+   EleTyp->GrnTab[ CurGrn ][1] = EleTyp->NmbLin;
 
    return(0);
 }
