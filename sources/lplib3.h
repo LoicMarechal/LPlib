@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V3.81                                  */
+/*                               LPlib V4.00                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 04 2023                                           */
+/*   Last modification: oct 31 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,11 +22,16 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stddef.h>
 
 #ifdef INT64
 #define itg int64_t
 #else
 #define itg int32_t
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 
@@ -67,6 +72,13 @@ int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
 int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
+int      SetColorGrains          (int64_t, int, int, int *, int, int *);
+int      LaunchColorGrains       (int64_t, int, void *, void *);
+int      SetElementsColorGrain   (int64_t, int, int, int , int *);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 
 /*----------------------------------------------------------------------------*/

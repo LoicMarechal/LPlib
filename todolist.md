@@ -6,7 +6,6 @@
 - develop a lattice scheduling based on geometric blocks, not on element indices blocs
 - link dependency block at creation and do not unlink them while running the parallel loop
 - interleaved procedures: allow multiple procedures to be launched in parallel and processed in a pipelined way
-- print a warning when the number of arguments is beyond 20 in multi args calls
 - implement a data reuse weight in the scheduler
 
 ### DONE
@@ -24,3 +23,8 @@
 - develop a way to set default block sizes for dependency loops
 - develop a procedure to halve the number of small blocks or dependency blocks while the LPlib is running
 - add an example to illustrate the adaptive block sizing process
+- print a warning when the number of arguments is beyond 1000 in multi args calls
+- put back the parallel edge extraction example from a tet mesh
+- colored grains parallel launcher
+- colored grain partitions setting
+- colored grains partitions inheritance from vertex ones

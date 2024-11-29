@@ -3,7 +3,7 @@
 # GLOBAL CONFIGURATION VARIABLES
 ################################
 
-cmake_minimum_required (VERSION 3.7.2)
+cmake_minimum_required (VERSION 3.10)
 set (LPlib_VERSION_MAJOR 3)
 set (LPlib_VERSION_MINOR 80)
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
@@ -33,7 +33,7 @@ list (APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}")
 # SET FILES AND DIRECTORIES TO BE BUILT
 #######################################
 
-include_directories (${PROJECT_SOURCE_DIR}/sources)
+include_directories (${PROJECT_SOURCE_DIR}/sources ${PROJECT_SOURCE_DIR}/utilities)
 add_subdirectory (sources)
 
 find_package(Threads)

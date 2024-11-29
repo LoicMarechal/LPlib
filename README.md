@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LPlib  version 3.81
+## LPlib  version 4.00
 A parallelization framework for numerical simulation
 
 ## Overview
@@ -9,7 +9,8 @@ This library is based on posix standard threads, also known as *pthreads*, thus 
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
 A serial program can be easily parallelized step by step.  
 It requires no knowledge on parallel programing.  
-Handles transparently concurrent indirect memory writes and dynamics data structures.
+Handles transparently concurrent indirect memory writes and dynamic data structures.
+Version 4 provides an early implementation of colored grains scheduling for better scaling and memory localization with high core count systems.
 
 ## Build
 
@@ -36,7 +37,7 @@ You may download some sample meshes to run the examples:
 - you need to install the [libMeshb](https://github.com/LoicMarechal/libMeshb) from GitHub
 - manually download files from the *Git LFS* repository: [sample files](sample_meshes/)
 - move them into /opt/LPlib/sample_meshes/
-- uncompress them with `lzip -d *.meshb.lz`
+- decompress them with `lzip -d *.meshb.lz`
 - you may now enter /opt/LPlib/examples directory and run the various examples
 
 ## Usage
@@ -46,7 +47,7 @@ Tested on *Linux*, *macOS*, and *Windows 7->10*.
 
 Running a parallel loop is pretty easy.  
 Let's say that you have a mesh made of vertices and triangles.  
-You would like to perform a parallel loop on triangle that would write some data on their three vertices.
+You would like to perform a parallel loop on triangles that would write some data on their three vertices.
 
 Such loop has a _memory race_ since two different threads may process triangles that share a common vertex and write to the same memory location, leading to a wrong result.
 
