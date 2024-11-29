@@ -23,6 +23,6 @@ add_executable(build_edges build_edges.c)
 target_link_libraries(build_edges LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 install (TARGETS build_edges DESTINATION share/LPlib/examples COMPONENT examples)
 
-add_executable(colored_grains colored_grains.c lplib3_helpers.c)
+add_executable(colored_grains colored_grains.c ../utilities/lplib3_helpers.c)
 target_link_libraries(colored_grains LP.3 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 install (TARGETS colored_grains DESTINATION share/LPlib/examples COMPONENT examples)
