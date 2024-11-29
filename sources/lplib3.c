@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 31 2024                                           */
+/*   Last modification: nov 29 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -1976,6 +1976,8 @@ int SetColorGrains(  int64_t ParIdx, int TypIdx,
 
 
 /*----------------------------------------------------------------------------*/
+/* Set an element field colors and grains from their vertices information     */
+/* Elements must be sorted against trheir color and grain beforehand          */
 /*----------------------------------------------------------------------------*/
 
 int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
@@ -1985,30 +1987,36 @@ int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
    ParSct *par = (ParSct *)ParIdx;
    TypSct *VerTyp, *EleTyp;
 
+   // Make sur there are vertices and this element kind
    if(VerTypIdx < 1 || VerTypIdx > MaxTyp || EleTypIdx < 1 || EleTypIdx > MaxTyp)
       return(1);
 
    VerTyp = &par->TypTab[ VerTypIdx ];
    EleTyp = &par->TypTab[ EleTypIdx ];
 
+   // Vertices must have colors and grains set
    if(!VerTyp->NmbCol || !VerTyp->NmbGrn)
       return(2);
 
+   // Allocate a color table and a grain table for this element kind
    if(!(EleTyp->ColTab = LPL_calloc(par->lmb, VerTyp->NmbCol + 1, 2 * sizeof(int))))
       return(3);
 
    if(!(EleTyp->GrnTab = LPL_calloc(par->lmb, VerTyp->NmbGrn + 1, 2 * sizeof(int))))
       return(4);
 
+   // The number of colors and grains partition must match that of the vertices
    EleTyp->NmbCol = VerTyp->NmbCol;
    EleTyp->NmbGrn = VerTyp->NmbGrn;
 
+   // Each element's colors partitions point to the same grains as the vertex ones
    for(i=1;i<=VerTyp->NmbCol;i++)
    {
       EleTyp->ColTab[i][0] = VerTyp->ColTab[i][0];
       EleTyp->ColTab[i][1] = VerTyp->ColTab[i][1];
    }
 
+   // Setup the first and last element index in each grain
    for(i=1;i<=EleTyp->NmbLin;i++)
    {
       VerIdx = EleTab[ i * EleSiz ];
@@ -2022,6 +2030,7 @@ int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
       }
    }
 
+   // Special setup for the last grain
    EleTyp->GrnTab[ CurGrn ][0] = BegIdx;
    EleTyp->GrnTab[ CurGrn ][1] = EleTyp->NmbLin;
 

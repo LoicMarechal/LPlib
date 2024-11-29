@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                PARALLEL COLORED GRAINS SCHEME USING LPlib                  */
+/*                PARALLEL COLORED GRAINS SCHEME USING LPLIB                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*   Description:       direct and indirect memory writes                     */
+/*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: oct 31 2024                                           */
+/*   Last modification: nov 29 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -50,6 +50,7 @@ typedef struct
 
 /*----------------------------------------------------------------------------*/
 /* Procedure called in parallel for each grain                                */
+/* increment each edge's vertex degree                                        */
 /*----------------------------------------------------------------------------*/
 
 void ColGrnPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
@@ -173,11 +174,8 @@ int main(int ArgCnt, char **ArgVec)
       exit(4);
    }
 
+   // Sort the edges against their color, grain and hilbert number
    qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
-
-   // Assign a color and a grain to each edge
-
-   // And renumber the edges against the color, grain and hilbert code
 
    printf("Input mesh: nmb vertices = %d\n", msh.NmbVer);
    printf("Input mesh: nmb colors   = %d\n", msh.NmbCol);
@@ -186,9 +184,9 @@ int main(int ArgCnt, char **ArgVec)
    printf("Input mesh: nmb tets     = %d\n", msh.NmbTet);
 
 
-   // ----------------------------
-   // LPLIB AN PARALLEL DATA SETUP
-   // ----------------------------
+   // -----------------------------
+   // LPLIB AND PARALLEL DATA SETUP
+   // -----------------------------
 
    // Initialize the LPlib and setup the data types
    if(!(msh.ParIdx = InitParallel(NmbCpu)))
@@ -227,6 +225,7 @@ int main(int ArgCnt, char **ArgVec)
    SetColorGrains(msh.ParIdx, msh.TetTyp, msh.NmbCol, (int *)msh.ColPar,
                   msh.NmbGrn, (int *)msh.TetGrnPar);
 
+   // Build the edges colored grains partitions
    ret = SetElementsColorGrain(  msh.ParIdx,  msh.VerTyp,  msh.EdgTyp,
                                  2, (int *)msh.EdgTab );
 
@@ -256,10 +255,6 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    printf("Colored grains run time = %g\n", GetWallClock() - tim);
-   /*
-   for(i=1;i<=10;i++)
-      printf("Ver %d, deg %d\n", i, msh.VerDeg[i]);
-   */
 
 
    // --------------------

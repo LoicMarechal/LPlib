@@ -25,3 +25,6 @@
 - add an example to illustrate the adaptive block sizing process
 - print a warning when the number of arguments is beyond 1000 in multi args calls
 - put back the parallel edge extraction example from a tet mesh
+- colored grains parallel launcher
+- colored grain partitions setting
+- colored grains partitions inheritance from vertex ones
