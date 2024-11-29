@@ -78,6 +78,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
 "include(\${CMAKE_CURRENT_LIST_DIR}/LPlib-target.cmake)
 find_package(Threads)
 set(LPlib_INCLUDE_DIRS ${CMAKE_INSTALL_PREFIX}/include)
+set(LPlib_HELPERS_DIRS ${CMAKE_INSTALL_PREFIX}/helpers)
 set(LPlib_LIBRARIES LP.3 ${CMAKE_THREAD_LIBS_INIT})
 set(LPlib_FOUND TRUE)
 ")

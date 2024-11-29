@@ -28,8 +28,8 @@
 #include <math.h>
 #include <string.h>
 #include <assert.h>
-#include "libmeshb7.h"
-#include "libmeshb7_helpers.h"
+#include <libmeshb7.h>
+#include <libmeshb7_helpers.h>
 #include "lplib3.h"
 
 

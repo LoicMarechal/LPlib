@@ -22,9 +22,9 @@
 #include <stdlib.h>
 #include <float.h>
 #include <stdint.h>
+#include <libmeshb7.h>
 #include "lplib3.h"
 #include "lplib3_helpers.h"
-#include "libmeshb7.h"
 
 
 /*----------------------------------------------------------------------------*/
