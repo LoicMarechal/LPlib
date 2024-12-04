@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V3.00                                */
+/*                               HILBERT V3.10                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .mesh(b) files                               */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   sep 27 2024                                           */
+/* Last modification:   dec 04 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -45,7 +45,7 @@
 #define RNDMOD    2
 
 enum {TypEdg, TypTri, TypQad, TypTet, TypPyr, TypPri, TypHex};
-enum {HilMod=0, OctMod, RndMod, IniMod};
+enum {HilMod=0, OctMod, RndMod, IniMod, TopMod};
 
 
 /*----------------------------------------------------------------------------*/
@@ -181,6 +181,7 @@ const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
 void     ScaMsh   (char *, MshSct *);
 void     RecMsh   (char *, MshSct *);
 uint64_t HilCod   (double *, double *, int, int);
+uint64_t IntHilCod(int *, int, int);
 void     GetTim   (double *);
 int      CmpFnc   (const void *, const void *);
 void     RenVer   (int, int, int, MshSct *);
@@ -220,7 +221,7 @@ int main(int ArgCnt, char **ArgVec)
 
    if(ArgCnt == 1)
    {
-      puts("\nHILBERT v3.00 september 30 2024   Loic MARECHAL / INRIA\n");
+      puts("\nHILBERT v3.10 december 04 2024   Loic MARECHAL / INRIA\n");
       puts(" Usage         : hilbert -in input_mesh -out renumbered_mesh");
       puts("   -in name    : input mesh(b) name");
       puts("   -out name   : output renumbered mesh(b)");
@@ -233,10 +234,11 @@ int main(int ArgCnt, char **ArgVec)
       puts("                 generic: set rank2 with high/low degree for vertices and reference for faces");
       puts("                 matrix : set rank2 with the matrix slice size for each vertex");
       puts("   -scheme s   : set rank1 with a value computed by a renumbering scheme");
-      puts("                 0: Hilbert (default)");
+      puts("                 0: geometrical Hilbert (default)");
       puts("                 1: Z curve (octree like numbering)");
       puts("                 2: random");
-      puts("                 3: no sort (preserve initial numbering\n");
+      puts("                 3: no sort (preserve initial numbering");
+      puts("                 4: geometrical Hilbert for vertices and topological Hilbert for elements\n");
       puts(" All entities are sorted against four keys ranging from rank 4 (highest) to 1 (lowest)");
       puts(" rank4: color, rank3: grain, rank2: vertex degree or face ref, rank1: local scheme");
       puts(" all ranks are optional and cam be controled by the above arguments\n");
@@ -317,7 +319,7 @@ int main(int ArgCnt, char **ArgVec)
       {
          msh.mod = atoi(*++ArgVec);
          msh.mod = MAX(msh.mod, 0);
-         msh.mod = MIN(msh.mod, 3);
+         msh.mod = MIN(msh.mod, 4);
          ArgCnt--;
          continue;
       }
@@ -971,6 +973,62 @@ uint64_t HilCod(double crd[3], double box[6], int itr, int mod)
 
 
 /*----------------------------------------------------------------------------*/
+/* Compute the topological Hilbert code from a pair of node indices           */
+/*----------------------------------------------------------------------------*/
+
+uint64_t IntHilCod(int *EleCrd, int NmbVer, int dim)
+{
+   uint64_t IntCrd[2], m=1LL<<63, cod, min = 1LL<<63, max = 0;
+   int      lft = 63 - log2(NmbVer);
+   int      j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
+   int      rot[8], GeoCod[8]={0,3,7,4,1,2,6,5};
+   int      HilCod[8][8] = {
+            {0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1},
+            {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
+            {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7},
+            {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7} };
+
+   // Binary hilbert renumbering loop
+   cod = 0;
+
+   // Initialize IntCrd[2] with the min and max element's node indices
+   for(j=0;j<dim;j++)
+   {
+      min = MIN(min, EleCrd[j]);
+      max = MAX(max, EleCrd[j]);
+   }
+
+   IntCrd[0] = min << 32;
+   IntCrd[1] = max << 32;
+
+   for(j=0;j<8;j++)
+      rot[j] = GeoCod[j];
+
+   // Interleave the pair of 32-bit coordinates into a single 64-bit Hilbert code
+   for(b=0;b<32;b++)
+   {
+      GeoWrd = 0;
+
+      for(j=0;j<2;j++)
+      {
+         if(IntCrd[j] & m)
+            GeoWrd |= BitTab[j];
+
+         IntCrd[j] = IntCrd[j]<<1;
+      }
+
+      NewWrd = rot[ GeoWrd ];
+      cod = cod<<2 | NewWrd;
+
+      for(j=0;j<8;j++)
+         rot[j] = HilCod[ NewWrd ][ rot[j] ];
+   }
+
+   return(cod);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Wall clock timer                                                           */
 /*----------------------------------------------------------------------------*/
 
@@ -1096,6 +1154,8 @@ void RenEle(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
       if(msh->mod == IniMod)
          SchCod = i;
+      else if(msh->mod == TopMod)
+         SchCod = IntHilCod(msh->ele[ msh->TypIdx ][i].idx, msh->NmbVer, EleTab[ msh->TypIdx ][0]);
       else
       {
          SetMidCrd(EleTab[ msh->TypIdx ][0], msh->ele[ msh->TypIdx ][i].idx, msh, crd);
