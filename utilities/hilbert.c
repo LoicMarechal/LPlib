@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V3.10                                */
+/*                               HILBERT V3.11                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .mesh(b) files                               */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   dec 04 2024                                           */
+/* Last modification:   dec 05 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -54,6 +54,7 @@ enum {HilMod=0, OctMod, RndMod, IniMod, TopMod};
 
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
+#define POW(a)    ((a) * (a))
 
 
 /*----------------------------------------------------------------------------*/
@@ -1106,8 +1107,11 @@ void SetNewIdx(int NmbVer, int *IdxTab, int *Old2New)
 
 void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
 {
-   int i, j;
+   int         i, j, MaxEdg;
+   const int   tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+   double      *TetCrd[4], len, MinLen, MaxLen;
 
+   // Default treatment is to compute the element's barycenter
    for(j=0;j<3;j++)
       crd[j] = 0.;
 
@@ -1118,6 +1122,40 @@ void SetMidCrd(int NmbVer, int *IdxTab, MshSct *msh, double *crd)
    for(j=0;j<3;j++)
       crd[j] /= NmbVer;
 
+   // Special handling of tetrahedra: if the element is anisotropic,
+   // use the longest edge midpoint instedad of the tet's barycenter
+   // as it better represents an elongated element
+   if(msh->TypIdx == TypTet)
+   {
+      MinLen = FLT_MAX;
+      MaxEdg = -1;
+
+      for(i=0;i<4;i++)
+         TetCrd[i] = msh->ver[ IdxTab[i] ].crd;
+
+      // Compute each edge length and search for the shortest and longest ones
+      for(i=0;i<6;i++)
+      {
+         len = POW(TetCrd[ tvpe[i][0] ][0] - TetCrd[ tvpe[i][1] ][0])
+             + POW(TetCrd[ tvpe[i][0] ][1] - TetCrd[ tvpe[i][1] ][1])
+             + POW(TetCrd[ tvpe[i][0] ][2] - TetCrd[ tvpe[i][1] ][2]);
+
+         MinLen = MIN(MinLen, len);
+
+         if(MaxEdg == -1 || len > MaxLen)
+         {
+            MaxLen = len;
+            MaxEdg = i;
+         }
+      }
+
+      // If the longest edge is more than three times longer than the shortest one
+      // the tet is anisotropic so its barycenter coordinates are replaced by
+      // the longest edge's center point
+      if(MaxEdg != -1 && MaxLen > POW(3) * MinLen)
+         for(j=0;j<3;j++)
+            crd[j] = (TetCrd[ tvpe[ MaxEdg ][0] ][j] + TetCrd[ tvpe[ MaxEdg ][1] ][j]) / 2.;
+   }
 }
 
 
