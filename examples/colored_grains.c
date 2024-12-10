@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: nov 29 2024                                           */
+/*   Last modification: dec 10 2024                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <libmeshb7.h>
 #include "lplib3.h"
@@ -33,6 +34,7 @@
 
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
+#define NMBITR 100
 
 
 /*----------------------------------------------------------------------------*/
@@ -42,8 +44,9 @@
 typedef struct
 {
    int      TetTyp, EdgTyp, VerTyp, NmbVer, NmbEdg, NmbTet, NmbCol, NmbGrn;
-   int      *VerDeg,  (*EdgTab)[2], (*TetTab)[4];
+   int      *VerDeg, (*EdgTab)[2], (*TetTab)[4];
    int      (*ColPar)[2], (*VerGrnPar)[2], (*TetGrnPar)[2];
+   double   *VerSol;
    int64_t  ParIdx;
 }MshSct;
 
@@ -53,14 +56,44 @@ typedef struct
 /* increment each edge's vertex degree                                        */
 /*----------------------------------------------------------------------------*/
 
-void ColGrnPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+void EdgPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 {
-   int i, j;
+   int i, j, idx;
+   double sol;
 
    // Loop over the edges, loop over their vertices and increment the degree
    for(i=BegIdx;i<=EndIdx;i++)
       for(j=0;j<2;j++)
-         msh->VerDeg[ msh->EdgTab[i][j] ]++;
+      {
+         idx = msh->EdgTab[i][j];
+         msh->VerDeg[ idx ]++;
+         sol = msh->VerSol[ idx ];
+         sol = tan(atan(exp(log(sqrt(sol * sol))))) + 1.;
+         msh->VerSol[ idx ] += sol;
+      }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Procedure called in parallel for each grain                                */
+/* increment each tet's vertex degree                                         */
+/*----------------------------------------------------------------------------*/
+
+void TetPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+{
+   int i, j, idx;
+   double sol;
+
+   // Loop over the tets, loop over their vertices and increment the degree
+   for(i=BegIdx;i<=EndIdx;i++)
+      for(j=0;j<4;j++)
+      {
+         idx = msh->TetTab[i][j];
+         msh->VerDeg[ idx ]++;
+         sol = msh->VerSol[ idx ];
+         sol = tan(atan(exp(log(sqrt(sol * sol))))) + 1.;
+         msh->VerSol[ idx ] += sol;
+      }
 }
 
 
@@ -86,7 +119,8 @@ int CmpEdg(const void *a, const void *b)
 
 
 /*----------------------------------------------------------------------------*/
-/* Launch a 1000 loop over edges to increment vertex degree on colored grains */
+/* Launch NMBITR loops over elements to increment their vertex degree         */
+/* and perform some calulation with colored grains or dynamic scheduling      */
 /*----------------------------------------------------------------------------*/
 
 int main(int ArgCnt, char **ArgVec)
@@ -131,11 +165,12 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    // Allocate the memory
-   msh.TetTab    = malloc( (msh.NmbTet+1) * 4 * sizeof(int) );
-   msh.ColPar    = malloc( (msh.NmbCol+1) * 2 * sizeof(int) );
-   msh.VerGrnPar = malloc( (msh.NmbGrn+1) * 2 * sizeof(int) );
-   msh.TetGrnPar = malloc( (msh.NmbGrn+1) * 2 * sizeof(int) );
-   msh.VerDeg    = malloc( (msh.NmbVer+1)     * sizeof(int) );
+   msh.TetTab    = malloc( (msh.NmbTet + 1) * 4 * sizeof(int) );
+   msh.ColPar    = malloc( (msh.NmbCol + 1) * 2 * sizeof(int) );
+   msh.VerGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
+   msh.TetGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
+   msh.VerDeg    = calloc( msh.NmbVer + 1, sizeof(int) );
+   msh.VerSol    = calloc( msh.NmbVer + 1, sizeof(double) );
 
    if(!msh.TetTab || !msh.ColPar || !msh.VerGrnPar || !msh.TetGrnPar | !msh.VerDeg)
    {
@@ -236,16 +271,17 @@ int main(int ArgCnt, char **ArgVec)
    }
 
 
-   // ------------------------
-   // MAIN COLORED GRAINS LOOP
-   // ------------------------
+   // ---------------------------------
+   // MAIN COLORED GRAINS LOOP ON EDGES
+   // ---------------------------------
 
+   puts("\nColored grains scheduling on edges:");
    tim = GetWallClock();
 
    // Loop over edges and access vertices
-   for(i=1;i<=1000;i++)
+   for(i=1;i<=NMBITR;i++)
    {
-      ret = LaunchColorGrains(msh.ParIdx, msh.EdgTyp, ColGrnPar, &msh);
+      ret = LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
 
       if(ret)
       {
@@ -254,13 +290,14 @@ int main(int ArgCnt, char **ArgVec)
       }
    }
 
-   printf("Colored grains run time = %g\n", GetWallClock() - tim);
+   printf("run time = %g\n", GetWallClock() - tim);
 
 
-   // --------------------
-   // MAIN DEPENDENCY LOOP
-   // --------------------
+   // -----------------------------
+   // MAIN DEPENDENCY LOOP ON EDGES
+   // -----------------------------
 
+   puts("\nDependency loop on edges:");
    BeginDependency(msh.ParIdx, msh.EdgTyp, msh.VerTyp);
 
    for(i=1;i<=msh.NmbEdg;i++)
@@ -272,10 +309,54 @@ int main(int ArgCnt, char **ArgVec)
    tim = GetWallClock();
 
    // Loop over tets and acces vertices
-   for(i=1;i<=1000;i++)
-      LaunchParallel(msh.ParIdx, msh.EdgTyp, msh.VerTyp, ColGrnPar, &msh);
+   for(i=1;i<=NMBITR;i++)
+      LaunchParallel(msh.ParIdx, msh.EdgTyp, msh.VerTyp, EdgPar, &msh);
    
-   printf("Dependecy loop run time = %g\n", GetWallClock() - tim);
+   printf("Run time = %g\n", GetWallClock() - tim);
+
+
+   // --------------------------------
+   // MAIN COLORED GRAINS LOOP ON TETS
+   // --------------------------------
+
+   puts("\nColored grains scheduling on tets:");
+   tim = GetWallClock();
+
+   // Loop over edges and access vertices
+   for(i=1;i<=NMBITR;i++)
+   {
+      ret = LaunchColorGrains(msh.ParIdx, msh.TetTyp, TetPar, &msh);
+
+      if(ret)
+      {
+         printf("LaunchColorGrains exited with error code %d\n", ret);
+         exit(10);
+      }
+   }
+
+   printf("run time = %g\n", GetWallClock() - tim);
+
+
+   // ----------------------------
+   // MAIN DEPENDENCY LOOP ON TETS
+   // ----------------------------
+
+   puts("\nDependency loop on tets:");
+   BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
+
+   for(i=1;i<=msh.NmbTet;i++)
+      for(j=0;j<4;j++)
+         AddDependency(msh.ParIdx, i, msh.TetTab[i][j]);
+
+   EndDependency(msh.ParIdx, sta);
+
+   tim = GetWallClock();
+
+   // Loop over tets and acces vertices
+   for(i=1;i<=NMBITR;i++)
+      LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp, TetPar, &msh);
+   
+   printf("Run time = %g\n", GetWallClock() - tim);
 
 
    // ------------------------
@@ -284,6 +365,9 @@ int main(int ArgCnt, char **ArgVec)
 
    StopParallel(msh.ParIdx);
 
+   free(msh.VerDeg);
+   free(msh.VerSol);
+   free(msh.EdgTab);
    free(msh.TetTab);
    free(msh.ColPar);
    free(msh.VerGrnPar);

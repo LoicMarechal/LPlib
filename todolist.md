@@ -29,3 +29,4 @@
 - colored grain partitions setting
 - colored grains partitions inheritance from vertex ones
 - topological Hilbert renumbering based on nodes indices
+- use longest edge mid point instead of the tet barycenter when renumbering anisotropic meshes (hilbert command line)
