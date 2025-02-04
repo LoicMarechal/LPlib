@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               HILBERT V3.11                                */
+/*                               HILBERT V3.12                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         renumber .mesh(b) files                               */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   dec 05 2024                                           */
+/* Last modification:   feb 04 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -460,6 +460,7 @@ int main(int ArgCnt, char **ArgVec)
 
       // three bits are needed to encode the 5 possible vertex degrees
       msh.DegBit = 3;
+      msh.DegMsk = 7ULL;
       msh.RefMsk = (1ULL << msh.DegBit) - 1ULL;
       msh.DegLft = 64 - msh.ColBit - msh.GrnBit - msh.DegBit;
    }
