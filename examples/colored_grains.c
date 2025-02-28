@@ -34,7 +34,7 @@
 
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
-#define NMBITR 100
+#define NMBITR 10
 
 
 /*----------------------------------------------------------------------------*/
@@ -43,9 +43,10 @@
 
 typedef struct
 {
-   int      TetTyp, EdgTyp, VerTyp, NmbVer, NmbEdg, NmbTet, NmbCol, NmbGrn;
+   int      TetTyp, EdgTyp, VerTyp, NmbCol, NmbGrn;
    int      *VerDeg, (*EdgTab)[2], (*TetTab)[4];
    int      (*ColPar)[2], (*VerGrnPar)[2], (*TetGrnPar)[2];
+   int64_t  NmbVer, NmbEdg, NmbTet;
    double   *VerSol;
    int64_t  ParIdx;
 }MshSct;
@@ -69,7 +70,7 @@ void EdgPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
          msh->VerDeg[ idx ]++;
          sol = msh->VerSol[ idx ];
          sol = tan(atan(exp(log(sqrt(sol * sol))))) + 1.;
-         msh->VerSol[ idx ] += sol;
+         msh->VerSol[ idx ] = sol;
       }
 }
 
@@ -94,6 +95,34 @@ void TetPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
          sol = tan(atan(exp(log(sqrt(sol * sol))))) + 1.;
          msh->VerSol[ idx ] += sol;
       }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+void ClrTet(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+{
+   int i, j;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      for(j=0;j<4;j++)
+         msh->TetTab[i][j] = 0;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+void ClrVer(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+{
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      msh->VerDeg[i] = 0;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      msh->VerSol[i] = 0.;
 }
 
 
@@ -169,8 +198,8 @@ int main(int ArgCnt, char **ArgVec)
    msh.ColPar    = malloc( (msh.NmbCol + 1) * 2 * sizeof(int) );
    msh.VerGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
    msh.TetGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
-   msh.VerDeg    = calloc( msh.NmbVer + 1, sizeof(int) );
-   msh.VerSol    = calloc( msh.NmbVer + 1, sizeof(double) );
+   msh.VerDeg    = malloc( (msh.NmbVer + 1)     * sizeof(int) );
+   msh.VerSol    = malloc( (msh.NmbVer + 1)     * sizeof(double) );
 
    if(!msh.TetTab || !msh.ColPar || !msh.VerGrnPar || !msh.TetGrnPar | !msh.VerDeg)
    {
@@ -179,14 +208,9 @@ int main(int ArgCnt, char **ArgVec)
    }
 
 
-   // -----------------------------------
-   // FILE READING AND DATA PREPROCESSING
-   // -----------------------------------
-
-   // Read the tets
-   GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
-               GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
-               GmfInt, &ref, &ref);
+   // --------------------------------
+   // READ PARTITIONS AND TOUCH MEMORY
+   // --------------------------------
 
    GmfGetBlock(InpMsh, GmfColorPartitions, 1, msh.NmbCol, 0, NULL, NULL,
                GmfIntVec, 2, msh.ColPar[1], msh.ColPar[ msh.NmbCol ]);
@@ -196,27 +220,6 @@ int main(int ArgCnt, char **ArgVec)
 
    GmfGetBlock(InpMsh, GmfTetrahedronGrainPartitions, 1, msh.NmbGrn, 0, NULL, NULL,
                GmfIntVec, 2, msh.TetGrnPar[1], msh.TetGrnPar[ msh.NmbGrn ]);
-
-   GmfCloseMesh(InpMsh);
-
-   // Extract internal edges
-   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
-                                    (int *)msh.TetTab, (int **)&msh.EdgTab );
-
-   if(!msh.NmbEdg)
-   {
-      puts("Failed to extract internal edges");
-      exit(4);
-   }
-
-   // Sort the edges against their color, grain and hilbert number
-   qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
-
-   printf("Input mesh: nmb vertices = %d\n", msh.NmbVer);
-   printf("Input mesh: nmb colors   = %d\n", msh.NmbCol);
-   printf("Input mesh: nmb grains   = %d\n", msh.NmbGrn);
-   printf("Input mesh: nmb edges    = %d\n", msh.NmbEdg);
-   printf("Input mesh: nmb tets     = %d\n", msh.NmbTet);
 
 
    // -----------------------------
@@ -234,12 +237,6 @@ int main(int ArgCnt, char **ArgVec)
    {
       puts("Error while creating tetrahedra data type.");
       exit(6);
-   }
-
-   if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
-   {
-      puts("Error while creating edges data type.");
-      exit(7);
    }
 
    if(!(msh.VerTyp = NewType(msh.ParIdx, msh.NmbVer)))
@@ -260,6 +257,43 @@ int main(int ArgCnt, char **ArgVec)
    SetColorGrains(msh.ParIdx, msh.TetTyp, msh.NmbCol, (int *)msh.ColPar,
                   msh.NmbGrn, (int *)msh.TetGrnPar);
 
+
+   LaunchColorGrains(msh.ParIdx, msh.VerTyp, ClrVer, &msh);
+   LaunchColorGrains(msh.ParIdx, msh.TetTyp, ClrTet, &msh);
+
+
+   // Read the tets
+   GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
+               GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
+               GmfInt, &ref, &ref);
+
+   GmfCloseMesh(InpMsh);
+
+   // Extract internal edges
+/*   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
+                                    (int *)msh.TetTab, (int **)&msh.EdgTab );
+
+   if(!msh.NmbEdg)
+   {
+      puts("Failed to extract internal edges");
+      exit(4);
+   }
+*/
+   // Sort the edges against their color, grain and hilbert number
+   //qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
+
+   printf("Input mesh: nmb vertices = %lld\n", msh.NmbVer);
+   printf("Input mesh: nmb colors   = %d\n", msh.NmbCol);
+   printf("Input mesh: nmb grains   = %d\n", msh.NmbGrn);
+   //printf("Input mesh: nmb edges    = %lld\n", msh.NmbEdg);
+   printf("Input mesh: nmb tets     = %lld\n", msh.NmbTet);
+   /*
+   if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
+   {
+      puts("Error while creating edges data type.");
+      exit(7);
+   }
+
    // Build the edges colored grains partitions
    ret = SetElementsColorGrain(  msh.ParIdx,  msh.VerTyp,  msh.EdgTyp,
                                  2, (int *)msh.EdgTab );
@@ -270,16 +304,16 @@ int main(int ArgCnt, char **ArgVec)
       exit(9);
    }
 
-
+*/
    // ---------------------------------
    // MAIN COLORED GRAINS LOOP ON EDGES
    // ---------------------------------
 
-   puts("\nColored grains scheduling on edges:");
+/*   puts("\nColored grains scheduling on edges:");
    tim = GetWallClock();
-
+*/
    // Loop over edges and access vertices
-   for(i=1;i<=NMBITR;i++)
+/*   for(i=1;i<=NMBITR;i++)
    {
       ret = LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
 
@@ -291,13 +325,13 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    printf("run time = %g\n", GetWallClock() - tim);
-
+*/
 
    // -----------------------------
    // MAIN DEPENDENCY LOOP ON EDGES
    // -----------------------------
 
-   puts("\nDependency loop on edges:");
+/*   puts("\nDependency loop on edges:");
    BeginDependency(msh.ParIdx, msh.EdgTyp, msh.VerTyp);
 
    for(i=1;i<=msh.NmbEdg;i++)
@@ -307,13 +341,13 @@ int main(int ArgCnt, char **ArgVec)
    EndDependency(msh.ParIdx, sta);
 
    tim = GetWallClock();
-
+*/
    // Loop over tets and acces vertices
-   for(i=1;i<=NMBITR;i++)
+/*   for(i=1;i<=NMBITR;i++)
       LaunchParallel(msh.ParIdx, msh.EdgTyp, msh.VerTyp, EdgPar, &msh);
    
    printf("Run time = %g\n", GetWallClock() - tim);
-
+*/
 
    // --------------------------------
    // MAIN COLORED GRAINS LOOP ON TETS
@@ -340,7 +374,7 @@ int main(int ArgCnt, char **ArgVec)
    // ----------------------------
    // MAIN DEPENDENCY LOOP ON TETS
    // ----------------------------
-
+   /*
    puts("\nDependency loop on tets:");
    BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
 
@@ -351,13 +385,13 @@ int main(int ArgCnt, char **ArgVec)
    EndDependency(msh.ParIdx, sta);
 
    tim = GetWallClock();
-
+*/
    // Loop over tets and acces vertices
-   for(i=1;i<=NMBITR;i++)
+/*   for(i=1;i<=NMBITR;i++)
       LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp, TetPar, &msh);
    
    printf("Run time = %g\n", GetWallClock() - tim);
-
+*/
 
    // ------------------------
    // STOP AND FREE EVERYTHING
@@ -367,7 +401,7 @@ int main(int ArgCnt, char **ArgVec)
 
    free(msh.VerDeg);
    free(msh.VerSol);
-   free(msh.EdgTab);
+   //free(msh.EdgTab);
    free(msh.TetTab);
    free(msh.ColPar);
    free(msh.VerGrnPar);

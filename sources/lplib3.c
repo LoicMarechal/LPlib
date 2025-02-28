@@ -254,9 +254,9 @@ static int64_t IniPar(int NmbCpu, size_t StkSiz, void *lmb)
    par->NmbDepBlk = DefDepBlk;
 
    // Set the size of WP buffer
-   /*if(NmbCpu >= 4)
+   if(NmbCpu >= 4)
       par->BufMax = NmbCpu / 4;
-   else*/
+   else
       par->BufMax = 1;
 
    pthread_mutex_init(&par->ParMtx, NULL);
@@ -1562,6 +1562,33 @@ int HalveDependencyBlocks(int64_t ParIdx, int TypIdx1, int TypIdx2)
    typ1->DepWrkSiz /= typ1->NmbDepWrd;
 
    return(typ1->NmbDepWrd * 32);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Return a block of elements' begin and ending indices                       */
+/*----------------------------------------------------------------------------*/
+
+int GetBigBlkNfo(int64_t ParIdx, int TypIdx, int BlkIdx, int *BegIdx, int *EndIdx)
+{
+   ParSct *par = (ParSct *)ParIdx;
+   TypSct *typ;
+
+   // Get and check lib parallel instance, type and block indices
+   if(!ParIdx || TypIdx < 1 || TypIdx >= MaxTyp || BlkIdx < 0 || BlkIdx >= par->NmbCpu)
+      return(0);
+
+   // Check if thi type has been allocated
+   typ = &par->TypTab[ TypIdx ];
+
+   if(!typ->NmbLin)
+      return(0);
+
+   // Set begin and end indices
+   *BegIdx = typ->BigWrkTab[ BlkIdx ].ItlTab[0][0];
+   *EndIdx = typ->BigWrkTab[ BlkIdx ].ItlTab[0][1];
+
+   return(1);
 }
 
 

@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.00                                  */
+/*                               LPlib V4.01                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 31 2024                                           */
+/*   Last modification: feb 28 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -67,6 +67,7 @@ void     StopParallel            (int64_t);
 int      UpdateDependency        (int64_t, int, int, itg, itg);
 void     UpdateDependencyFast    (int64_t, int, int, itg *, int, int, itg *);
 void     WaitPipeline            (int64_t);
+int      GetBigBlkNfo            (int64_t, int, int, int *, int *);
 int      GetBlkIdx               (int64_t, int, int);
 int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);

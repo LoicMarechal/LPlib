@@ -119,10 +119,11 @@ int main(int ArgCnt, char **ArgVec)
    printf("Input mesh: nmb tets = %d\n", msh.NmbTet);
 
    // Allocate the memory
-   msh.TetVer = malloc( (msh.NmbTet+1) * 4 * sizeof(int) );
-   msh.TetTem = malloc( (msh.NmbTet+1) * sizeof(double) );
-   msh.VerTem = malloc( (msh.NmbVer+1) * sizeof(double) );
-   msh.VerDeg = calloc( (msh.NmbVer+1), sizeof(int) );
+   msh.TetVer = malloc( (int64_t)(msh.NmbTet+1) * 4 * sizeof(int) );
+   msh.TetTem = malloc( (int64_t)(msh.NmbTet+1) * sizeof(double) );
+   msh.VerTem = malloc( (int64_t)(msh.NmbVer+1) * sizeof(double) );
+   msh.VerDeg = calloc( (int64_t)(msh.NmbVer+1), sizeof(int) );
+   puts("alloc done");
 
    // Read the tets
    GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
@@ -130,6 +131,7 @@ int main(int ArgCnt, char **ArgVec)
                GmfInt, &ref, &ref);
 
    GmfCloseMesh(InpMsh);
+   puts("read done");
 
    // Initialize the LPlib and setup the data types
    if(!(msh.ParIdx = InitParallel(NmbCpu)))
