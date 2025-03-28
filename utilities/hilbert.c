@@ -421,8 +421,44 @@ int main(int ArgCnt, char **ArgVec)
          {
             msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[0] ].col;
             msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[0] ].grn;
+            msh.ele[t][i].ref = msh.ele[t][i].grn;
          }
       }
+
+
+      puts("Check color-grain consistency");
+      {
+         int k, VerIdx;
+         int *VerColTab = calloc(msh.NmbVer + 1, sizeof(int));
+         int *VerGrnTab = calloc(msh.NmbVer + 1, sizeof(int));
+
+         for(i=1;i<=msh.NmbColPar;i++)
+         {
+            for(j=1;j<=msh.NmbEle[ TypTet ];j++)
+            {
+               if(msh.ele[ TypTet ][j].col != i)
+                  continue;
+
+               for(k=0;k<4;k++)
+               {
+                  VerIdx = msh.ele[ TypTet ][j].idx[k];
+
+                  if(i > VerColTab[ VerIdx ])
+                  {
+                     VerColTab[ VerIdx ] = i;
+                     VerGrnTab[ VerIdx ] = msh.ele[ TypTet ][j].grn;
+                  }
+                  else if( (VerColTab[ VerIdx ] == i) && (VerGrnTab[ VerIdx ] != msh.ele[ TypTet ][j].grn) )
+                     printf("vertex %8d / tet %8d / grain %3d / color %2d, points to a vertex previously flagged by grain %3d\n",
+                              VerIdx, j, msh.ele[ TypTet ][j].grn, i, VerGrnTab[ VerIdx ]);
+               }
+            }
+         }
+
+         free(VerColTab);
+         free(VerGrnTab);
+      }
+
 
       // Set the bit field size, maks and left shift to store the color value
       msh.ColBit = ceil(log(msh.NmbColPar) / log(2));

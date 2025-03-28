@@ -2008,7 +2008,7 @@ int SetColorGrains(  int64_t ParIdx, int TypIdx,
 /*----------------------------------------------------------------------------*/
 
 int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
-                           int EleSiz, int *EleTab )
+                           int EleSiz, itg *EleTab )
 {
    int i, VerIdx, CurGrn = 1, BegIdx = 1;
    ParSct *par = (ParSct *)ParIdx;

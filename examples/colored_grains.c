@@ -34,7 +34,7 @@
 
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
-#define NMBITR 10
+#define NMBITR 100
 
 
 /*----------------------------------------------------------------------------*/
@@ -43,8 +43,8 @@
 
 typedef struct
 {
-   int      TetTyp, EdgTyp, VerTyp, NmbCol, NmbGrn;
-   int      *VerDeg, (*EdgTab)[2], (*TetTab)[4];
+   int      TetTyp, EdgTyp, VerTyp, NmbCol, NmbGrn, *VerDeg;
+   itg      (*EdgTab)[2], (*TetTab)[4];
    int      (*ColPar)[2], (*VerGrnPar)[2], (*TetGrnPar)[2];
    int64_t  NmbVer, NmbEdg, NmbTet;
    double   *VerSol;
@@ -61,7 +61,7 @@ void EdgPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 {
    int i, j, idx;
    double sol;
-
+   //printf("start grain %3d: %8d -> %8d\n", GrnIdx, BegIdx, EndIdx);
    // Loop over the edges, loop over their vertices and increment the degree
    for(i=BegIdx;i<=EndIdx;i++)
       for(j=0;j<2;j++)
@@ -194,7 +194,8 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    // Allocate the memory
-   msh.TetTab    = malloc( (msh.NmbTet + 1) * 4 * sizeof(int) );
+   puts("Allocate Mesh");
+   msh.TetTab    = malloc( (msh.NmbTet + 1) * 4 * sizeof(itg) );
    msh.ColPar    = malloc( (msh.NmbCol + 1) * 2 * sizeof(int) );
    msh.VerGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
    msh.TetGrnPar = malloc( (msh.NmbGrn + 1) * 2 * sizeof(int) );
@@ -212,6 +213,7 @@ int main(int ArgCnt, char **ArgVec)
    // READ PARTITIONS AND TOUCH MEMORY
    // --------------------------------
 
+   puts("Read partitions");
    GmfGetBlock(InpMsh, GmfColorPartitions, 1, msh.NmbCol, 0, NULL, NULL,
                GmfIntVec, 2, msh.ColPar[1], msh.ColPar[ msh.NmbCol ]);
 
@@ -257,37 +259,46 @@ int main(int ArgCnt, char **ArgVec)
    SetColorGrains(msh.ParIdx, msh.TetTyp, msh.NmbCol, (int *)msh.ColPar,
                   msh.NmbGrn, (int *)msh.TetGrnPar);
 
-
    LaunchColorGrains(msh.ParIdx, msh.VerTyp, ClrVer, &msh);
    LaunchColorGrains(msh.ParIdx, msh.TetTyp, ClrTet, &msh);
 
 
    // Read the tets
+   puts("Read tets");
+
+#ifdef INT64
+   GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
+               GmfLongVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
+               GmfLong, &ref, &ref);
+#else
    GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
                GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
                GmfInt, &ref, &ref);
+#endif
 
    GmfCloseMesh(InpMsh);
 
    // Extract internal edges
-/*   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
-                                    (int *)msh.TetTab, (int **)&msh.EdgTab );
+   puts("Build edges");
+   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
+                                    (itg *)msh.TetTab, (itg **)&msh.EdgTab );
 
    if(!msh.NmbEdg)
    {
       puts("Failed to extract internal edges");
       exit(4);
    }
-*/
+
    // Sort the edges against their color, grain and hilbert number
-   //qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
+   puts("Sort edges");
+   qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
 
    printf("Input mesh: nmb vertices = %lld\n", msh.NmbVer);
    printf("Input mesh: nmb colors   = %d\n", msh.NmbCol);
    printf("Input mesh: nmb grains   = %d\n", msh.NmbGrn);
-   //printf("Input mesh: nmb edges    = %lld\n", msh.NmbEdg);
+   printf("Input mesh: nmb edges    = %lld\n", msh.NmbEdg);
    printf("Input mesh: nmb tets     = %lld\n", msh.NmbTet);
-   /*
+
    if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
    {
       puts("Error while creating edges data type.");
@@ -295,8 +306,9 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    // Build the edges colored grains partitions
+   puts("set edges color & grain");
    ret = SetElementsColorGrain(  msh.ParIdx,  msh.VerTyp,  msh.EdgTyp,
-                                 2, (int *)msh.EdgTab );
+                                 2, (itg *)msh.EdgTab );
 
    if(ret)
    {
@@ -304,16 +316,16 @@ int main(int ArgCnt, char **ArgVec)
       exit(9);
    }
 
-*/
+
    // ---------------------------------
    // MAIN COLORED GRAINS LOOP ON EDGES
    // ---------------------------------
 
-/*   puts("\nColored grains scheduling on edges:");
+   puts("\nColored grains scheduling on edges:");
    tim = GetWallClock();
-*/
+
    // Loop over edges and access vertices
-/*   for(i=1;i<=NMBITR;i++)
+   for(i=1;i<=NMBITR;i++)
    {
       ret = LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
 
@@ -324,14 +336,14 @@ int main(int ArgCnt, char **ArgVec)
       }
    }
 
-   printf("run time = %g\n", GetWallClock() - tim);
-*/
+   printf("run time = %g\n\n", GetWallClock() - tim);
+
 
    // -----------------------------
    // MAIN DEPENDENCY LOOP ON EDGES
    // -----------------------------
 
-/*   puts("\nDependency loop on edges:");
+   puts("Set dependency edges - >vertices");
    BeginDependency(msh.ParIdx, msh.EdgTyp, msh.VerTyp);
 
    for(i=1;i<=msh.NmbEdg;i++)
@@ -341,13 +353,14 @@ int main(int ArgCnt, char **ArgVec)
    EndDependency(msh.ParIdx, sta);
 
    tim = GetWallClock();
-*/
+
    // Loop over tets and acces vertices
-/*   for(i=1;i<=NMBITR;i++)
+   puts("Dependency loop on edges:");
+   for(i=1;i<=NMBITR;i++)
       LaunchParallel(msh.ParIdx, msh.EdgTyp, msh.VerTyp, EdgPar, &msh);
    
    printf("Run time = %g\n", GetWallClock() - tim);
-*/
+
 
    // --------------------------------
    // MAIN COLORED GRAINS LOOP ON TETS
@@ -374,7 +387,7 @@ int main(int ArgCnt, char **ArgVec)
    // ----------------------------
    // MAIN DEPENDENCY LOOP ON TETS
    // ----------------------------
-   /*
+
    puts("\nDependency loop on tets:");
    BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
 
@@ -385,13 +398,13 @@ int main(int ArgCnt, char **ArgVec)
    EndDependency(msh.ParIdx, sta);
 
    tim = GetWallClock();
-*/
+
    // Loop over tets and acces vertices
-/*   for(i=1;i<=NMBITR;i++)
+   for(i=1;i<=NMBITR;i++)
       LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp, TetPar, &msh);
    
    printf("Run time = %g\n", GetWallClock() - tim);
-*/
+
 
    // ------------------------
    // STOP AND FREE EVERYTHING
@@ -401,7 +414,7 @@ int main(int ArgCnt, char **ArgVec)
 
    free(msh.VerDeg);
    free(msh.VerSol);
-   //free(msh.EdgTab);
+   free(msh.EdgTab);
    free(msh.TetTab);
    free(msh.ColPar);
    free(msh.VerGrnPar);
