@@ -1,7 +1,7 @@
 ### Friday the 28th 2025
 
 A new utility to measure memory bandwidth in various mesh-related situations was added.
-The command line `cpu\_bandwidth` measure the performance on four different access patterns.
+The command line `cpu_bandwidth` measure the performance on four different access patterns.
 
  - Straight access: U( i ) = V( i ) or vector access, the fastest and easiest one to implement.
  - Constant indirect access: U( i ) = T( V( i, 1..4 ) ), memory locations are unpredictable but a constant number of indirect accesses are performed at each step (i.e., accessing the four nodes' data for each tetra)
@@ -25,12 +25,16 @@ Command line:
 How to benchmark your system:
  
 Select a tetrahedral test mesh big enough so that cache memory won't spoil the results (bigger than 10 million tets).
-Create three different versions as explained above and run the `cpu\_bandwidth` on each mesh.
+
+Create three different versions as explained above and run the `cpu_bandwidth` on each mesh.
 
 
 Interpreting the results:
 
 Random numbering should be fast with direct access and slow with all other kinds of accesses.
+
 Hilbert numbering should be as fast with direct access and almost as fast with indirect accesses. It means that with an efficient renumbering, all indirect accesses created by unstructured meshes are almost as fast as direct access used by structures meshes.
+
 Variable indirect accesses are a little slower than constant indirect accesses and even vectorized variable accesses are not any faster on CPUs. Such a method is only efficient with GPUs.
+
 Parallelism: direct memory access scales up to the number of memory buses and stalls above while indirect accesses scale quite well.
