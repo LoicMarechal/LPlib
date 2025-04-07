@@ -145,14 +145,14 @@ int MaxDeg[ MAXELE ][2] = {
    { 2,   8},
    { 8,  32},
    { 4,  16},
-   {28, 128},
+   {32, 128},
    {16,  64},
    {16,  64},
    { 8,  32},
    { 2,   8},
    { 8,  32},
    { 4,  16},
-   {28, 128},
+   {32, 128},
    {16,  64},
    {16,  64},
    { 8,  32} };
@@ -162,7 +162,7 @@ int FacDeg[7][6] = {
    {0,0,0,0,0,0}, {3,0,0,0,0,0}, {4,0,0,0,0,0},
    {3,3,3,3,0,0}, {3,3,3,3,4,0}, {3,3,4,4,4,0}, {4,4,4,4,4,4} };
 
-// For each kind of element: give eahc face list of nodes
+// For each kind of element: give each face list of nodes
 int EleFac[7][6][4] = {
    { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} },
    { {0,1,2,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} },
@@ -421,7 +421,13 @@ int main(int ArgCnt, char **ArgVec)
          {
             msh.ele[t][i].col = msh.ver[ msh.ele[t][i].idx[0] ].col;
             msh.ele[t][i].grn = msh.ver[ msh.ele[t][i].idx[0] ].grn;
-            msh.ele[t][i].ref = msh.ele[t][i].grn;
+
+            if(msh.ele[t][i].grn == 179)
+               msh.ele[t][i].ref = 1;
+            else if(msh.ele[t][i].grn == 11)
+               msh.ele[t][i].ref = 2;
+            else
+               msh.ele[t][i].ref = 0;
          }
       }
 

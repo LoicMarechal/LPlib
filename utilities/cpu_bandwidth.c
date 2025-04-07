@@ -12,7 +12,7 @@
 /*                      direct and indirect memory reads                      */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 20 2025                                           */
-/*   Last modification: mar 28 2025                                           */
+/*   Last modification: apr 07 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -32,10 +32,8 @@
 /* Defines                                                                    */
 /*----------------------------------------------------------------------------*/
 
-typedef float v4f   __attribute__ ((vector_size ( 16)));
-typedef int   v4i   __attribute__ ((vector_size ( 16)));
-typedef int   v32i  __attribute__ ((vector_size (128)));
-typedef int   v64i  __attribute__ ((vector_size (256)));
+typedef float v4f   __attribute__ ((vector_size (16)));
+typedef int   v4i   __attribute__ ((vector_size (16)));
 
 
 /*----------------------------------------------------------------------------*/
@@ -45,10 +43,7 @@ typedef int   v64i  __attribute__ ((vector_size (256)));
 typedef struct
 {
    int      TetTyp, VerTyp, NmbVer, NmbTet, *VerBal, *VerDeg, *VerAdr;
-   int      VerTypD32, VerTypD64, BalD32Idx, BalD64Idx, NmbVerD32, NmbVerD64;
    v4i      *TetVer, *TetInt;
-   v32i     *BalD32;
-   v64i     *BalD64;
    v4f      *VerCrd, *VerDat, *TetDat;
    int64_t  ParIdx;
 }MshSct;
@@ -118,60 +113,7 @@ void RagMem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
       for(j=0;j<deg;j++)
          dat += msh->TetDat[ msh->VerBal[ adr + j ] ];
 
-      msh->VerDat[i] += dat;
-   }
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Vectorized Indirect ragged memory access from vertices to tets data        */
-/*----------------------------------------------------------------------------*/
-
-void RagMemD32(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
-{
-   int i, j;
-   v4f dat;
-   v32i bal;
-
-   // Handle only vertices whose degree is <= 32
-   for(i=BegIdx;i<=EndIdx;i++)
-   {
-      dat = (v4f){0.,0.,0.,0.};
-      bal = msh->BalD32[i];
-
-      for(j=0;j<32;j++)
-         if(bal[j])
-            dat += msh->TetDat[ bal[j] ];
-
-      msh->VerDat[i] += dat;
-   }
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Vectorized Indirect ragged memory access from vertices to tets data        */
-/*----------------------------------------------------------------------------*/
-
-void RagMemD64(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
-{
-   int i, j;
-   v4f dat;
-   v64i bal;
-
-   // Handle only vertices whose degree is > 32
-   for(i=BegIdx;i<=EndIdx;i++)
-   {
-      dat = (v4f){0.,0.,0.,0.};
-      bal = msh->BalD64[i];
-
-      for(j=0;j<32;j++)
-         dat += msh->TetDat[ bal[j] ];
-
-      for(j=32;j<64;j++)
-         if(bal[j])
-            dat += msh->TetDat[ bal[j] ];
-
-      msh->VerDat[ msh->BalD32Idx + i ] += dat;
+      msh->VerDat[i] = dat;
    }
 }
 
@@ -198,10 +140,9 @@ int main(int ArgCnt, char **ArgVec)
    {
       puts("\ncpu_bandwidth   NmbThreads   NmbIterations   MeshFile\n");
       puts("In order to fully evaluate all kinds of memory access performances you should generate");
-      puts("three different numberings from the same test mesh and feed them to cpu_bandwith:\n");
+      puts("two different numberings from the same test mesh and feed them to cpu_bandwith:\n");
       puts(" hilbert -in MyTestMesh -out RandomMesh -scheme 2");
-      puts(" hilbert -in MyTestMesh -out HilbertMesh");
-      puts(" hilbert -in MyTestMesh -out SlicedMesh -gmlib generic\n");
+      puts(" hilbert -in MyTestMesh -out HilbertMesh\n");
       exit(0);
    }
    else
@@ -315,45 +256,6 @@ int main(int ArgCnt, char **ArgVec)
       }
 
 
-   // --------------------------------
-   // BUILD THE VECTORIZED BALLS TABLE
-   // --------------------------------
-
-   // Build the vectorized balls table
-   for(i=1;i<=msh.NmbVer;i++)
-      if(msh.VerDeg[i] > 32)
-      {
-         msh.BalD32Idx = i;
-         msh.BalD64Idx = msh.NmbVer;
-         break;
-      }
-
-   msh.NmbVerD32 = msh.BalD32Idx;
-   msh.NmbVerD64 = msh.BalD64Idx - msh.BalD32Idx;
-
-   msh.BalD32 = calloc(msh.NmbVerD32 + 1, sizeof(v32i));
-   msh.BalD64 = calloc(msh.NmbVerD64 + 1, sizeof(v64i));
-
-   if(!msh.BalD32 || !msh.BalD64 )
-   {
-      puts("Failed to allocate memory");
-      exit(1);
-   }
-
-   msh.VerTypD32 = NewType(msh.ParIdx, msh.NmbVerD32);
-   msh.VerTypD64 = NewType(msh.ParIdx, msh.NmbVerD64);
-
-   // Copy the balls with a degree <= 32
-   for(i=1;i<=msh.BalD32Idx;i++)
-      for(j=0;j<msh.VerDeg[i];j++)
-         msh.BalD32[i][j] = msh.VerBal[ msh.VerAdr[i] + j ];
-
-   // Copy the balls with a degree > 32 and cap them to 64
-   for(i=msh.BalD32Idx + 1; i<=msh.BalD64Idx; i++)
-      for(j=0;j<MIN(64,msh.VerDeg[i]);j++)
-         msh.BalD64[ i - msh.BalD32Idx ][j] = msh.VerBal[ msh.VerAdr[i] + j ];
-
-
    // -----------------------------
    // RUN DIRECT ACCESS MEMORY TEST
    // -----------------------------
@@ -369,7 +271,7 @@ int main(int ArgCnt, char **ArgVec)
 
    tim = GetWallClock() - tim;
 
-   printf("Direct reads            : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s\n",
+   printf("Direct reads   : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s\n",
             NmbItr, tim, (NmbItr * (32LL * msh.NmbVer + 32LL * msh.NmbTet)) / (tim * 1E9) );
 
 
@@ -385,7 +287,7 @@ int main(int ArgCnt, char **ArgVec)
 
    tim = GetWallClock() - tim;
 
-   printf("Indirect reads          : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
+   printf("Indirect reads : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
             NmbItr, tim, (NmbItr * 96LL * msh.NmbTet) / (tim * 1E9),
             (NmbItr * (16LL * msh.NmbVer + 32LL * msh.NmbTet)) / (tim * 1E9) );
 
@@ -402,29 +304,9 @@ int main(int ArgCnt, char **ArgVec)
 
    tim = GetWallClock() - tim;
 
-   printf("Ragged reads            : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
-            NmbItr, tim, (NmbItr * (20LL * NmbBal + 36LL * msh.NmbVer)) / (tim * 1E9),
-            (NmbItr * (32LL * msh.NmbVer + 16LL * msh.NmbTet + 4LL * NmbBal)) / (tim * 1E9) );
-
-
-   // -------------------------------------------------
-   // RUN INDIRECT VECTORIZED RAGGED ACCESS MEMORY TEST
-   // -------------------------------------------------
-
-   // Perform parallel vectorized ragged indirect memory access loops on vertices
-   tim = GetWallClock();
-
-   for(i=1;i<=NmbItr;i++)
-   {
-      LaunchParallel(msh.ParIdx, msh.VerTypD32, 0, (void *)RagMemD32, (void *)&msh);
-      LaunchParallel(msh.ParIdx, msh.VerTypD64, 0, (void *)RagMemD64, (void *)&msh);
-   }
-
-   tim = GetWallClock() - tim;
-
-   printf("Vectorized ragged reads : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n\n",
-            NmbItr, tim, (NmbItr * (16LL * NmbBal + 160LL * msh.NmbVerD32 + 284LL * msh.NmbVerD64)) / (tim * 1E9),
-            (NmbItr * (160LL * msh.NmbVerD32 + 284LL * msh.NmbVerD64 + 16LL * msh.NmbTet)) / (tim * 1E9) );
+   printf("Ragged reads   : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
+            NmbItr, tim, (NmbItr * (20LL * NmbBal + 24LL * msh.NmbVer)) / (tim * 1E9),
+            (NmbItr * (24LL * msh.NmbVer + 16LL * msh.NmbTet + 4LL * NmbBal)) / (tim * 1E9) );
 
 
    // -------
@@ -440,8 +322,6 @@ int main(int ArgCnt, char **ArgVec)
    free(msh.VerDeg);
    free(msh.VerAdr);
    free(msh.VerBal);
-   free(msh.BalD32);
-   free(msh.BalD64);
 
    return(0);
 }
