@@ -1,4 +1,9 @@
-### Friday the 28th 2025
+### June 2025
+
+Beta version of color-grains parallelism.
+
+
+### March 2025
 
 A new utility to measure memory bandwidth in various mesh-related situations was added.
 The command line `cpu_bandwidth` measure the performance on four different access patterns.

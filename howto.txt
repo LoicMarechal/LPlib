@@ -1,7 +1,7 @@
 Building the sample parallel codes is fairly easy:
 
 1 - Open a shell
-2 - "cd lp3/examples"
+2 - "cd lplib4/examples"
 3 - "make"
 
 Then you may run:
