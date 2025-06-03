@@ -2,20 +2,20 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V0.1                           */
+/*                               LPlib Helpers V0.2                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   oct 31 2024                                           */
+/* Last modification:   jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
 
-#ifndef LPLIB3_HELPERS_H
-#define LPLIB3_HELPERS_H
+#ifndef LPLIB4_HELPERS_H
+#define LPLIB4_HELPERS_H
 
 
 /*----------------------------------------------------------------------------*/
@@ -25,8 +25,8 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
-#include "lplib3.h"
-#include "lplib3_helpers.h"
+#include "lplib4.h"
+#include "lplib4_helpers.h"
 
 
 /*----------------------------------------------------------------------------*/

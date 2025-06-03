@@ -9,7 +9,7 @@
 /*   Description:       direct and indirect memory writes                     */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     jan 15 2015                                           */
-/*   Last modification: sep 27 2022                                           */
+/*   Last modification: jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,8 +22,8 @@
 #include <stdlib.h>
 #include <float.h>
 #include <stdint.h>
-#include "lplib3.h"
-#include "libmeshb7.h"
+#include "lplib4.h"
+#include "libmeshb8.h"
 
 
 /*----------------------------------------------------------------------------*/

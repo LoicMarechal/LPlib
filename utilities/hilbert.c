@@ -9,7 +9,7 @@
 /* Description:         renumber .mesh(b) files                               */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       mar 11 2010                                           */
-/* Last modification:   feb 04 2025                                           */
+/* Last modification:   jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -28,9 +28,9 @@
 #include <math.h>
 #include <string.h>
 #include <assert.h>
-#include <libmeshb7.h>
-#include <libmeshb7_helpers.h>
-#include "lplib3.h"
+#include <libmeshb8.h>
+#include <libmeshb8_helpers.h>
+#include "lplib4.h"
 
 
 /*----------------------------------------------------------------------------*/

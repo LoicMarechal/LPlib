@@ -12,7 +12,7 @@
 /*                      direct and indirect memory reads                      */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 20 2025                                           */
-/*   Last modification: apr 07 2025                                           */
+/*   Last modification: jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -24,8 +24,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "lplib3.h"
-#include "libmeshb7.h"
+#include "lplib4.h"
+#include "libmeshb8.h"
 
 
 /*----------------------------------------------------------------------------*/
@@ -63,7 +63,9 @@ typedef struct
 
 void DirMemVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   for(int i=BegIdx;i<=EndIdx;i++)
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
       msh->VerDat[i] = msh->VerCrd[i];
 }
 
@@ -74,7 +76,9 @@ void DirMemVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 void DirMemTet(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   for(int i=BegIdx;i<=EndIdx;i++)
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
       msh->TetInt[i] = msh->TetVer[i];
 }
 
@@ -85,7 +89,9 @@ void DirMemTet(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 void IndMem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   for(int i=BegIdx;i<=EndIdx;i++)
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
    {
       msh->TetDat[i] = msh->VerDat[ msh->TetVer[i][0] ]
                      + msh->VerDat[ msh->TetVer[i][1] ]

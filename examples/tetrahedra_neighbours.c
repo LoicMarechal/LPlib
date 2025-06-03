@@ -10,7 +10,7 @@
 /*                      from a volume only tetrahedral mesh                   */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 11 2010                                           */
-/*   Last modification: jun 06 2024                                           */
+/*   Last modification: jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -28,8 +28,8 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
-#include "libmeshb7.h"
-#include "lplib3.h"
+#include "libmeshb8.h"
+#include "lplib4.h"
 
 
 /*----------------------------------------------------------------------------*/

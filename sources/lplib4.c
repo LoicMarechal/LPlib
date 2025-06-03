@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include "lplib3.h"
+#include "lplib4.h"
 
 #ifdef _WIN32
 #include <windows.h>

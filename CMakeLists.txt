@@ -42,7 +42,7 @@ include_directories (${PROJECT_SOURCE_DIR}/utilities)
 add_subdirectory (sources)
 
 find_package(Threads)
-find_package(libMeshb 7)
+find_package(libMeshb 8)
 
 if(libMeshb_FOUND)
    include_directories (${libMeshb_INCLUDE_DIRS})
@@ -50,7 +50,7 @@ if(libMeshb_FOUND)
    add_subdirectory (utilities)
 else()
    message (WARNING "
-   libMeshb.7 could not be found.
+   libMeshb.8 could not be found.
    Consequently, examples and utilities will not be built.
    You can download it from GitHUB at https://github.com/LoicMarechal/libMeshb")
 endif()
@@ -84,7 +84,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
 find_package(Threads)
 set(LPlib_INCLUDE_DIRS ${CMAKE_INSTALL_PREFIX}/include)
 set(LPlib_HELPERS_DIRS ${CMAKE_INSTALL_PREFIX}/helpers)
-set(LPlib_LIBRARIES LP.3 ${CMAKE_THREAD_LIBS_INIT})
+set(LPlib_LIBRARIES LP.4 ${CMAKE_THREAD_LIBS_INIT})
 set(LPlib_FOUND TRUE)
 ")
 write_basic_package_version_file(

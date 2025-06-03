@@ -10,7 +10,7 @@
 /*                      from a volumic tetrahedral mesh                       */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 13 2015                                           */
-/*   Last modification: mar 07 2024                                           */
+/*   Last modification: jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -26,8 +26,8 @@
 #include <string.h>
 #include <inttypes.h>
 #include <assert.h>
-#include "libmeshb7.h"
-#include "lplib3.h"
+#include "libmeshb8.h"
+#include "lplib4.h"
 
 
 /*----------------------------------------------------------------------------*/

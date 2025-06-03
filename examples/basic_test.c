@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                         BASIC PARALLEL TEST USING LPLib3                   */
+/*                         BASIC PARALLEL TEST USING LPLib4                   */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*    Description:         compute v3 = f(v1) + g(v2)                         */
 /*    Author:              Loic MARECHAL                                      */
 /*    Creation date:       apr 22 2008                                        */
-/*    Last modification:   jan 20 2015                                        */
+/*    Last modification:   jun 03 2025                                        */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <float.h>
 #include <math.h>
-#include "lplib3.h"
+#include "lplib4.h"
 
 
 /*----------------------------------------------------------------------------*/
