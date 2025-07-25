@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.00                                  */
+/*                               LPlib V4.02                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: nov 29 2024                                           */
+/*   Last modification: jul 17 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -78,6 +78,7 @@ typedef struct WrkSct
 {
    itg               BegIdx, EndIdx, ItlTab[ MaxPth ][2];
    int               NmbDep, *DepWrdTab, GrpIdx, rnd;
+   double            RunTim;
    struct WrkSct     *pre, *nex;
 }WrkSct;
 
@@ -135,7 +136,7 @@ typedef struct ParSct
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
    int               req, cmd, *PipWrd, SizMul, NmbVarArg, NmbDep;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt, CurCol;
-   int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon;
+   int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon, clk;
    size_t            StkSiz, ClrLinSiz;
    void              *lmb, *VarArgTab[ MaxVarArg ];
    float             sta[2];
@@ -188,6 +189,7 @@ static void   *LPL_malloc  (void *, int64_t);
 static void   *LPL_calloc  (void *, int64_t, int64_t);
 static void    LPL_free    (void *, void *);
 static void   *GrnHdl      (void *ptr);
+static void    UpdBlkSiz   (ParSct *, TypSct *);
 
 
 /*----------------------------------------------------------------------------*/
@@ -478,6 +480,18 @@ int SetExtendedAttributes(int64_t ParIdx, ...)
             NmbArg++;
          }
       }break;
+
+      case EnableAdaptiveSizing :
+      {
+         par->clk = 1;
+         NmbArg++;
+      }break;
+
+      case DisableAdaptiveSizing :
+      {
+         par->clk = 0;
+         NmbArg++;
+      }break;
    }
 
    va_end(ArgLst);
@@ -664,6 +678,9 @@ float LaunchParallel(int64_t ParIdx, int TypIdx1, int TypIdx2,
 
       // Arbitrary set the average concurrency factor
       acc = (float)par->NmbCpu;
+
+      if(par->clk)
+         UpdBlkSiz(par, typ1);
    }
    else
       return(-1.);
@@ -751,11 +768,17 @@ static void *PthHdl(void *ptr)
                if(!beg || !end || (end < beg))
                   continue;
 
+               if(par->clk)
+                  pth->wrk->RunTim = GetWallClock();
+
                // Launch a single big wp and signal completion to the scheduler
                if(par->NmbVarArg)
                   CalVarArgPrc(beg, end, pth->idx, par);
                else
                   par->prc(beg, end, pth->idx, par->arg);
+
+               if(par->clk)
+                  pth->wrk->RunTim = GetWallClock() - pth->wrk->RunTim;
             }
 
             pthread_mutex_lock(&par->ParMtx);
@@ -992,6 +1015,62 @@ int NewType(int64_t ParIdx, itg NmbLin)
 	typ->BigWrkTab[ NmbBigWrk - 1 ].ItlTab[0][1] = NmbLin;
 
    return(TypIdx);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Adaptive big block resizing based on run time                              */
+/*----------------------------------------------------------------------------*/
+
+static void UpdBlkSiz(ParSct *par, TypSct *typ)
+{
+   int      i, CurBlk = 0;
+   itg      CurLin = 0, NewBlk[ MaxPth ][2];
+   double   sca, AvgTim, RemTim, TotTim = 0.;
+
+   for(i=0;i<par->NmbCpu;i++)
+      TotTim += typ->BigWrkTab[i].RunTim;
+
+   AvgTim = TotTim / par->NmbCpu;
+
+   for(i=0;i<par->NmbCpu;i++)
+   {
+      NewBlk[i][0] = CurLin + 1;
+      TotTim = 0;
+
+      do
+      {
+         RemTim = (typ->BigWrkTab[ CurBlk ].RunTim
+                * (typ->BigWrkTab[ CurBlk ].ItlTab[0][1] - CurLin))
+                / (typ->BigWrkTab[ CurBlk ].ItlTab[0][1]
+                - typ->BigWrkTab[ CurBlk ].ItlTab[0][0]);
+
+         if(TotTim + RemTim < AvgTim)
+         {
+            CurLin = typ->BigWrkTab[ CurBlk ].ItlTab[0][1];
+            TotTim += RemTim;
+            CurBlk++;
+         }
+         else
+         {
+            sca = (AvgTim - TotTim) / typ->BigWrkTab[ CurBlk ].RunTim;
+            CurLin += sca * (typ->BigWrkTab[ CurBlk ].ItlTab[0][1]
+                           - typ->BigWrkTab[ CurBlk ].ItlTab[0][0]);
+            break;
+         }
+      }while(TotTim < AvgTim);
+
+      NewBlk[i][1] = CurLin;
+   }
+
+   NewBlk[ par->NmbCpu - 1 ][1] = typ->NmbLin;
+
+	for(i=0;i<par->NmbCpu;i++)
+   {
+      typ->BigWrkTab[i].ItlTab[0][0] = NewBlk[i][0];
+      typ->BigWrkTab[i].ItlTab[0][1] = NewBlk[i][1];
+      //printf("BigBlk %3d: %8d -> %8d, size = %8d\n", i, NewBlk[i][0], NewBlk[i][1], NewBlk[i][1] - NewBlk[i][0]);
+   }
 }
 
 

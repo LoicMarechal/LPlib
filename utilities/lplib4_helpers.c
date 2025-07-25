@@ -2,20 +2,16 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V0.2                           */
+/*                               LPlib Helpers V1.0                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   jun 03 2025                                           */
+/* Last modification:   jul 25 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
-
-
-#ifndef LPLIB4_HELPERS_H
-#define LPLIB4_HELPERS_H
 
 
 /*----------------------------------------------------------------------------*/
@@ -25,6 +21,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "lplib4.h"
 #include "lplib4_helpers.h"
 
@@ -77,15 +74,18 @@ typedef struct
 /* Prototypes of local procedures                                             */
 /*----------------------------------------------------------------------------*/
 
-void ParEdg1(itg, itg, int, ParSct *);
-void ParEdg2(itg, itg, int, ParSct *);
+void           ParEdg1  (itg, itg, int, ParSct *);
+void           ParEdg2  (itg, itg, int, ParSct *);
+static void    SetBnbBox(RenSct *);
+static double *SetMidCrd(RenSct *, int);
 
 
 /*----------------------------------------------------------------------------*/
 /* Global tables                                                              */
 /*----------------------------------------------------------------------------*/
 
-const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+static const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+static const int EleSiz[ LplMax ] = {0,2,3,4,4,5,6,8};
 
 
 /*----------------------------------------------------------------------------*/
@@ -308,4 +308,232 @@ void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
    par[ PthIdx ].NmbEdg = PthNmbEdg;
 }
 
-#endif
+
+/*----------------------------------------------------------------------------*/
+/* Read, renumber through a Hilbert SFC and write the mesh                    */
+/*----------------------------------------------------------------------------*/
+
+RenSct *MeshRenumbering(int dim, int NmbVer, double *CrdTab, ...)
+{
+   int      i, j, t, siz, NmbCpu = 0, *TmpEle;
+   int64_t  LibParIdx;
+   double   *EleCrd, *TmpCrd;
+   RenSct   *ren;
+   va_list  VarArg;
+
+   // Check mandatory inputs
+   if( (dim != 3) || (NmbVer < 1) || !CrdTab)
+      return(NULL);
+
+   // Allocate and setup the renumbering structure
+   if(!(ren = calloc(1, sizeof(RenSct))))
+      return(NULL);
+
+   ren->dim = dim;
+   ren->NmbVer = NmbVer;
+   ren->CrdTab = CrdTab;
+   SetBnbBox(ren);
+
+   // Decode the variable list of arguments
+   va_start(VarArg, CrdTab);
+
+   do
+   {
+      t = va_arg(VarArg, int);
+
+      if( (t > 0) && (t < LplMax) )
+      {
+         ren->NmbEle[t] = va_arg(VarArg, int);
+         ren->EleTab[t] = va_arg(VarArg, int *);
+      }
+   }while(t);
+
+   va_end(VarArg);
+
+   // Launch the required number of threads
+   if(!(LibParIdx = InitParallel(NmbCpu)))
+      return(NULL);
+
+
+   // --------------------
+   // Vertices renumbering
+   // --------------------
+
+   if(!(ren->RenTab[0] = malloc((ren->NmbVer+1) * 2 * sizeof(int64_t))))
+      return(NULL);
+
+   if(!HilbertRenumbering(LibParIdx, NmbVer, ren->box, (double (*)[3])ren->CrdTab, ren->RenTab[0]))
+      return(NULL);
+
+
+   // --------------------
+   // Elements renumbering
+   // --------------------
+
+   for(t=LplEdg;t<LplMax;t++)
+   {
+      if(!ren->NmbEle[t])
+         continue;
+
+      if(!(ren->RenTab[t] = malloc( (ren->NmbEle[t] + 1) * 2 * sizeof(int64_t) )))
+         return(NULL);
+
+      if(!(EleCrd = SetMidCrd(ren, t)))
+         return(NULL);
+
+      if(!HilbertRenumbering(LibParIdx, ren->NmbEle[t], ren->box, (double (*)[3])EleCrd, ren->RenTab[t]))
+         return(NULL);
+
+      free(EleCrd);
+      siz = EleSiz[t];
+
+      if(!(TmpEle = malloc( (ren->NmbEle[t] + 1) * siz * sizeof(int) )))
+         return(NULL);
+
+      for(i=1;i<=ren->NmbEle[t];i++)
+         for(j=0;j<siz;j++)
+            TmpEle[ i * siz + j ] = ren->RenTab[0][ ren->EleTab[t][ ren->RenTab[t][i][1] * siz + j ] ][0];
+
+      memcpy(ren->EleTab[t], TmpEle, (ren->NmbEle[t] + 1) * siz * sizeof(int));
+      free(TmpEle);
+   }
+
+   // Move coordinates
+
+   if(!(TmpCrd = malloc( (ren->NmbVer+1) * 3 * sizeof(double) )))
+      return(NULL);
+
+   for(i=1;i<=ren->NmbVer;i++)
+      for(j=0;j<3;j++)
+         TmpCrd[ i*3 + j ] = ren->CrdTab[ ren->RenTab[0][i][1] * 3 + j ];
+
+   memcpy(ren->CrdTab, TmpCrd, (ren->NmbVer+1) * 3 * sizeof(double));
+   free(TmpCrd);
+
+   StopParallel(LibParIdx);
+
+   return(ren);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Free all elements' numbering tables and the global structure itself        */
+/*----------------------------------------------------------------------------*/
+
+void FreeNumberingStruct(RenSct *ren)
+{
+   int t;
+
+   for(t=0;t<LplMax;t++)
+      if(ren->RenTab[t])
+         free(ren->RenTab[t]);
+
+   free(ren);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Evaluate elements' numbering ranging from 0 (perfect) to 1 (random)        */
+/*----------------------------------------------------------------------------*/
+
+double EvaluateRenumbering(int EleTyp, int NmbEle, int *EleTab)
+{
+   int      i, MinVer = EleTab[3], MaxVer = EleTab[3];
+   double   dlt, NumQal = 0.;
+
+   for(i=3;i<NmbEle * EleSiz[ EleTyp ];i++)
+   {
+      if(EleTab[i] != EleTab[ i+1 ])
+      {
+         dlt = (double)EleTab[i] - (double)EleTab[ i+1 ];
+         NumQal += POW(dlt);
+      }
+
+      MinVer = MIN(MinVer, EleTab[i]);
+      MaxVer = MAX(MaxVer, EleTab[i]);
+   }
+
+   dlt = (double)MaxVer - (double)MinVer;
+   NumQal /= (NmbEle * EleSiz[ EleTyp ] * POW(dlt));
+
+   return(NumQal);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int RestoreNumbering(RenSct *ren, int NmbVer, double *CrdTab, ... )
+{
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Get an entity's index in the old numbering from its current one            */
+/*----------------------------------------------------------------------------*/
+
+int GetOldIndex(RenSct *ren, int typ, int idx)
+{
+   return(ren->RenTab[ typ ][ idx ][0]);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Get an entity's index in the current numbering from its old one            */
+/*----------------------------------------------------------------------------*/
+
+int GetNewIndex(RenSct *ren, int typ, int idx)
+{
+   return(ren->RenTab[ typ ][ idx ][1]);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute a mesh's bounding box                                              */
+/*----------------------------------------------------------------------------*/
+
+static void SetBnbBox(RenSct *ren)
+{
+   int i, j;
+
+   ren->box[0] = ren->box[3] = ren->CrdTab[3];
+   ren->box[1] = ren->box[4] = ren->CrdTab[4];
+   ren->box[2] = ren->box[5] = ren->CrdTab[5];
+
+   for(i=1;i<=ren->NmbVer;i++)
+      for(j=0;j<3;j++)
+      {
+         ren->box[j  ] = MIN(ren->box[j  ], ren->CrdTab[ i*3 + j ]);
+         ren->box[j+3] = MAX(ren->box[j+3], ren->CrdTab[ i*3 + j ]);
+      }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute the barycenter of any kind of element                              */
+/*----------------------------------------------------------------------------*/
+
+static double *SetMidCrd(RenSct *ren, int typ)
+{
+   int i, j, k, siz = EleSiz[ typ ];
+   double *crd;
+
+   if(!(crd = malloc( (ren->NmbEle[ typ ] + 1) * 3 * sizeof(double) )))
+      return(NULL);
+
+   for(i=1;i<=ren->NmbEle[ typ ];i++)
+   {
+      for(j=0;j<3;j++)
+         crd[ i * 3 + j ] = 0.;
+
+      for(j=0;j<siz;j++)
+         for(k=0;k<3;k++)
+            crd[ i * 3 + k ] += ren->CrdTab[ ren->EleTab[ typ ][ i * siz + j ] * 3 + k ];
+
+      for(j=0;j<3;j++)
+         crd[ i * 3 + j ] /= siz;
+   }
+
+   return(crd);
+}

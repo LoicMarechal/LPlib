@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.01                                  */
+/*                               LPlib V4.02                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: feb 28 2025                                           */
+/*   Last modification: jul 16 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -96,7 +96,9 @@ enum ArgAtr {
    DisableBlockSorting,
    StaticScheduling,
    SetSmallBlock,
-   SetDependencyBlock
+   SetDependencyBlock,
+   EnableAdaptiveSizing,
+   DisableAdaptiveSizing
 };
 
 
