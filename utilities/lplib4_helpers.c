@@ -22,6 +22,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+
+#ifdef WITH_METIS
+#include <metis.h>
+#include <math.h>
+#endif
+
 #include "lplib4.h"
 #include "lplib4_helpers.h"
 
@@ -69,15 +75,30 @@ typedef struct
    HshSct   *HshTab;
 }ParSct;
 
+#ifdef WITH_METIS
+typedef struct
+{
+   idx_t nvtxs, nedges, ncon, nparts, *xadj, *adjncy, *VerDeg, objval, *part;
+   idx_t *adjwgt, options[ METIS_NOPTIONS ];
+}MtsSct;
+#endif
+
 
 /*----------------------------------------------------------------------------*/
 /* Prototypes of local procedures                                             */
 /*----------------------------------------------------------------------------*/
 
-void           ParEdg1  (itg, itg, int, ParSct *);
-void           ParEdg2  (itg, itg, int, ParSct *);
-static void    SetBnbBox(RenSct *);
-static double *SetMidCrd(RenSct *, int);
+void           ParEdg1        (itg, itg, int, ParSct *);
+void           ParEdg2        (itg, itg, int, ParSct *);
+static void    SetBnbBox      (RenSct *);
+static double *SetMidCrd      (RenSct *, int);
+
+#ifdef WITH_METIS
+static void    SetBal         (LplMshSct *);
+static int     GetBal         (LplMshSct *, int, int *, int *);
+static void    GetMtsRef      (LplMshSct *, MtsSct *);
+static void    BuildMetisGraph(LplMshSct *, MtsSct *);
+#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -537,3 +558,194 @@ static double *SetMidCrd(RenSct *ren, int typ)
 
    return(crd);
 }
+
+
+#ifdef WITH_METIS
+
+int MetisPartitioning(LplMshSct *msh, int NmbPar)
+{
+   MtsSct mts;
+
+   SetBal(msh);
+   BuildMetisGraph(msh, &mts);
+   mts.nparts = NmbPar;
+
+   if(METIS_PartGraphKway( &mts.nvtxs, &mts.ncon, mts.xadj, mts.adjncy,
+                           NULL, NULL, NULL, &mts.nparts, NULL, NULL,
+                           mts.options, &mts.objval, mts.part ) != METIS_OK)
+   {
+      return(0);
+   }
+
+   GetMtsRef(msh, &mts);
+
+   return(1);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Extract a metis graph from a tet mesh                                      */
+/*----------------------------------------------------------------------------*/
+
+static void BuildMetisGraph(LplMshSct *msh, MtsSct *mts)
+{
+   int i, j, BalTab[1000], WgtTab[1000], TotDeg = 0;
+
+   METIS_SetDefaultOptions(mts->options);
+
+   mts->options[ METIS_OPTION_CTYPE ]     = METIS_CTYPE_RM;
+   mts->options[ METIS_OPTION_CTYPE ] = 0;
+   mts->options[ METIS_OPTION_CONTIG ]    = 1;
+   mts->options[ METIS_OPTION_OBJTYPE ]   = METIS_OBJTYPE_VOL;
+   //mts->options[ METIS_OPTION_DBGLVL ]    = METIS_DBG_INFO;
+   mts->options[ METIS_OPTION_IPTYPE ]    = METIS_IPTYPE_RANDOM;
+
+   for(i=1;i<=msh->NmbVer;i++)
+      TotDeg += GetBal(msh, i, BalTab, WgtTab);
+
+   mts->nvtxs  = msh->NmbVer;
+   mts->nedges = TotDeg;
+   mts->ncon   = 1;
+   mts->VerDeg = malloc(msh->NmbVer * sizeof(int));
+   mts->xadj   = malloc( (msh->NmbVer + 1) * sizeof(idx_t));
+   mts->part   = malloc(msh->NmbVer * sizeof(idx_t));
+   mts->adjncy = malloc(TotDeg      * sizeof(idx_t));
+   mts->adjwgt = malloc(TotDeg      * sizeof(idx_t));
+
+   if(!mts->xadj || !mts->VerDeg || ! mts->adjncy || !mts->part)
+      exit(1);
+
+   TotDeg = 0;
+
+   for(i=0;i<msh->NmbVer;i++)
+   {
+      mts->xadj[i] = TotDeg;
+      mts->VerDeg[i] = GetBal(msh, i+1, &mts->adjncy[ TotDeg ], &mts->adjwgt[ TotDeg ]);
+      TotDeg += mts->VerDeg[i];
+   }
+
+   mts->xadj[ msh->NmbVer ] = TotDeg;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Extract the ball of unique vertices from the ball of tets                  */
+/*----------------------------------------------------------------------------*/
+
+static int GetBal(LplMshSct *msh, int VerIdx, int *VerTab, int *WgtTab)
+{
+   int i, j, k, flg, NmbVer = 0, *TetVer, wgt;
+   double siz;
+
+   for(i=0;i<msh->VerDeg[ VerIdx ];i++)
+   {
+      TetVer = msh->TetTab[ msh->BalTab[ msh->VerBal[ VerIdx ] + i ][0] ];
+
+      for(j=0;j<4;j++)
+      {
+         if(TetVer[j] == VerIdx)
+            continue;
+
+         flg = 0;
+
+         for(k=0;k<NmbVer;k++)
+            if(VerTab[k] == TetVer[j])
+            {
+               flg = 1;
+               break;
+            }
+
+         if(!flg)
+            VerTab[ NmbVer++ ] = TetVer[j];
+      }
+   }
+
+   for(i=0;i<NmbVer;i++)
+   {
+      siz = POW(msh->CrdTab[ VerIdx ][0] - msh->CrdTab[ VerTab[i] ][0])
+          + POW(msh->CrdTab[ VerIdx ][1] - msh->CrdTab[ VerTab[i] ][1])
+          + POW(msh->CrdTab[ VerIdx ][2] - msh->CrdTab[ VerTab[i] ][2]);
+
+      siz = sqrt(siz);
+      wgt = siz / msh->MinSiz;
+      //wgt = msh->MaxSiz / siz;
+
+      VerTab[i]--;
+      WgtTab[i] = wgt;
+   }
+
+   return(NmbVer);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Setup the balls table                                                      */
+/*----------------------------------------------------------------------------*/
+
+static void SetBal(LplMshSct *msh)
+{
+   int i, j, VerIdx, TabSiz = 0;
+
+   msh->VerDeg = calloc(msh->NmbVer + 1, sizeof(int));
+   msh->VerBal = calloc(msh->NmbVer + 1, sizeof(int));
+
+   // Set vertices degree
+   for(i=1;i<=msh->NmbTet;i++)
+      for(j=0;j<4;j++)
+         msh->VerDeg[ msh->TetTab[i][j] ]++;
+
+   for(i=1;i<=msh->NmbVer;i++)
+      TabSiz += msh->VerDeg[i];
+
+   // Allocate the global balls table and give each vertex a pointer to its own table
+   msh->BalTab = malloc(TabSiz * 2 * sizeof(int));
+   TabSiz = 0;
+
+   if(!msh->VerDeg || !msh->VerBal || !msh->BalTab)
+   {
+      puts("Failed to allocate memory");
+      exit(1);
+   }
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      msh->VerBal[i] = TabSiz;
+      TabSiz += msh->VerDeg[i];
+      msh->VerDeg[i] = 0;
+   }
+
+   // Fill the ball tables with elements type and index
+   for(i=1;i<=msh->NmbTet;i++)
+      for(j=0;j<4;j++)
+      {
+         VerIdx = msh->TetTab[i][j];
+         msh->BalTab[ msh->VerBal[ VerIdx ] + msh->VerDeg[ VerIdx ] ][0] = i;
+         msh->BalTab[ msh->VerBal[ VerIdx ] + msh->VerDeg[ VerIdx ] ][1] = j;
+         msh->VerDeg[ VerIdx ]++;
+      }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set mesh vertices and tets' ref from the Metis partitions                  */
+/*----------------------------------------------------------------------------*/
+
+static void GetMtsRef(LplMshSct *msh, MtsSct *mts)
+{
+   int i, j, ref;
+
+   for(i=0;i<msh->NmbVer;i++)
+      msh->RefTab[i+1] = mts->part[i];
+
+   for(i=1;i<=msh->NmbTet;i++)
+   {
+      ref = msh->RefTab[ msh->TetTab[i][0] ];
+
+      for(j=1;j<4;j++)
+         if(msh->RefTab[ msh->TetTab[i][j] ] < ref)
+            ref = msh->RefTab[ msh->TetTab[i][j] ];
+
+      msh->TetTab[i][4] = ref;
+   }
+}
+#endif

@@ -50,6 +50,15 @@ typedef struct
    double   *CrdTab, box[6];
 }RenSct;
 
+#ifdef WITH_METIS
+typedef struct
+{
+   int      NmbVer, NmbTet;
+   int      *VerDeg, *VerBal, *RefTab, (*TetTab)[5], (*BalTab)[2];
+   double   MinSiz, MaxSiz, (*CrdTab)[3];
+}LplMshSct;
+#endif
+
 
 /*----------------------------------------------------------------------------*/
 /* Prototypes of public procedures                                            */
@@ -67,6 +76,10 @@ int      RestoreNumbering     (RenSct *, int, double *, ...);
 int      GetOldIndex          (RenSct *, int, int);
 int      GetNewIndex          (RenSct *, int, int);
 
+#ifdef WITH_METIS
+int      MetisPartitioning    (LplMshSct *, int);
+#endif
+   
 #ifdef __cplusplus
 } // end extern "C"
 #endif
