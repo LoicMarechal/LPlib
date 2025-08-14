@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V1.0                           */
+/*                               LPlib Helpers V1.1                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   jul 25 2025                                           */
+/* Last modification:   aug 14 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -47,6 +47,11 @@
 #else
 #define fpn double
 #endif
+
+typedef itg int1d;
+typedef itg int2d[2];
+typedef itg int11d[11];
+typedef itg int56d[56];
 
 
 /*----------------------------------------------------------------------------*/
@@ -748,4 +753,543 @@ static void GetMtsRef(LplMshSct *msh, MtsSct *mts)
       msh->TetTab[i][4] = ref;
    }
 }
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int Wlf_ComparVer1d(const void *v1, const void *v2)
+{
+  int *r1 = ( int *)v1;
+  int *r2 = ( int *)v2;
+
+	int rank1 = (*r1);
+	int rank2 = (*r2);
+
+	if ( rank1 > rank2 )
+		return 1;
+	else
+		return -1;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
+{
+  int1d k; 
+  
+  for (k=0; k<nbv; k++) {
+    if ( verLst[k] == iVer ) 
+      return k;
+  }
+  
+  return -1;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+void Wlf_AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+  int1d son, fat, jVer;
+
+  if ( Pos[iVer] > 0 )
+    return;
+  
+  (*NbrHepLst)++;
+  son = *NbrHepLst;
+  //--- reorder the list
+  while ( son > 1 ) {
+    fat  = son/2;  // son>>1;  
+    jVer = HepLst[fat];   
+    if ( (ColVer2Ver[iVer][0] > ColVer2Ver[jVer][0]) || (ColVer2Ver[iVer][0] == ColVer2Ver[jVer][0] && ColVer2Ver[iVer][1] > ColVer2Ver[jVer][1]) ) {   // switch father and son
+      HepLst[son] = jVer;
+      Pos[jVer]   = son;
+      son         = fat;
+    }
+    else {    // set vertex at is position
+      HepLst[son] = iVer;
+      Pos[iVer]   = son;
+      return;
+    } 
+  }
+
+  if ( son != 1 ) {
+    fprintf(stderr, "  ## ERROR Red2_AddHeapList: Add heap list\n");
+    exit(1);
+  }
+  
+  HepLst[son] = iVer;
+  Pos[iVer]   = son;
+
+  return;
+}
+
+
+
+
+
+/*
+
+  Remove the top vertex from the list
+   - First, remove the top vertex
+   - Second, position the last vertex at the top of the list
+   - Third, traverse the list from top downwards to reposition the first element 
+
+*/
+int1d Wlf_RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+  int1d  iVer, jVer, lVer, son1, son2, fat;
+
+  //--- Remove the top vertex
+  iVer      = HepLst[1];
+  Pos[iVer] = -1;
+  
+  //--- Put the last vertex at the top of the list
+  jVer = HepLst[*NbrHepLst];
+  fat  = 1;
+  (*NbrHepLst)--;
+
+  //--- Traverse the list from top downwards to reposition the first element
+  while ( (*NbrHepLst) > 2*fat ) {
+    son1 = 2*fat;
+    son2 = son1 + 1;
+    if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[HepLst[son2]][0]) || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[HepLst[son2]][0] && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[HepLst[son2]][1])) {
+      if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[jVer][0]) || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[jVer][0] && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[jVer][1])){
+        lVer        = HepLst[son1];
+        HepLst[fat] = lVer;
+        Pos[lVer]   = fat;
+        fat         = son1;     
+      }
+      else {   // list is updated
+        HepLst[fat] = jVer;
+        Pos[jVer]   = fat;
+        return iVer;
+      }
+    }
+    else {
+      if ( (ColVer2Ver[HepLst[son2]][0] > ColVer2Ver[jVer][0]) || (ColVer2Ver[HepLst[son2]][0] == ColVer2Ver[jVer][0] && ColVer2Ver[HepLst[son2]][1] > ColVer2Ver[jVer][1])){    // switch jVer and son2 (Peut-etre fat and son2?)
+        lVer        = HepLst[son2];
+        HepLst[fat] = lVer;
+        Pos[lVer]   = fat;
+        fat         = son2;
+      }
+      else {   // list is updated
+        HepLst[fat] = jVer;
+        Pos[jVer]   = fat;
+        return iVer;
+      }
+    }
+  }
+  
+  //--- I am at the bottom of the list: v take this position
+  HepLst[fat] = jVer;
+  Pos[jVer]   = fat;
+
+  return iVer;
+}
+
+
+
+
+/*
+
+  Update the position of a vertex in the heap list if its distance is modified
+
+*/
+void Wlf_UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+  int1d  jVer, son, fat;
+  son = Pos[iVer];
+   
+  while ( son > 1 ) {
+    fat  = son/2;
+    jVer = HepLst[fat];
+    
+    if ( (ColVer2Ver[iVer][0] > ColVer2Ver[jVer][0]) || (ColVer2Ver[iVer][0] == ColVer2Ver[jVer][0] && ColVer2Ver[iVer][1] > ColVer2Ver[jVer][1])) {   // switch father and son
+      HepLst[son] = jVer;
+      Pos[jVer]   = son;
+      son         = fat;
+    }
+    else {    // set vertex at is position
+      HepLst[son] = iVer;
+      Pos[iVer]   = son;
+      return;
+    } 
+  }
+
+  //--- I am at the top of the list ie son = 1
+  if ( son != 1 ) {
+    fprintf(stderr, "  ## ERROR Wlf_UpdateHeapListCol: Update heap list son = %d \n", son);
+    exit(1);
+  }
+
+  HepLst[son] = iVer;
+  Pos[iVer]   = son;
+
+  return;    
+}
+
+
+void Wlf_ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int1d **VerLst, int1d *NbrEdgRk2)
+{
+  int1d   jVer, iVoi, iVfr, nbv, nbr, iLay, cptLow, cptUpp, beg, end, cpt, nbrLow, nbrUpp, idxLow, idxUpp, nbrVoiRk2;
+  int1d   i, ive, idx, flg, sizLst, ref, nbvRkLow, nbvRkUpp, cptLay =0, NbrLay;
+    int1d  *verLst;
+	
+  //--- Init
+  sizLst = 512;
+  verLst = (int1d *)malloc(sizeof(int1d)*(sizLst));
+  memset(verLst, 0, sizeof(int1d)*512);
+    
+  nbv    = 0;
+  NbrLay = 1;
+
+  verLst[0] = iVer;  // Put the first to not treat it the vertices of Rk 2 BUT don't put it in the final list
+  
+  nbv++;
+
+  cpt = 0;
+  
+  //--- Vertices neighbors of rank 1: for each vertex get its ball of elements  
+  nbrVoiRk2 = 0;
+
+  jVer = iVer;
+  nbr  = PtrVer2Ver[jVer+1] - PtrVer2Ver[jVer];
+  
+  for (i=0; i<nbr; i++) {
+    idx  = PtrVer2Ver[jVer] + i;
+    iVoi = Ver2Ver[idx];
+
+    
+    //- add new vertex neighbor
+    verLst[nbv] = iVoi;
+    nbv++;
+
+    cpt++;
+   
+    if ( nbv >= sizLst ) {
+      sizLst   *= 2;
+      verLst = (int1d *)realloc(verLst, sizeof(int1d)*(sizLst));
+    }      
+  }
+
+  beg = 0;
+  end = nbv;
+  //--- Vertices neighbors of rank 2: for each vertex get its ball of elements
+  
+  for(iLay = 0 ; iLay<NbrLay ; iLay++ ) {
+    for (ive=beg; ive<end; ++ive) {  
+      jVer = verLst[ive];
+      nbr  = PtrVer2Ver[jVer+1] - PtrVer2Ver[jVer];
+    
+      for (i=0; i<nbr; i++) {
+        idx  = PtrVer2Ver[jVer] + i;
+        iVoi = Ver2Ver[idx];
+
+        flg = Wlf2_CheckIfVertexIsInTheList(iVoi, nbv, verLst);
+
+        if ( flg >= 0 ) 
+          continue;
+        
+          //- add new vertex neighbor
+        verLst[nbv] = iVoi;
+        nbv++;
+        cptLay++; // count the numver of vertices addes in that layer for computing the neigboors oh the same layer for the enxt pass
+
+        cpt++;
+     
+        if ( nbv >= sizLst ) {
+          sizLst *= 2;
+          verLst = (int1d *)realloc(verLst, sizeof(int1d)*(sizLst));
+            
+        }      
+      }
+    }
+    beg = end;
+    end += cptLay;
+    cptLay=0;
+  }
+
+  *NbrEdgRk2 = nbv-1;
+
+  VerLst[iVer] = (int1d*)malloc(sizeof(int1d)*cpt);  
+  for (i=1; i<nbv; i++){   
+    VerLst[iVer][i-1] = verLst[i];
+
+  }
+  free(verLst);
+  verLst = NULL;
+      
+  return;
+
+
+}
+
+
+void Wlf_InitializeWolfNscDataBaseNeighboorRank2(int NmbVer, int NmbEdg, int *EdgTab, int *PtrVer2Ver, int *Ver2Ver)
+{
+  int iluLvl;
+  int iVer, iEdg;
+  int1d delete, periodic;
+  int2d nbvRk1;
+  int1d  *NbrVoiRk2 = (int1d*)malloc(sizeof(int1d)*(NmbVer+1));
+   int1d **LstVoiRk2 = (int1d**)malloc(sizeof(int1d*)*(NmbVer+1));
+
+    NbrVoiRk2[0] = 0;
+
+    for (iVer=1 ; iVer<=NmbVer ; iVer ++) {
+      Wlf_ComputeNeighborsRank2_3d(PtrVer2Ver, Ver2Ver, iVer, LstVoiRk2, &(NbrVoiRk2[iVer]));
+    }
+}
+
+void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int *PtrVer2Ver, int *Ver2Ver, int *NbrVoiRk2, int56d *LstVoiRk2,int *VidPar)
+{
+  int1d       NbrCol, i, ColUpp, ColLow, NbrPar = 64, addCol =0, flag1, flag2, flag=0;
+  int1d       iVer, iCol, jCol, iPar, jPar,  iVoi, idx, idxPar, jdxPar, tgtPar , jVer, delete, periodic, nbrVoi, degMaxCol=0, degMax=0;
+  int1d       idxCol, jdxCol, NbrHepLst, NbrParTgt, IteBck, test, colRef;
+  int1d       *cntPar =NULL, *colPar=NULL, *cntColPar=NULL;
+  int1d       *cntParSrt=NULL, *cntParColVoi=NULL, *cntVoiNoCol=NULL, *LstCol=NULL, *LstColUpp=NULL, *LstColLow=NULL ;
+  int1d       NbrTyp = 2;
+  double      *cntCol = NULL , *tagDbl = NULL;
+  int1d   *HepLst, *Pos ,*bufInt, *GphColPar; 
+  int2d   *ColVer2Ver;
+  int56d  CntCol;
+  int11d  BackUpCol;
+  NbrParTgt = NmbPth;
+
+
+  tagDbl    = (double *)calloc(NmbVer+1, sizeof(double));
+
+  for (i=0;i<30;i++) {
+    CntCol[i]    = 0;
+  }
+
+  bufInt     = (int1d *)malloc((nbrPar+1)*sizeof(int1d));
+  HepLst     = (int1d *)malloc((nbrPar+1)*sizeof(int1d));
+  Pos        = (int1d *)malloc((nbrPar+1)*sizeof(int1d));
+  ColVer2Ver = (int2d *)malloc((nbrPar+1)*sizeof(int2d));
+  cntPar             = (int1d *)calloc(nbrPar+1, sizeof(int1d));
+  cntColPar          = (int1d *)calloc(nbrPar+1, sizeof(int1d));
+  colPar             = (int1d *)calloc((nbrPar+1)*1000, sizeof(int1d));
+  GphColPar        = (int1d *)calloc((nbrPar+1),sizeof(int1d));
+  cntParSrt          = (int1d *)calloc(2*(nbrPar+1), sizeof(int1d));  // use to order the partition according to their increasing degree, second int stock the idPar after ordering
+
+  // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
+
+    for(iVer=1; iVer<=NmbVer; iVer++) {
+      nbrVoi = NbrVoiRk2[iVer];
+      idxPar = VidPar[iVer];
+
+      for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++) {
+        jVer = LstVoiRk2[iVer][iVoi];
+        jdxPar = VidPar[jVer];
+
+        if ( idxPar==jdxPar ) continue;
+
+        else {
+          flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000*idxPar]); // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+
+          if ( cntPar[idxPar]>1000 || cntPar[jdxPar]>1000 ) {
+            printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
+            exit(1);
+          }
+
+          if ( flag1==-1) {
+            colPar[1000*idxPar+cntPar[idxPar]]=jdxPar;
+            cntPar[idxPar]++;
+          }
+
+          else{
+            continue;
+          }
+        }
+      }
+    }
+  cntParColVoi            = (int1d *)calloc(nbrPar+1, sizeof(int1d));
+  cntVoiNoCol             = (int1d *)calloc(nbrPar+1, sizeof(int1d));
+  LstCol                  = (int1d *)calloc(100, sizeof(int1d));
+
+  NbrHepLst=0;
+  idx=0;
+  NbrCol=0;
+
+  for (iPar = 1 ; iPar<=nbrPar; iPar++) {
+    nbrVoi = cntPar[iPar];
+    ColVer2Ver[iPar][0] = 0;   // Nbr Voisins coloriés
+    ColVer2Ver[iPar][1] = nbrVoi; // Personne n'est colorié
+    Pos[iPar]=0;
+
+    if (nbrVoi > idx ) {
+      flag = iPar;
+      idx = nbrVoi;
+    }
+  }
+
+  Wlf_AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+  for (iPar = 1 ; iPar<=nbrPar; iPar++) {
+    iCol = 0;
+    jPar = HepLst[1];
+
+    Wlf_RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+    nbrVoi = cntPar[jPar];
+
+    if (nbrVoi > 500 ){
+      printf("Maillage de merde \n");
+      exit(1);
+    }
+
+    for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++) {
+      idxPar  = colPar[1000*jPar + iVoi];
+      ColVer2Ver[idxPar][0]++;
+      // ColVer2Ver[kVer][0]++;
+      ColVer2Ver[idxPar][1]--;
+
+      if (ColVer2Ver[idxPar][1] <0) {
+        printf("ON A COLORIÉ TROP DE VOISINS A idxPar = %d\n", idxPar);
+        exit(1);
+      }
+      // printf(" \t iVoi = %d kVer = %d",iVoi, kVer);
+      if (ColVer2Ver[idxPar][0] == 1 ){
+        Wlf_AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+      }
+      if (ColVer2Ver[idxPar][0] > 1 && GphColPar[idxPar] == 0) {
+        Wlf_UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
+      }
+
+      LstCol[iVoi] = GphColPar[idxPar];
+
+
+    }
+
+    int1d nbrMin = nbrPar * 2;
+    for (i = 1; i<30; i++){
+      if ( (CntCol[i] != 0 )|| i<=10) {
+      // if ( i<=9) {
+        iVoi = 0;
+        jCol = i;
+        
+        while ( iVoi < nbrVoi ) {
+          if ( LstCol[iVoi] == jCol) // On skip la boucle car 'jCol est déja pris
+            goto nexCol;
+          //else if ( LstCol[iVoi] < jCol && LstCol[iVoi+1] > jCol ) // On a trouvé que la couleur 'flag' c'est bon
+          //  iCol = jCol;
+          //else
+          iVoi++;
+        }
+
+        // this color is available
+        if ( iCol == 0 ) {
+          iCol = jCol;
+          nbrMin = CntCol[i];
+        } 
+        else {
+          if ( CntCol[i] < nbrMin ) {
+            iCol   = jCol;
+            nbrMin = CntCol[i];
+          }
+        }
+      }
+
+      nexCol:
+      continue;
+    }
+
+
+
+    if (iCol == 0) { // On a fait tous les voisins et toutes les couleurs consécutives sont données
+      iCol = LstCol[nbrVoi-1] +  1;
+    }
+
+    GphColPar[jPar] = iCol;
+
+    CntCol[iCol]++;
+
+    // if (iCol == 16 || iCol == 2) printf(" \t %%%%%%%% Color %d for iVer %d in total %d \n ", iCol , jVer ,CntCol[iCol]);
+
+    if (iCol > NbrCol){
+      NbrCol = iCol;
+    }
+  }
+
+  //---- Check up of evrything
+  flag = 0;
+  colRef = 0;
+  for( iCol =1 ; iCol<=NbrCol ; iCol++){
+    BackUpCol[iCol] = CntCol[iCol] - NbrParTgt;
+    if (BackUpCol[iCol] != 0) {
+      flag++; //Coutn for the number of problem (must be even)
+      printf("\t Color %d has a wrong number of partition %d (Target = %d) \t", iCol, CntCol[iCol], NbrParTgt);      
+    }
+  }
+
+  // printf("flag = %d so we have %d partitions to transfer \n", flag, flag/2);
+  if (flag == 0) IteBck = 0;
+  else IteBck = 5;
+  
+  while ( flag > 0 && IteBck > 0 ) {
+    printf("flag = %d IteBck = %d \n", flag, IteBck);
+    idxCol =0;
+    jdxCol = 0;
+    for( iCol =1 ; iCol<=NbrCol ; iCol++) {
+      //--- find idxCol such that idxCol has to less and jdxCol to much partitions for a transfer
+      if ( BackUpCol[iCol] < 0 && idxCol == 0 && iCol != colRef ) idxCol = iCol; 
+
+      if ( BackUpCol[iCol] > 0 && jdxCol == 0) jdxCol = iCol; 
+  
+    }
+    //--if we find a couple of color for transfer lets try
+    if ( idxCol != 0 && jdxCol != 0 ) {  
+      colRef =  idxCol; //-- to prevent from treating the same color again and again
+      //-- Looking for a partition for the transfer
+      for (iPar = 1 ; iPar<=nbrPar; iPar++) { 
+        test = 0; 
+        nbrVoi = cntPar[iPar];
+        iCol = GphColPar[iPar];
+        
+
+        if ( iCol == jdxCol ) { //-- iPar is a partition that is in color with to many partition : it is candidate for transfer, test for jdxCol
+          // printf("Voisins de %d : ",iPar);
+          for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++){
+            jPar  = colPar[1000*(iPar)+iVoi];
+            jCol = GphColPar[jPar];
+            // printf("\t%% %d col : %d", jPar, jCol);
+            if ( jCol == idxCol ) 
+              test = 1;
+          }
+          // printf("\n");
+          if ( test == 0 ) { // Test is good iPar is a champion !!!
+            CntCol[idxCol]++;
+            CntCol[jdxCol]--;
+            GphColPar[iPar] = idxCol;
+
+            BackUpCol[idxCol]++;
+            BackUpCol[jdxCol]--;
+
+            flag=flag-2;
+            goto end;
+            // BAD IDEA !!!
+            // if (BackUpCol[idxCol]== 0  && BackUpCol[jdxCol]== 0 ) // A transfer managed to balance 2 colors
+            //   flag=flag-2;
+          } 
+            
+        }
+      }
+    }
+    end:
+    IteBck--;
+  }
+
+  if ( flag !=0 ) printf("Balance is not good\n");
+
+  return;
+}
+
+
+
 #endif
