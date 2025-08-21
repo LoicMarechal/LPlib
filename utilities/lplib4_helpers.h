@@ -36,7 +36,11 @@
 #define fpn double
 #endif
 
+#define LplGpu 1
+typedef itg int56d[56];
+
 enum LplTyp {LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex, LplMax};
+enum RenTyp {LplNoRenum, LplHilbert, LplZcurve};
 
 
 /*----------------------------------------------------------------------------*/
@@ -48,13 +52,15 @@ typedef struct
    int      dim, NmbVer, NmbEle[ LplMax ], *EleTab[ LplMax ];
    uint64_t (*RenTab[ LplMax ])[2];
    double   *CrdTab, box[6];
-}RenSct;
+}LplRenSct;
 
 #ifdef WITH_METIS
 typedef struct
 {
-   int      NmbVer, NmbTet;
-   int      *VerDeg, *VerBal, *RefTab, (*TetTab)[5], (*BalTab)[2];
+   int      NmbVer, NmbEdg, NmbTet;
+   int      *VerDeg, *VerBal, *EdgTab, *RefTab, (*TetTab)[4];
+   int      (*BalTab)[2], *TetRef, *VerDegRk2;
+   int      **VerBalRk2;
    double   MinSiz, MaxSiz, (*CrdTab)[3];
 }LplMshSct;
 #endif
@@ -69,12 +75,12 @@ extern "C" {
 #endif
 
 itg      ParallelBuildEdges   (itg, int, itg *, itg **);
-RenSct  *MeshRenumbering      (int, int, double *, ...);
-void     FreeNumberingStruct  (RenSct *);
+LplRenSct  *MeshRenumbering      (int, int, int, int, ...);
+void     FreeNumberingStruct  (LplRenSct *);
 double   EvaluateRenumbering  (int, int, int *);
-int      RestoreNumbering     (RenSct *, int, double *, ...);
-int      GetOldIndex          (RenSct *, int, int);
-int      GetNewIndex          (RenSct *, int, int);
+int      RestoreNumbering     (LplRenSct *, int, double *, ...);
+int      GetOldIndex          (LplRenSct *, int, int);
+int      GetNewIndex          (LplRenSct *, int, int);
 
 #ifdef WITH_METIS
 int      MetisPartitioning    (LplMshSct *, int);

@@ -51,6 +51,8 @@
 
 typedef itg int1d;
 typedef itg int2d[2];
+typedef double dbl3d[3];
+typedef itg int4d[4];
 typedef itg int11d[11];
 typedef itg int56d[56];
 
@@ -187,26 +189,29 @@ char *EleNam[ MAXELE ] = {
 
 void           ParEdg1        (itg, itg, int, ParSct *);
 void           ParEdg2        (itg, itg, int, ParSct *);
-static void    SetBnbBox      (RenSct *);
-static double *SetMidCrd1      (RenSct *, int);
-void SetMidCrd2(int , int *, MshSct *, double *);
-
-int      CmpFnc   (const void *, const void *);
-void     RenVer   (int, int, int, MshSct *);
-void     RenEle   (int, int, int, MshSct *);
-void     SwpMem   (MshSct *, int);
-void     SetVerDeg(MshSct *);
-void     SetMatSlc(MshSct *);
-int      SetDeg   (MshSct *, int *);
-void     ChkColGrn(MshSct *);
-uint64_t HilCod   (double *, double *, int, int);
-int      CmpFnc   (const void *, const void *);
+static void    SetBnbBox      (LplRenSct *);
+static double *SetMidCrd1     (LplRenSct *, int);
+void           SetMidCrd2     (int , int *, MshSct *, double *);
+int            CmpFnc         (const void *, const void *);
+void           RenVer         (int, int, int, MshSct *);
+void           RenEle         (int, int, int, MshSct *);
+void           SwpMem         (MshSct *, int);
+void           SetVerDeg      (MshSct *);
+void           SetMatSlc      (MshSct *);
+int            SetDeg         (MshSct *, int *);
+void           ChkColGrn      (MshSct *);
+uint64_t       HilCod         (double *, double *, int, int);
+int            CmpFnc         (const void *, const void *);
 
 #ifdef WITH_METIS
 static void    SetBal         (LplMshSct *);
 static int     GetBal         (LplMshSct *, int, int *, int *);
 static void    GetMtsRef      (LplMshSct *, MtsSct *);
 static void    BuildMetisGraph(LplMshSct *, MtsSct *);
+static void    InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *, int *, int *,
+                                                         int1d *, int1d ** );
+static void    ColoringPartitionImplicit3dNew(  int, int, int, int *, 
+                                                int *, int *, int **,int * );
 #endif
 
 
@@ -443,42 +448,84 @@ void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 /* Read, renumber through a Hilbert SFC and write the mesh                    */
 /*----------------------------------------------------------------------------*/
 
-RenSct *MeshRenumbering(int dim, int NmbVer, double *CrdTab, ...)
+LplRenSct *MeshRenumbering(int NmbGrn, int RenTyp, int GpuFlg, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 0, *TmpEle;
-   int64_t  LibParIdx;
-   double   *EleCrd, *TmpCrd;
-   RenSct   *ren;
-   va_list  VarArg;
+   int         i, j, typ, siz, NmbCpu = 0, *TmpEle;
+   int64_t     LibParIdx;
+   double      *EleCrd, *TmpCrd;
+   LplMshSct   *msh;
+   LplRenSct   *ren;
+   va_list     VarArg;
 
    // Check mandatory inputs
-   if( (dim != 3) || (NmbVer < 1) || !CrdTab)
+   if(dim != 3)
       return(NULL);
 
    // Allocate and setup the renumbering structure
-   if(!(ren = calloc(1, sizeof(RenSct))))
+   if(!(ren = calloc(1, sizeof(LplRenSct))))
       return(NULL);
 
-   ren->dim = dim;
-   ren->NmbVer = NmbVer;
-   ren->CrdTab = CrdTab;
-   SetBnbBox(ren);
-
    // Decode the variable list of arguments
-   va_start(VarArg, CrdTab);
+   va_start(VarArg, dim);
 
    do
    {
-      t = va_arg(VarArg, int);
+      typ = va_arg(VarArg, int);
 
-      if( (t > 0) && (t < LplMax) )
+      if(typ == LplVer)
       {
-         ren->NmbEle[t] = va_arg(VarArg, int);
-         ren->EleTab[t] = va_arg(VarArg, int *);
+         ren->NmbVer = va_arg(VarArg, int);
+         ren->CrdTab = va_arg(VarArg, double *);
       }
-   }while(t);
+      else if( (typ > LplVer) && (typ < LplMax) )
+      {
+         ren->NmbEle[ typ ] = va_arg(VarArg, int);
+         ren->EleTab[ typ ] = va_arg(VarArg, int *);
+      }
+   }while(typ != LplMax);
 
    va_end(VarArg);
+
+   if(!ren->NmbVer || !ren->CrdTab)
+   {
+      free(ren);
+      return(NULL);
+   }
+
+   if(NmbGrn)
+   {
+      msh = calloc(1, sizeof(LplMshSct));
+      assert(msh);
+
+      msh->NmbVer = ren->NmbVer;
+      msh->CrdTab = (dbl3d *)ren->CrdTab;
+      msh->NmbTet = ren->NmbEle[ LplTet ];
+      msh->TetTab = (int4d *)ren->EleTab[ LplTet ];
+
+      msh->TetRef = calloc(msh->NmbTet + 1, sizeof(int));
+      assert(msh->TetRef);
+
+      msh->RefTab = calloc(msh->NmbVer + 1, sizeof(int));
+      assert(msh->RefTab);
+
+      SetBal(msh);
+      MetisPartitioning(msh, NmbGrn);
+
+      msh->VerDegRk2 = calloc(msh->NmbVer + 1, sizeof(int));
+      msh->VerBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
+
+      InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEdg, msh->EdgTab,
+                                                msh->VerDeg, msh->VerBal,
+                                                msh->VerDegRk2, msh->VerBalRk2 );
+
+      ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn / NmbCpu, msh->NmbVer,
+                                       msh->VerDeg, msh->VerBal,
+                                       msh->VerDegRk2, msh->VerBalRk2, msh->RefTab );
+   }
+
+
+   ren->dim = dim;
+   SetBnbBox(ren);
 
    // Launch the required number of threads
    if(!(LibParIdx = InitParallel(NmbCpu)))
@@ -492,44 +539,50 @@ RenSct *MeshRenumbering(int dim, int NmbVer, double *CrdTab, ...)
    if(!(ren->RenTab[0] = malloc((ren->NmbVer+1) * 2 * sizeof(int64_t))))
       return(NULL);
 
-   if(!HilbertRenumbering(LibParIdx, NmbVer, ren->box, (double (*)[3])ren->CrdTab, ren->RenTab[0]))
+   if(!HilbertRenumbering( LibParIdx, ren->NmbVer, ren->box,
+                           (double (*)[3])ren->CrdTab, ren->RenTab[0]) )
+   {
       return(NULL);
+   }
 
 
    // --------------------
    // Elements renumbering
    // --------------------
 
-   for(t=LplEdg;t<LplMax;t++)
+   for(typ=LplEdg;typ<LplMax;typ++)
    {
-      if(!ren->NmbEle[t])
+
+      if(!ren->NmbEle[ typ ])
          continue;
 
-      if(!(ren->RenTab[t] = malloc( (ren->NmbEle[t] + 1) * 2 * sizeof(int64_t) )))
+      if(!(ren->RenTab[ typ ] = malloc( (ren->NmbEle[ typ ] + 1) * 2 * sizeof(int64_t) )))
          return(NULL);
 
-      if(!(EleCrd = SetMidCrd1(ren, t)))
+       if(!(EleCrd = SetMidCrd1(ren, typ)))
          return(NULL);
 
-      if(!HilbertRenumbering(LibParIdx, ren->NmbEle[t], ren->box, (double (*)[3])EleCrd, ren->RenTab[t]))
+      if(!HilbertRenumbering( LibParIdx, ren->NmbEle[ typ ], ren->box,
+                              (double (*)[3])EleCrd, ren->RenTab[ typ ]) )
+      {
          return(NULL);
+      }
 
       free(EleCrd);
-      siz = EleSiz[t];
+      siz = EleSiz[ typ ];
 
-      if(!(TmpEle = malloc( (ren->NmbEle[t] + 1) * siz * sizeof(int) )))
+      if(!(TmpEle = malloc( (ren->NmbEle[ typ ] + 1) * siz * sizeof(int) )))
          return(NULL);
 
-      for(i=1;i<=ren->NmbEle[t];i++)
+      for(i=1;i<=ren->NmbEle[ typ ];i++)
          for(j=0;j<siz;j++)
-            TmpEle[ i * siz + j ] = ren->RenTab[0][ ren->EleTab[t][ ren->RenTab[t][i][1] * siz + j ] ][0];
+            TmpEle[ i * siz + j ] = ren->RenTab[0][ ren->EleTab[ typ ][ ren->RenTab[ typ ][i][1] * siz + j ] ][0];
 
-      memcpy(ren->EleTab[t], TmpEle, (ren->NmbEle[t] + 1) * siz * sizeof(int));
+      memcpy(ren->EleTab[ typ ], TmpEle, (ren->NmbEle[ typ ] + 1) * siz * sizeof(int));
       free(TmpEle);
    }
 
    // Move coordinates
-
    if(!(TmpCrd = malloc( (ren->NmbVer+1) * 3 * sizeof(double) )))
       return(NULL);
 
@@ -550,7 +603,7 @@ RenSct *MeshRenumbering(int dim, int NmbVer, double *CrdTab, ...)
 /* Free all elements' numbering tables and the global structure itself        */
 /*----------------------------------------------------------------------------*/
 
-void FreeNumberingStruct(RenSct *ren)
+void FreeNumberingStruct(LplRenSct *ren)
 {
    int t;
 
@@ -593,7 +646,7 @@ double EvaluateRenumbering(int EleTyp, int NmbEle, int *EleTab)
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
-int RestoreNumbering(RenSct *ren, int NmbVer, double *CrdTab, ... )
+int RestoreNumbering(LplRenSct *ren, int NmbVer, double *CrdTab, ... )
 {
    return(0);
 }
@@ -603,7 +656,7 @@ int RestoreNumbering(RenSct *ren, int NmbVer, double *CrdTab, ... )
 /* Get an entity's index in the old numbering from its current one            */
 /*----------------------------------------------------------------------------*/
 
-int GetOldIndex(RenSct *ren, int typ, int idx)
+int GetOldIndex(LplRenSct *ren, int typ, int idx)
 {
    return(ren->RenTab[ typ ][ idx ][0]);
 }
@@ -613,7 +666,7 @@ int GetOldIndex(RenSct *ren, int typ, int idx)
 /* Get an entity's index in the current numbering from its old one            */
 /*----------------------------------------------------------------------------*/
 
-int GetNewIndex(RenSct *ren, int typ, int idx)
+int GetNewIndex(LplRenSct *ren, int typ, int idx)
 {
    return(ren->RenTab[ typ ][ idx ][1]);
 }
@@ -623,7 +676,7 @@ int GetNewIndex(RenSct *ren, int typ, int idx)
 /* Compute a mesh's bounding box                                              */
 /*----------------------------------------------------------------------------*/
 
-static void SetBnbBox(RenSct *ren)
+static void SetBnbBox(LplRenSct *ren)
 {
    int i, j;
 
@@ -644,7 +697,7 @@ static void SetBnbBox(RenSct *ren)
 /* Compute the barycenter of any kind of element                              */
 /*----------------------------------------------------------------------------*/
 
-static double *SetMidCrd1(RenSct *ren, int typ)
+static double *SetMidCrd1(LplRenSct *ren, int typ)
 {
    int i, j, k, siz = EleSiz[ typ ];
    double *crd;
@@ -671,11 +724,14 @@ static double *SetMidCrd1(RenSct *ren, int typ)
 
 #ifdef WITH_METIS
 
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
 int MetisPartitioning(LplMshSct *msh, int NmbPar)
 {
    MtsSct mts;
 
-   SetBal(msh);
    BuildMetisGraph(msh, &mts);
    mts.nparts = NmbPar;
 
@@ -854,7 +910,7 @@ static void GetMtsRef(LplMshSct *msh, MtsSct *mts)
          if(msh->RefTab[ msh->TetTab[i][j] ] < ref)
             ref = msh->RefTab[ msh->TetTab[i][j] ];
 
-      msh->TetTab[i][4] = ref;
+      msh->TetRef[i] = ref;
    }
 }
 
@@ -1762,7 +1818,7 @@ void ChkColGrn(MshSct *msh)
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
-int Wlf_ComparVer1d(const void *v1, const void *v2)
+static int ComparVer1d(const void *v1, const void *v2)
 {
   int *r1 = ( int *)v1;
   int *r2 = ( int *)v2;
@@ -1780,7 +1836,7 @@ int Wlf_ComparVer1d(const void *v1, const void *v2)
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
-int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
+static int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
 {
   int1d k; 
   
@@ -1796,7 +1852,7 @@ int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
-void Wlf_AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+static void AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
   int1d son, fat, jVer;
 
@@ -1844,7 +1900,7 @@ void Wlf_AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos,
    - Third, traverse the list from top downwards to reposition the first element 
 
 */
-int1d Wlf_RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+static int1d RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
   int1d  iVer, jVer, lVer, son1, son2, fat;
 
@@ -1861,8 +1917,14 @@ int1d Wlf_RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *
   while ( (*NbrHepLst) > 2*fat ) {
     son1 = 2*fat;
     son2 = son1 + 1;
-    if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[HepLst[son2]][0]) || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[HepLst[son2]][0] && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[HepLst[son2]][1])) {
-      if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[jVer][0]) || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[jVer][0] && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[jVer][1])){
+    if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[HepLst[son2]][0])
+    || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[HepLst[son2]][0]
+    && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[HepLst[son2]][1]))
+    {
+      if ( (ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[jVer][0])
+      || (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[jVer][0]
+      && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[jVer][1]))
+      {
         lVer        = HepLst[son1];
         HepLst[fat] = lVer;
         Pos[lVer]   = fat;
@@ -1904,7 +1966,7 @@ int1d Wlf_RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *
   Update the position of a vertex in the heap list if its distance is modified
 
 */
-void Wlf_UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
   int1d  jVer, son, fat;
   son = Pos[iVer];
@@ -1927,7 +1989,7 @@ void Wlf_UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2
 
   //--- I am at the top of the list ie son = 1
   if ( son != 1 ) {
-    fprintf(stderr, "  ## ERROR Wlf_UpdateHeapListCol: Update heap list son = %d \n", son);
+    fprintf(stderr, "  ## ERROR UpdateHeapListCol: Update heap list son = %d \n", son);
     exit(1);
   }
 
@@ -1938,7 +2000,7 @@ void Wlf_UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2
 }
 
 
-void Wlf_ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int1d **VerLst, int1d *NbrEdgRk2)
+static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int1d **VerLst, int1d *NbrEdgRk2)
 {
   int1d   jVer, iVoi, iVfr, nbv, nbr, iLay, cptLow, cptUpp, beg, end, cpt, nbrLow, nbrUpp, idxLow, idxUpp, nbrVoiRk2;
   int1d   i, ive, idx, flg, sizLst, ref, nbvRkLow, nbvRkUpp, cptLay =0, NbrLay;
@@ -2002,7 +2064,8 @@ void Wlf_ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int
           //- add new vertex neighbor
         verLst[nbv] = iVoi;
         nbv++;
-        cptLay++; // count the numver of vertices addes in that layer for computing the neigboors oh the same layer for the enxt pass
+        cptLay++; // count the numver of vertices addes in that layer 
+        // for computing the neigboors oh the same layer for the enxt pass
 
         cpt++;
      
@@ -2034,29 +2097,33 @@ void Wlf_ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int
 }
 
 
-void Wlf_InitializeWolfNscDataBaseNeighboorRank2(int NmbVer, int NmbEdg, int *EdgTab, int *PtrVer2Ver, int *Ver2Ver)
+static void InitializeWolfNscDataBaseNeighboorRank2(  int NmbVer, int NmbEdg, int *EdgTab,
+                                                      int *PtrVer2Ver, int *Ver2Ver,
+                                                      int1d  *NbrVoiRk2, int1d **LstVoiRk2 )
 {
   int iluLvl;
   int iVer, iEdg;
   int1d delete, periodic;
   int2d nbvRk1;
-  int1d  *NbrVoiRk2 = (int1d*)malloc(sizeof(int1d)*(NmbVer+1));
-   int1d **LstVoiRk2 = (int1d**)malloc(sizeof(int1d*)*(NmbVer+1));
 
-    NbrVoiRk2[0] = 0;
+  NbrVoiRk2[0] = 0;
 
-    for (iVer=1 ; iVer<=NmbVer ; iVer ++) {
-      Wlf_ComputeNeighborsRank2_3d(PtrVer2Ver, Ver2Ver, iVer, LstVoiRk2, &(NbrVoiRk2[iVer]));
-    }
+ for (iVer=1 ; iVer<=NmbVer ; iVer ++) {
+   ComputeNeighborsRank2_3d(PtrVer2Ver, Ver2Ver, iVer, LstVoiRk2, &(NbrVoiRk2[iVer]));
+  }
 }
 
-void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int *PtrVer2Ver, int *Ver2Ver, int *NbrVoiRk2, int56d *LstVoiRk2,int *VidPar)
+static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
+                                             int *Ver2Ver, int *PtrVer2Ver,
+                                             int *NbrVoiRk2, int **LstVoiRk2, int *VidPar )
 {
   int1d       NbrCol, i, ColUpp, ColLow, NbrPar = 64, addCol =0, flag1, flag2, flag=0;
-  int1d       iVer, iCol, jCol, iPar, jPar,  iVoi, idx, idxPar, jdxPar, tgtPar , jVer, delete, periodic, nbrVoi, degMaxCol=0, degMax=0;
+  int1d       iVer, iCol, jCol, iPar, jPar,  iVoi, idx, idxPar, jdxPar, tgtPar;
+  int1d       jVer, delete, periodic, nbrVoi, degMaxCol=0, degMax=0;
   int1d       idxCol, jdxCol, NbrHepLst, NbrParTgt, IteBck, test, colRef;
   int1d       *cntPar =NULL, *colPar=NULL, *cntColPar=NULL;
-  int1d       *cntParSrt=NULL, *cntParColVoi=NULL, *cntVoiNoCol=NULL, *LstCol=NULL, *LstColUpp=NULL, *LstColLow=NULL ;
+  int1d       *cntParSrt=NULL, *cntParColVoi=NULL, *cntVoiNoCol=NULL;
+  int1d       *LstCol=NULL, *LstColUpp=NULL, *LstColLow=NULL ;
   int1d       NbrTyp = 2;
   double      *cntCol = NULL , *tagDbl = NULL;
   int1d   *HepLst, *Pos ,*bufInt, *GphColPar; 
@@ -2080,7 +2147,8 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
   cntColPar          = (int1d *)calloc(nbrPar+1, sizeof(int1d));
   colPar             = (int1d *)calloc((nbrPar+1)*1000, sizeof(int1d));
   GphColPar        = (int1d *)calloc((nbrPar+1),sizeof(int1d));
-  cntParSrt          = (int1d *)calloc(2*(nbrPar+1), sizeof(int1d));  // use to order the partition according to their increasing degree, second int stock the idPar after ordering
+  cntParSrt          = (int1d *)calloc(2*(nbrPar+1), sizeof(int1d));
+  // use to order the partition according to their increasing degree, second int stock the idPar after ordering
 
   // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
 
@@ -2095,7 +2163,8 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
         if ( idxPar==jdxPar ) continue;
 
         else {
-          flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000*idxPar]); // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+          flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000*idxPar]);
+          // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
 
           if ( cntPar[idxPar]>1000 || cntPar[jdxPar]>1000 ) {
             printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
@@ -2133,13 +2202,13 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
     }
   }
 
-  Wlf_AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+  AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
 
   for (iPar = 1 ; iPar<=nbrPar; iPar++) {
     iCol = 0;
     jPar = HepLst[1];
 
-    Wlf_RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
+    RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
 
     nbrVoi = cntPar[jPar];
 
@@ -2160,10 +2229,10 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
       }
       // printf(" \t iVoi = %d kVer = %d",iVoi, kVer);
       if (ColVer2Ver[idxPar][0] == 1 ){
-        Wlf_AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+        AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
       }
       if (ColVer2Ver[idxPar][0] > 1 && GphColPar[idxPar] == 0) {
-        Wlf_UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
+        UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
       }
 
       LstCol[iVoi] = GphColPar[idxPar];
@@ -2214,8 +2283,6 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
 
     CntCol[iCol]++;
 
-    // if (iCol == 16 || iCol == 2) printf(" \t %%%%%%%% Color %d for iVer %d in total %d \n ", iCol , jVer ,CntCol[iCol]);
-
     if (iCol > NbrCol){
       NbrCol = iCol;
     }
@@ -2257,7 +2324,8 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
         iCol = GphColPar[iPar];
         
 
-        if ( iCol == jdxCol ) { //-- iPar is a partition that is in color with to many partition : it is candidate for transfer, test for jdxCol
+        if ( iCol == jdxCol ) { //-- iPar is a partition that is in color with to many partition:
+           // it is candidate for transfer, test for jdxCol
           // printf("Voisins de %d : ",iPar);
           for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++){
             jPar  = colPar[1000*(iPar)+iVoi];
@@ -2277,9 +2345,6 @@ void Wlf_ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, int 
 
             flag=flag-2;
             goto end;
-            // BAD IDEA !!!
-            // if (BackUpCol[idxCol]== 0  && BackUpCol[jdxCol]== 0 ) // A transfer managed to balance 2 colors
-            //   flag=flag-2;
           } 
             
         }
