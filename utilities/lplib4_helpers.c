@@ -9,7 +9,7 @@
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   aug 14 2025                                           */
+/* Last modification:   aug 22 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -24,6 +24,7 @@
 #include <stdarg.h>
 #include <float.h>
 #include <math.h>
+#include <libmeshb8.h>
 
 #ifdef WITH_METIS
 #include <metis.h>
@@ -207,10 +208,11 @@ int            CmpFnc         (const void *, const void *);
 static void    SetBal         (LplMshSct *);
 static int     GetBal         (LplMshSct *, int, int *, int *);
 static void    GetMtsRef      (LplMshSct *, MtsSct *);
+static void    SetBalRk1      (LplMshSct *);
 static void    BuildMetisGraph(LplMshSct *, MtsSct *);
-static void    InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *, int *, int *,
+static void    InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *, int64_t *, int *,
                                                          int1d *, int1d ** );
-static void    ColoringPartitionImplicit3dNew(  int, int, int, int *, 
+static void    ColoringPartitionImplicit3dNew(  int, int, int, int64_t *, 
                                                 int *, int *, int **,int * );
 #endif
 
@@ -450,7 +452,7 @@ void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 
 LplRenSct *MeshRenumbering(int NmbGrn, int RenTyp, int GpuFlg, int dim, ...)
 {
-   int         i, j, typ, siz, NmbCpu = 0, *TmpEle;
+   int         i, j, typ, siz, NmbCpu = 10, *TmpEle;
    int64_t     LibParIdx;
    double      *EleCrd, *TmpCrd;
    LplMshSct   *msh;
@@ -499,6 +501,8 @@ LplRenSct *MeshRenumbering(int NmbGrn, int RenTyp, int GpuFlg, int dim, ...)
 
       msh->NmbVer = ren->NmbVer;
       msh->CrdTab = (dbl3d *)ren->CrdTab;
+      msh->NmbEdg = ren->NmbEle[ LplEdg ];
+      msh->EdgTab = ren->EleTab[ LplEdg ];
       msh->NmbTet = ren->NmbEle[ LplTet ];
       msh->TetTab = (int4d *)ren->EleTab[ LplTet ];
 
@@ -510,17 +514,38 @@ LplRenSct *MeshRenumbering(int NmbGrn, int RenTyp, int GpuFlg, int dim, ...)
 
       SetBal(msh);
       MetisPartitioning(msh, NmbGrn);
+      puts("1");
 
-      msh->VerDegRk2 = calloc(msh->NmbVer + 1, sizeof(int));
-      msh->VerBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
+      SetBalRk1(msh);
+      for(i=msh->NmbVer-10;i<=msh->NmbVer;i++)
+      {
+         printf("ver %d: deg=%d, adr=%lld, par=%d, bal=", i, msh->VerDeg[i], msh->AdrBalRk1[i], msh->RefTab[i]);
+         for(j=msh->AdrBalRk1[i]; j<msh->AdrBalRk1[i+1]; j++)
+            printf("%d ", msh->LstBalRk1[j]);
+         puts("");
+      }
+
+      puts("2");
+      msh->AdrBalRk2 = calloc(msh->NmbVer + 1, sizeof(int));
+      msh->LstBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
 
       InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEdg, msh->EdgTab,
-                                                msh->VerDeg, msh->VerBal,
-                                                msh->VerDegRk2, msh->VerBalRk2 );
+                                                msh->AdrBalRk1, msh->LstBalRk1,
+                                                msh->AdrBalRk2, msh->LstBalRk2 );
 
-      ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn / NmbCpu, msh->NmbVer,
-                                       msh->VerDeg, msh->VerBal,
-                                       msh->VerDegRk2, msh->VerBalRk2, msh->RefTab );
+      puts("3");
+      for(i=msh->NmbVer-10;i<=msh->NmbVer;i++)
+      {
+         printf("ver %d: deg=%d, adr=%p, bal=", i, msh->AdrBalRk2[i], msh->LstBalRk2[i]);
+         for(j=0; j<msh->AdrBalRk2[i]; j++)
+            printf("%d ", msh->LstBalRk2[i][j]);
+         puts("");
+      }
+
+      ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn, msh->NmbVer,
+                                       msh->AdrBalRk1, msh->LstBalRk1,
+                                       msh->AdrBalRk2, msh->LstBalRk2, msh->RefTab );
+      puts("4");
    }
 
 
@@ -840,6 +865,52 @@ static int GetBal(LplMshSct *msh, int VerIdx, int *VerTab, int *WgtTab)
    }
 
    return(NmbVer);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Setup the vertex to vertex balls table compatible with colorgrains         */
+/*----------------------------------------------------------------------------*/
+
+static void SetBalRk1(LplMshSct *msh)
+{
+   int i, j, a, b, TabSiz = 0;
+
+   msh->AdrBalRk1 = calloc(msh->NmbVer + 2, sizeof(int64_t));
+   memset(msh->VerDeg, 0, (msh->NmbVer + 1) * sizeof(int));
+   printf("NmbEdg: %d\n", msh->NmbEdg);
+
+   // Set vertices degree
+   for(i=1;i<=msh->NmbEdg;i++)
+      for(j=0;j<2;j++)
+         msh->VerDeg[ msh->EdgTab[i*2+j] ]++;
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      msh->AdrBalRk1[i] = TabSiz;
+      TabSiz += msh->VerDeg[i];
+      msh->VerDeg[i] = 0;
+   }
+
+   msh->AdrBalRk1[ msh->NmbVer + 1 ] = TabSiz;
+
+   // Allocate the global balls table and give each vertex a pointer to its own table
+   msh->LstBalRk1 = malloc(TabSiz * sizeof(int));
+
+   if(!msh->AdrBalRk1 || !msh->LstBalRk1)
+   {
+      puts("Failed to allocate memory");
+      exit(1);
+   }
+
+   // Fill the ball tables with elements type and index
+   for(i=1;i<=msh->NmbEdg;i++)
+   {
+      a = msh->EdgTab[i*2];
+      b = msh->EdgTab[i*2+1];
+      msh->LstBalRk1[ msh->AdrBalRk1[a] + msh->VerDeg[a]++ ] = b;
+      msh->LstBalRk1[ msh->AdrBalRk1[b] + msh->VerDeg[b]++ ] = a;
+   }
 }
 
 
@@ -2000,9 +2071,9 @@ static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColV
 }
 
 
-static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, int1d **VerLst, int1d *NbrEdgRk2)
+static void ComputeNeighborsRank2_3d(int64_t *AdrBalRk1, int *LstBalRk1, int1d iVer, int1d **LstBalRk2, int1d *NbrEdgRk2)
 {
-  int1d   jVer, iVoi, iVfr, nbv, nbr, iLay, cptLow, cptUpp, beg, end, cpt, nbrLow, nbrUpp, idxLow, idxUpp, nbrVoiRk2;
+  int1d   jVer, iVoi, iVfr, nbv, nbr, iLay, cptLow, cptUpp, beg, end, cpt, nbrLow, nbrUpp, idxLow, idxUpp, AdrBalRk2;
   int1d   i, ive, idx, flg, sizLst, ref, nbvRkLow, nbvRkUpp, cptLay =0, NbrLay;
     int1d  *verLst;
 	
@@ -2021,14 +2092,14 @@ static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, 
   cpt = 0;
   
   //--- Vertices neighbors of rank 1: for each vertex get its ball of elements  
-  nbrVoiRk2 = 0;
+  AdrBalRk2 = 0;
 
   jVer = iVer;
-  nbr  = PtrVer2Ver[jVer+1] - PtrVer2Ver[jVer];
+  nbr  = AdrBalRk1[jVer+1] - AdrBalRk1[jVer];
   
   for (i=0; i<nbr; i++) {
-    idx  = PtrVer2Ver[jVer] + i;
-    iVoi = Ver2Ver[idx];
+    idx  = AdrBalRk1[jVer] + i;
+    iVoi = LstBalRk1[idx];
 
     
     //- add new vertex neighbor
@@ -2050,11 +2121,11 @@ static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, 
   for(iLay = 0 ; iLay<NbrLay ; iLay++ ) {
     for (ive=beg; ive<end; ++ive) {  
       jVer = verLst[ive];
-      nbr  = PtrVer2Ver[jVer+1] - PtrVer2Ver[jVer];
+      nbr  = AdrBalRk1[jVer+1] - AdrBalRk1[jVer];
     
       for (i=0; i<nbr; i++) {
-        idx  = PtrVer2Ver[jVer] + i;
-        iVoi = Ver2Ver[idx];
+        idx  = AdrBalRk1[jVer] + i;
+        iVoi = LstBalRk1[idx];
 
         flg = Wlf2_CheckIfVertexIsInTheList(iVoi, nbv, verLst);
 
@@ -2083,9 +2154,9 @@ static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, 
 
   *NbrEdgRk2 = nbv-1;
 
-  VerLst[iVer] = (int1d*)malloc(sizeof(int1d)*cpt);  
+  LstBalRk2[iVer] = (int1d*)malloc(sizeof(int1d)*cpt);  
   for (i=1; i<nbv; i++){   
-    VerLst[iVer][i-1] = verLst[i];
+    LstBalRk2[iVer][i-1] = verLst[i];
 
   }
   free(verLst);
@@ -2098,24 +2169,24 @@ static void ComputeNeighborsRank2_3d(int *PtrVer2Ver, int *Ver2Ver, int1d iVer, 
 
 
 static void InitializeWolfNscDataBaseNeighboorRank2(  int NmbVer, int NmbEdg, int *EdgTab,
-                                                      int *PtrVer2Ver, int *Ver2Ver,
-                                                      int1d  *NbrVoiRk2, int1d **LstVoiRk2 )
+                                                      int64_t *AdrBalRk1, int *LstBalRk1,
+                                                      int1d  *AdrBalRk2, int1d **LstBalRk2 )
 {
   int iluLvl;
   int iVer, iEdg;
   int1d delete, periodic;
   int2d nbvRk1;
 
-  NbrVoiRk2[0] = 0;
+  AdrBalRk2[0] = 0;
 
  for (iVer=1 ; iVer<=NmbVer ; iVer ++) {
-   ComputeNeighborsRank2_3d(PtrVer2Ver, Ver2Ver, iVer, LstVoiRk2, &(NbrVoiRk2[iVer]));
+   ComputeNeighborsRank2_3d(AdrBalRk1, LstBalRk1, iVer, LstBalRk2, &(AdrBalRk2[iVer]));
   }
 }
 
 static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
-                                             int *Ver2Ver, int *PtrVer2Ver,
-                                             int *NbrVoiRk2, int **LstVoiRk2, int *VidPar )
+                                             int64_t *AdrBalRk1, int *LstBalRk1,
+                                             int *AdrBalRk2, int **LstBalRk2, int *VidPar )
 {
   int1d       NbrCol, i, ColUpp, ColLow, NbrPar = 64, addCol =0, flag1, flag2, flag=0;
   int1d       iVer, iCol, jCol, iPar, jPar,  iVoi, idx, idxPar, jdxPar, tgtPar;
@@ -2132,7 +2203,8 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
   int11d  BackUpCol;
   NbrParTgt = NmbPth;
 
-
+  printf("NmbPth:%d   nbrPar:%d\n", NmbPth, nbrPar);
+  puts("3.1");
   tagDbl    = (double *)calloc(NmbVer+1, sizeof(double));
 
   for (i=0;i<30;i++) {
@@ -2152,12 +2224,13 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
 
   // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
 
+  puts("3.2");
     for(iVer=1; iVer<=NmbVer; iVer++) {
-      nbrVoi = NbrVoiRk2[iVer];
+      nbrVoi = AdrBalRk2[iVer];
       idxPar = VidPar[iVer];
 
       for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++) {
-        jVer = LstVoiRk2[iVer][iVoi];
+        jVer = LstBalRk2[iVer][iVoi];
         jdxPar = VidPar[jVer];
 
         if ( idxPar==jdxPar ) continue;
@@ -2182,6 +2255,44 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
         }
       }
     }
+
+  /*
+  for(iVer=1; iVer<=NmbVer; iVer++){
+
+    nbrVoi = AdrBalRk1[iVer+1] - AdrBalRk1[iVer];
+
+    idxPar = VidPar[iVer];
+    
+    for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++){
+
+      idx  = AdrBalRk1[iVer] + iVoi; 
+      jVer = LstBalRk1[idx];
+      jdxPar = VidPar[jVer];
+
+      if ( idxPar==jdxPar ) continue;
+
+      else{
+        flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000*idxPar]); // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+
+        if ( cntPar[idxPar]>1000 || cntPar[jdxPar]>1000 ) {
+          printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
+          exit(1);
+        }
+
+        if ( flag1==-1) {
+          colPar[1000*idxPar+cntPar[idxPar]]=jdxPar;
+          cntPar[idxPar]++;
+        }
+
+        else{
+          continue;
+        }
+      }
+    }
+  }
+*/
+
+    puts("3.3");
   cntParColVoi            = (int1d *)calloc(nbrPar+1, sizeof(int1d));
   cntVoiNoCol             = (int1d *)calloc(nbrPar+1, sizeof(int1d));
   LstCol                  = (int1d *)calloc(100, sizeof(int1d));
@@ -2190,6 +2301,7 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
   idx=0;
   NbrCol=0;
 
+  puts("3.4");
   for (iPar = 1 ; iPar<=nbrPar; iPar++) {
     nbrVoi = cntPar[iPar];
     ColVer2Ver[iPar][0] = 0;   // Nbr Voisins coloriés
@@ -2201,8 +2313,10 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
       idx = nbrVoi;
     }
   }
+  puts("3.5");
 
   AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+  puts("3.6");
 
   for (iPar = 1 ; iPar<=nbrPar; iPar++) {
     iCol = 0;
@@ -2287,6 +2401,7 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
       NbrCol = iCol;
     }
   }
+  puts("3.7");
 
   //---- Check up of evrything
   flag = 0;
@@ -2298,6 +2413,7 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
       printf("\t Color %d has a wrong number of partition %d (Target = %d) \t", iCol, CntCol[iCol], NbrParTgt);      
     }
   }
+  puts("3.8");
 
   // printf("flag = %d so we have %d partitions to transfer \n", flag, flag/2);
   if (flag == 0) IteBck = 0;
@@ -2353,6 +2469,7 @@ static void ColoringPartitionImplicit3dNew(  int NmbPth, int nbrPar, int NmbVer,
     end:
     IteBck--;
   }
+  puts("3.9");
 
   if ( flag !=0 ) printf("Balance is not good\n");
 

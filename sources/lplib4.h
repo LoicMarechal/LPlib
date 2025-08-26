@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.02                                  */
+/*                               LPlib V4.03                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jul 16 2025                                           */
+/*   Last modification: aug 26 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -60,6 +60,7 @@ int      LaunchPipeline          (int64_t, void *, void *, int, int *);
 int      LaunchPipelineMultiArg  (int64_t, int, int *, void *prc, int, ...);
 int      NewType                 (int64_t, itg);
 int      ParallelMemClear        (int64_t, void *, size_t);
+int      ParallelMemCopy         (int64_t, void *, void *, size_t);
 void     ParallelQsort           (int64_t, void *, size_t, size_t, 
                                   int (*)(const void *, const void *));
 int      ResizeType              (int64_t, int, itg);

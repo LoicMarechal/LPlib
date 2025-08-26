@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V1.0                           */
+/*                               LPlib Helpers V1.1                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   jul 25 2025                                           */
+/* Last modification:   aug 22 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -58,9 +58,10 @@ typedef struct
 typedef struct
 {
    int      NmbVer, NmbEdg, NmbTet;
-   int      *VerDeg, *VerBal, *EdgTab, *RefTab, (*TetTab)[4];
-   int      (*BalTab)[2], *TetRef, *VerDegRk2;
-   int      **VerBalRk2;
+   int      *VerDeg, *VerBal, *LstBalRk1, *EdgTab, *RefTab, (*TetTab)[4];
+   int      (*BalTab)[2], *TetRef, *AdrBalRk2;
+   int64_t  *AdrBalRk1;
+   int      **LstBalRk2;
    double   MinSiz, MaxSiz, (*CrdTab)[3];
 }LplMshSct;
 #endif

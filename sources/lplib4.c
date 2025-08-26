@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.02                                  */
+/*                               LPlib V4.03                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jul 17 2025                                           */
+/*   Last modification: aug 26 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -66,8 +66,9 @@
 #define MaxVarArg 20
 #define MaxF77Arg 20
 #define WrkPerGrp 8
+#define BigMemSiz 100000000ULL
 
-enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, EndPth};
+enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, CpyMem, EndPth};
 
 
 /*----------------------------------------------------------------------------*/
@@ -101,8 +102,8 @@ typedef struct
 typedef struct
 {
    int               idx, NmbDetWrk, GrnIdx;
-   char              *ClrAdr;
-   size_t            StkSiz;
+   char              *ClrAdr, *DstAdr, *SrcAdr;
+   size_t            StkSiz, CpyMemSiz, ClrMemSiz;
    void *            *UsrStk;
    WrkSct            *wrk, **DetWrkTab;
    pthread_mutex_t   mtx;
@@ -137,7 +138,7 @@ typedef struct ParSct
    int               req, cmd, *PipWrd, SizMul, NmbVarArg, NmbDep;
    int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt, CurCol;
    int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon, clk;
-   size_t            StkSiz, ClrLinSiz;
+   size_t            StkSiz;
    void              *lmb, *VarArgTab[ MaxVarArg ];
    float             sta[2];
    void              (*prc)(itg, itg, int, void *), *arg;
@@ -849,7 +850,18 @@ static void *PthHdl(void *ptr)
          case ClrMem :
          {
             // Clear memory and signal completion to the scheduler
-            memset(pth->ClrAdr, 0, par->ClrLinSiz);
+            memset(pth->ClrAdr, 0, pth->ClrMemSiz);
+
+            pthread_mutex_lock(&par->ParMtx);
+            par->WrkCpt++;
+            pthread_cond_signal(&par->ParCnd);
+            pthread_mutex_unlock(&par->ParMtx);
+         }break;
+
+         case CpyMem :
+         {
+            // Copy memory and signal completion to the scheduler
+            memcpy(pth->DstAdr, pth->SrcAdr, pth->CpyMemSiz);
 
             pthread_mutex_lock(&par->ParMtx);
             par->WrkCpt++;
@@ -2145,32 +2157,111 @@ int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
 
 
 /*----------------------------------------------------------------------------*/
-/* Launch the loop prc on typ1 element depending on typ2                      */
+/* Tell the pthread handler to clear a chunmk of memory in parallel           */
 /*----------------------------------------------------------------------------*/
 
 int ParallelMemClear(int64_t ParIdx, void *PtrArg, size_t siz)
 {
-   char *tab = (char *)PtrArg;
-   int i;
-   PthSct *pth;
-   ParSct *par = (ParSct *)ParIdx;
+   int      i;
+   size_t   StdSiz, EndSiz;
+   PthSct   *pth;
+   ParSct   *par = (ParSct *)ParIdx;
+   char     *tab = (char *)PtrArg;
 
    // Get and check lib parallel instance, adresse and size
    if(!ParIdx || !tab || (siz < (size_t)par->NmbCpu) )
       return(0);
 
+   // If the memory chunk is too small, clear it sequentially
+   if(siz < BigMemSiz || par->NmbCpu == 1)
+   {
+      memset(PtrArg, 0, siz);
+      return(1);
+   }
+
    // Lock acces to global parameters
    pthread_mutex_lock(&par->ParMtx);
 
    par->cmd = ClrMem;
-   par->ClrLinSiz = siz / par->NmbCpu;
    par->WrkCpt = 0;
+
+   // Share the size between threads and adjust the value of the final one
+   StdSiz = siz / par->NmbCpu;
+   EndSiz = siz - StdSiz * (par->NmbCpu - 1);
 
    // Spread the buffer among each thread and wake then up
    for(i=0;i<par->NmbCpu;i++)
    {
       pth = &par->PthTab[i];
-      pth->ClrAdr = &tab[ i * par->ClrLinSiz ];
+      pth->ClrAdr = &tab[ i * StdSiz ];
+
+      // The last thread processes the remaining size
+      if(i < par->NmbCpu - 1)
+         pth->ClrMemSiz = StdSiz;
+      else
+         pth->ClrMemSiz = EndSiz;
+
+      pthread_mutex_lock(&pth->mtx);
+      pthread_cond_signal(&pth->cnd);
+      pthread_mutex_unlock(&pth->mtx);
+   }
+
+   // Wait for each thread to complete
+   while(par->WrkCpt < par->NmbCpu)
+      pthread_cond_wait(&par->ParCnd, &par->ParMtx);
+
+   pthread_mutex_unlock(&par->ParMtx);
+
+   return(1);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Tell the pthread handler to copy a chunmk of memory in parallel            */
+/*----------------------------------------------------------------------------*/
+
+int ParallelMemCopy(int64_t ParIdx, void *PtrDst, void *PtrSrc, size_t siz)
+{
+   int      i;
+   PthSct   *pth;
+   ParSct   *par = (ParSct *)ParIdx;
+   size_t   StdSiz, EndSiz;
+   char     *DstTab = (char *)PtrDst;
+   char     *SrcTab = (char *)PtrSrc;
+
+   // Get and check lib parallel instance, adresse and size
+   if(!ParIdx || !PtrDst || !PtrSrc || (siz < (size_t)par->NmbCpu) )
+      return(0);
+
+   // If the memory chunk is too small, clear it sequentially
+   if(siz < BigMemSiz || par->NmbCpu == 1)
+   {
+      memcpy(PtrDst, PtrSrc, siz);
+      return(1);
+   }
+
+   // Lock acces to global parameters
+   pthread_mutex_lock(&par->ParMtx);
+
+   par->cmd = CpyMem;
+   par->WrkCpt = 0;
+
+   // Share the size between threads and adjust the value of the final one
+   StdSiz = siz / par->NmbCpu;
+   EndSiz = siz - StdSiz * (par->NmbCpu - 1);
+
+   // Spread the buffer among each thread and wake then up
+   for(i=0;i<par->NmbCpu;i++)
+   {
+      pth = &par->PthTab[i];
+      pth->DstAdr = &DstTab[ i * StdSiz ];
+      pth->SrcAdr = &SrcTab[ i * StdSiz ];
+
+      // The last thread processes the remaining size
+      if(i < par->NmbCpu - 1)
+         pth->CpyMemSiz = StdSiz;
+      else
+         pth->CpyMemSiz = EndSiz;
 
       pthread_mutex_lock(&pth->mtx);
       pthread_cond_signal(&pth->cnd);
