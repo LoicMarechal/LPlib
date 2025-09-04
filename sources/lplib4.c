@@ -1183,7 +1183,6 @@ static void UpdBlkSiz(ParSct *par, TypSct *typ)
    {
       typ->BigWrkTab[i].ItlTab[0][0] = NewBlk[i][0];
       typ->BigWrkTab[i].ItlTab[0][1] = NewBlk[i][1];
-      //printf("BigBlk %3d: %8d -> %8d, size = %8d\n", i, NewBlk[i][0], NewBlk[i][1], NewBlk[i][1] - NewBlk[i][0]);
    }
 }
 
@@ -3618,7 +3617,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int 
          for(i=1;i<=NmbGrn;i++)
             msh->EleGrnPar[t][i][0] = msh->EleGrnPar[t][i][1] = 0;
 
-         printf("ele %d = %d items\n", t, msh->NmbEle[t]);
          for(i=1;i<=msh->NmbEle[t];i++)
          {
             grn = msh->EleGrn[t][i];
@@ -4274,10 +4272,10 @@ static int MetisPartitioning(LplSct *msh, int NmbPar)
 {
    int i;
    MtsSct mts;
-   puts("a");
+   puts("Build Metis graph");
    BuildMetisGraph(msh, &mts);
    mts.nparts = NmbPar;
-   puts("b");
+   puts("Call Metis partitioning");
 
    if(METIS_PartGraphKway( &mts.nvtxs, &mts.ncon, mts.xadj, mts.adjncy,
                            NULL, NULL, NULL, &mts.nparts, NULL, NULL,
@@ -4286,11 +4284,10 @@ static int MetisPartitioning(LplSct *msh, int NmbPar)
       return(0);
    }
 
-   puts("c");
+   puts("Extract partitions");
    for(i=0;i<msh->NmbVer;i++)
       msh->VerGrn[i+1] = mts.part[i]+1;
 
-   puts("d");
    return(1);
 }
 
