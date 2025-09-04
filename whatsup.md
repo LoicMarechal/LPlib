@@ -1,6 +1,8 @@
-### June 2025
+### September 2025
 
-Beta version of color-grains parallelism.
+Beta version of color-grains parallelism now working on a basic example.
+
+Optional integration with Metis allows for a comprehensive renumbering procedure that performs all needed steps in one go.
 
 
 ### March 2025

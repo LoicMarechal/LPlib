@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LPlib  version 4.00
+## LPlib  version 4.10
 A parallelization framework for numerical simulation
 
 ## Overview
@@ -40,6 +40,7 @@ You may download some sample meshes to run the examples:
 - move them into /opt/LPlib/sample_meshes/
 - decompress them with `lzip -d *.meshb.lz`
 - you may now enter /opt/LPlib/examples directory and run the various examples
+- optional call to Metis partitioning for the colorgrains renumbering scheme: install the [find Module](https://gitlab.emse.fr/bruchon/Coeur/-/blob/9540195784748cc0ba0eabd0108868297df05757/cmake/Modules/FindMETIS.cmake) and pass the -DWITH\_METIS=ON option to cmake
 
 ## Usage
 It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  

@@ -9,6 +9,7 @@ set (LPlib_VERSION_MINOR 00)
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
 option(WITH_CPACK "Enable cpack target to generate a zip file containing binaries" OFF)
+option(WITH_METIS "Enable call to Metis partitioning for colorgrains renumbering" OFF)
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -37,12 +38,12 @@ list (APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}")
 # SET FILES AND DIRECTORIES TO BE BUILT
 #######################################
 
-include_directories (${PROJECT_SOURCE_DIR}/sources)
-include_directories (${PROJECT_SOURCE_DIR}/utilities)
-add_subdirectory (sources)
-
 find_package(Threads)
 find_package(libMeshb 8)
+
+if(WITH_METIS)
+   find_package(metis)
+endif()
 
 if(libMeshb_FOUND)
    include_directories (${libMeshb_INCLUDE_DIRS})
@@ -54,6 +55,17 @@ else()
    Consequently, examples and utilities will not be built.
    You can download it from GitHUB at https://github.com/LoicMarechal/libMeshb")
 endif()
+
+if(METIS_FOUND)
+   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWITH_METIS")
+   include_directories (${METIS_INCLUDE_DIRS})
+   message ("METIS_INCLUDE_DIRS " ${METIS_INCLUDE_DIRS})
+   message ("METIS_LIBRARIES " ${METIS_LIBRARIES})
+endif()
+
+include_directories (${PROJECT_SOURCE_DIR}/sources)
+include_directories (${PROJECT_SOURCE_DIR}/utilities)
+add_subdirectory (sources)
 
 install (FILES LICENSE.txt copyright.txt DESTINATION share/LPlib)
 install (DIRECTORY sample_meshes DESTINATION share/LPlib)

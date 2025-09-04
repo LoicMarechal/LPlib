@@ -274,9 +274,9 @@ static void      *GrnHdl         (void *ptr);
 static void       UpdBlkSiz      (ParSct *, TypSct *);
 static void       SetBndBox      (LplSct *);
 static void       SetMidCrd      (int , int *, LplSct *, double *);
-int               CmpFnc         (const void *, const void *);
-void              RenVer         (int, int, int, LplSct *);
-void              RenEle         (int, int, int, LplSct *);
+static int               CmpFnc         (const void *, const void *);
+static void              RenVer         (int, int, int, LplSct *);
+static void              RenEle         (int, int, int, LplSct *);
 static void       SetVerDeg      (LplSct *);
 static void       SetMatSlc      (LplSct *);
 static int        SetDeg         (LplSct *, int *);
@@ -3769,7 +3769,7 @@ static void SetBndBox(LplSct *msh)
 /* Comparison of two items for the qsort                                      */
 /*----------------------------------------------------------------------------*/
 
-int CmpFnc(const void *a, const void *b)
+static int CmpFnc(const void *a, const void *b)
 {
    uint64_t *pa = (uint64_t *)a, *pb = (uint64_t *)b;
 
@@ -3848,7 +3848,7 @@ static uint64_t GetHilCod(double crd[3], double box[6], int itr, int mod)
 /* Parallel loop renumbering vertices                                         */
 /*----------------------------------------------------------------------------*/
 
-void RenVer(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
+static void RenVer(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
 {
    int i;
    uint64_t ColCod = 0, GrnCod = 0, DegCod = 0, SchCod = 0;
@@ -3942,7 +3942,7 @@ static void SetMidCrd(int NmbVer, int *EleTab, LplSct *msh, double *crd)
 /* Parallel loop renumbering any kind of element                              */
 /*----------------------------------------------------------------------------*/
 
-void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
+static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
 {
    char     *BytPtr;
    int      i, j, ref, t = msh->TypIdx, siz = EleSiz[t];
