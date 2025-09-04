@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.03                                  */
+/*                               LPlib V4.10                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: aug 26 2025                                           */
+/*   Last modification: sep 04 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -26,6 +26,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
+#include <float.h>
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
 #include "lplib4.h"
 
 #ifdef _WIN32
@@ -42,18 +47,22 @@
 #include <pthread.h>
 #endif
 
-#include <math.h>
-#include <errno.h>
-#include <limits.h>
-
 #ifdef WITH_LIBMEMBLOCKS
 #include <libmemblocks1.h>
 #endif
 
+#ifdef WITH_METIS
+#include <metis.h>
+#endif
+
 
 /*----------------------------------------------------------------------------*/
-/* Defines                                                                    */
+/* Defintion of macro commands and constants                                  */
 /*----------------------------------------------------------------------------*/
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define POW(a)    ((a) * (a))
 
 #define MaxLibPar 10
 #define MaxTyp    100
@@ -67,7 +76,13 @@
 #define MaxF77Arg 20
 #define WrkPerGrp 8
 #define BigMemSiz 100000000ULL
+#define MAXEDG    1000
+#define MAXITR    21
+#define HILMOD    0
+#define OCTMOD    1
+#define RNDMOD    2
 
+enum {HilMod=0, OctMod, RndMod, IniMod, TopMod};
 enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, CpyMem, EndPth};
 
 
@@ -163,34 +178,121 @@ typedef struct
    int               (*compar)(const void *, const void *);
 }PipArgSct;
 
+typedef struct
+{
+   itg MinIdx, MaxIdx, NexBuc;
+}HshSct;
+
+#ifdef WITH_METIS
+typedef struct
+{
+   idx_t             nvtxs, nedges, ncon, nparts, *xadj, *adjncy, *VerDeg, objval, *part;
+   idx_t            *adjwgt, options[ METIS_NOPTIONS ];
+}MtsSct;
+
+typedef itg          int1d;
+typedef itg          int2d[2];
+typedef itg          int11d[11];
+typedef itg          int56d[56];
+
+#endif
+
+
+/*----------------------------------------------------------------------------*/
+/* Global tables                                                              */
+/*----------------------------------------------------------------------------*/
+
+// Tetrahderon's table of edges
+static const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+
+// number of nodes per element kind
+static const int EleSiz[ LplMax ] = {0,2,3,4,4,5,6,8,3,6,9,10,14,18,27};
+
+// For each kind of element: GMF keyword strings
+static const char *EleNam[ LplMax ] = {
+   "Vertices        ",
+   "Edges           ",
+   "Triangles       ",
+   "Quadrilaterals  ",
+   "Tetrahedra      ",
+   "Pyramids        ",
+   "Prisms          ",
+   "Hexahedra       ",
+   "EdgesP2         ",
+   "TrianglesP2     ",
+   "QuadrilateralsQ2",
+   "TetrahedraP2    ",
+   "PyramidsP2      ",
+   "PrismsP2        ",
+   "HexahedraQ2     " };
+
+// For each kind of element: low vertex degree and highest vertex degree
+static const int MaxDeg[ LplMax ][2] = {
+   { 0,   0},
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32},
+   { 2,   8},
+   { 8,  32},
+   { 4,  16},
+   {32, 128},
+   {16,  64},
+   {16,  64},
+   { 8,  32} };
+
 
 /*----------------------------------------------------------------------------*/
 /* Private procedures' prototypes                                             */
 /*----------------------------------------------------------------------------*/
 
-static int     SetBit      (int *, int);
-static int     GetBit      (int *, int);
-static void    ClrBit      (int *, int);
-static int     AndWrd      (int, int *, int *);
-static void    AddWrd      (int, int *, int *);
-static void    SubWrd      (int, int *, int *);
-static void    ClrWrd      (int, int *);
-static void    CpyWrd      (int, int *, int *);
-int            CmpWrk      (const void *, const void *);
-static void   *PipHdl      (void *);
-static void   *PthHdl      (void *);
-static WrkSct *NexWrk      (ParSct *, int);
-void           PipSrt      (PipArgSct *);
-static void    CalVarArgPip(PipSct *, void *);
-static void    CalVarArgPrc(itg, itg, int, ParSct *);
-static int64_t IniPar      (int, size_t, void *);
-static void    SetItlBlk   (ParSct *, TypSct *);
-static int     SetGrp      (ParSct *, TypSct *);
-static void   *LPL_malloc  (void *, int64_t);
-static void   *LPL_calloc  (void *, int64_t, int64_t);
-static void    LPL_free    (void *, void *);
-static void   *GrnHdl      (void *ptr);
-static void    UpdBlkSiz   (ParSct *, TypSct *);
+static int        SetBit         (int *, int);
+static int        GetBit         (int *, int);
+static void       ClrBit         (int *, int);
+static int        AndWrd         (int, int *, int *);
+static void       AddWrd         (int, int *, int *);
+static void       SubWrd         (int, int *, int *);
+static void       ClrWrd         (int, int *);
+static void       CpyWrd         (int, int *, int *);
+int               CmpWrk         (const void *, const void *);
+static void      *PipHdl         (void *);
+static void      *PthHdl         (void *);
+static WrkSct    *NexWrk         (ParSct *, int);
+void              PipSrt         (PipArgSct *);
+static void       CalVarArgPip   (PipSct *, void *);
+static void       CalVarArgPrc   (itg, itg, int, ParSct *);
+static int64_t    IniPar         (int, size_t, void *);
+static void       SetItlBlk      (ParSct *, TypSct *);
+static int        SetGrp         (ParSct *, TypSct *);
+static void      *LPL_malloc     (void *, int64_t);
+static void      *LPL_calloc     (void *, int64_t, int64_t);
+static void       LPL_free       (void *, void *);
+static void      *GrnHdl         (void *ptr);
+static void       UpdBlkSiz      (ParSct *, TypSct *);
+static void       SetBndBox      (LplSct *);
+static void       SetMidCrd      (int , int *, LplSct *, double *);
+int               CmpFnc         (const void *, const void *);
+void              RenVer         (int, int, int, LplSct *);
+void              RenEle         (int, int, int, LplSct *);
+static void       SetVerDeg      (LplSct *);
+static void       SetMatSlc      (LplSct *);
+static int        SetDeg         (LplSct *, int *);
+static uint64_t   GetHilCod      (double *, double *, int, int);
+
+#ifdef WITH_METIS
+static void       ChkColGrn      (LplSct *);
+static void       SetV2VBal      (LplSct *);
+static void       BuildMetisGraph(LplSct *, MtsSct *);
+static int        MetisPartitioning(LplSct *, int);
+static void       InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *,
+                                                            uint64_t *, int *,
+                                                            int1d *, int1d ** );
+static int       *ColoringPartitionImplicit3dNew(  int, int, int, uint64_t *, 
+                                                   int *, int *, int **,int * );
+#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -3115,3 +3217,1723 @@ static void CalVarArgPip(PipSct *pip, void *prc)
       }break;
    }
 }
+
+
+/*----------------------------------------------------------------------------*/
+/* Read, renumber through a Hilbert SFC and write the mesh                    */
+/*----------------------------------------------------------------------------*/
+
+LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int dim, ...)
+{
+   int      i, j, t, siz, NmbCpu = 10, *TmpEle;
+   int64_t  LibParIdx;
+   double   *TmpCrd;
+   LplSct   *msh;
+   va_list  VarArg;
+   char     *SchStr[4] = {"Hilbert", "Z-curve", "random", "initial"};
+#ifdef WITH_METIS
+   int grn, *NewGrn, *ColTab, CurCol, CurGrn, NmbCol;
+#endif
+
+   // Check mandatory inputs
+   if(dim != 3)
+      return(NULL);
+
+   // Allocate and setup the renumbering structure
+   if(!(msh = calloc(1, sizeof(LplSct))))
+      return(NULL);
+
+   // Decode the variable list of arguments
+   va_start(VarArg, dim);
+
+   do
+   {
+      t = va_arg(VarArg, int);
+
+      if(t == LplVer)
+      {
+         msh->VerTyp = va_arg(VarArg, int);
+         msh->NmbVer = va_arg(VarArg, int);
+         msh->CrdTab = va_arg(VarArg, double *);
+         msh->VerRef = va_arg(VarArg, int *);
+      }
+      else if( (t >= LplEdg) && (t < LplMax) )
+      {
+         msh->EleTyp[t] = va_arg(VarArg, int);
+         msh->NmbEle[t] = va_arg(VarArg, int);
+         msh->EleTab[t] = va_arg(VarArg, int *);
+         msh->EleRef[t] = va_arg(VarArg, int *);
+      }
+   }while(t != LplMax);
+
+   va_end(VarArg);
+
+   if(!msh->NmbVer || !msh->CrdTab)
+   {
+      free(msh);
+      return(NULL);
+   }
+
+#ifdef WITH_METIS
+   if(NmbGrn)
+   {
+      msh->NmbGrn = NmbGrn;
+      msh->ColGrnMod = 1;
+
+      msh->VerGrn = calloc(msh->NmbVer + 1, sizeof(int));
+      assert(msh->VerGrn);
+
+      msh->VerCol = calloc(msh->NmbVer + 1, sizeof(int));
+      assert(msh->VerCol);
+
+      for(t=LplEdg; t<LplMax; t++)
+      {
+         if(!msh->NmbEle[t])
+            continue;
+
+         msh->EleCol[t] = calloc(msh->NmbEle[t] + 1, sizeof(int));
+         assert(msh->EleCol[t]);
+
+         msh->EleGrn[t] = calloc(msh->NmbEle[t] + 1, sizeof(int));
+         assert(msh->EleGrn[t]);
+      }
+
+      puts("set vertex balls rank 1");
+      SetV2VBal(msh);
+      puts("metis part");
+      MetisPartitioning(msh, NmbGrn);
+
+      msh->AdrBalRk2 = calloc(msh->NmbVer + 1, sizeof(int));
+      msh->LstBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
+
+      puts("set vertex balls rank 2");
+      InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEle[ LplEdg ], msh->EleTab[ LplEdg ],
+                                                msh->AdrBalRk1, msh->LstBalRk1,
+                                                msh->AdrBalRk2, msh->LstBalRk2 );
+
+      puts("color partitions");
+      ColTab = ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn, msh->NmbVer,
+                                                msh->AdrBalRk1, msh->LstBalRk1,
+                                                msh->AdrBalRk2, msh->LstBalRk2,
+                                                msh->VerGrn );
+
+      puts("set vertex color and grain");
+      for(i=1;i<=msh->NmbVer;i++)
+         msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
+
+      puts("set elements color and grain");
+      for(t=LplEdg; t<LplMax; t++)
+      {
+         if(!msh->NmbEle[t])
+            continue;
+
+         for(i=1;i<=msh->NmbEle[t];i++)
+         {
+            msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * EleSiz[t] ] ];
+            msh->EleGrn[t][i] = msh->VerGrn[ msh->EleTab[t][ i * EleSiz[t] ] ];
+         }
+      }
+
+      msh->NmbCol = 0;
+
+      for(i=1;i<=NmbGrn;i++)
+         msh->NmbCol = MAX(msh->NmbCol, ColTab[i]);
+
+      printf("NmbCol: %d\n", msh->NmbCol);
+
+      puts("check coloring pinches");
+      ChkColGrn(msh);
+
+      // Set the bit field size, maks and left shift to store the color value
+      msh->ColBit = ceil(log(msh->NmbCol) / log(2));
+      msh->ColMsk = (1ULL << msh->ColBit) - 1ULL;
+      msh->ColLft = 64 - msh->ColBit;
+
+      // Set the bit field size, maks and left shift to store the grain value
+      msh->GrnBit = ceil(log(msh->NmbGrn) / log(2));
+      msh->GrnMsk = (1ULL << msh->GrnBit) - 1ULL;
+      msh->GrnLft = 64 - msh->ColBit - msh->GrnBit;
+      puts("colouring done");
+   }
+#endif
+
+   // ----------------------------------------------------------------------
+   // Prepare references and degree related data for the GMlib modified sort
+   // ----------------------------------------------------------------------
+
+   if(GmlMod == 1)
+   {
+      SetVerDeg(msh);
+
+      // Only one bit is need to encode the high or low degree information
+      msh->DegBit = 1;
+      msh->DegMsk = 1ULL;
+      msh->DegLft = 64 - msh->ColBit - msh->GrnBit - msh->DegBit;
+
+      // Use the 8 leftmost bits to store face ref as boundary condition tag
+      msh->RefBit = 8;
+      msh->RefMsk = (1ULL << msh->RefBit) - 1ULL;
+      msh->RefLft = 64 - msh->RefBit;
+   }
+   else if(GmlMod == 2)
+   {
+      SetMatSlc(msh);
+
+      // three bits are needed to encode the 5 possible vertex degrees
+      msh->DegBit = 3;
+      msh->DegMsk = 7ULL;
+      msh->RefMsk = (1ULL << msh->DegBit) - 1ULL;
+      msh->DegLft = 64 - msh->ColBit - msh->GrnBit - msh->DegBit;
+   }
+
+
+   // ------------------------------------------------------
+   // Finaly, set the Hilbert bit field size and right shift
+   // ------------------------------------------------------
+
+   // The hilbert code is right shifted with the number of bit
+   // used by all other sorting keys
+   msh->VerHilBit = 64 - msh->ColBit - msh->GrnBit - msh->DegBit;
+   msh->VerHilRgt = msh->ColBit + msh->GrnBit + msh->DegBit;
+
+   msh->FacHilBit = 64 - msh->ColBit - msh->GrnBit - msh->RefBit;
+   msh->FacHilRgt = msh->ColBit + msh->GrnBit + msh->RefBit;
+
+   msh->VolHilBit = 64 - msh->ColBit - msh->GrnBit;
+   msh->VolHilRgt = msh->ColBit + msh->GrnBit;
+
+
+   // --------------------
+   // Vertices renumbering
+   // --------------------
+
+   printf("Sorting keys table: number of bit per key for each dimension of mesh entities\n");
+   printf(" Entity | rank4 (color) | rank3 (grain) | rank2 (degree or ref) | rank1 (%s)\n",
+            SchStr[ msh->mod ]);
+   printf(" Vertex |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh->ColBit, msh->GrnBit, msh->DegBit, msh->VerHilBit);
+
+   printf(" Face   |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh->ColBit, msh->GrnBit, msh->RefBit, msh->FacHilBit);
+
+   printf(" Volume |      %2d       |      %2d       |           %2d          |      %2d\n",
+            msh->ColBit, msh->GrnBit, 0, msh->VolHilBit);
+
+   msh->VerCod = malloc( (msh->NmbVer + 1) * 2 * sizeof(int64_t) );
+   assert(msh->VerCod);
+
+   LibParIdx = InitParallel(NmbCpu);
+
+   msh->VerTyp = NewType(LibParIdx, msh->NmbVer);
+
+   SetBndBox(msh);
+
+   LaunchParallel(LibParIdx, msh->VerTyp, 0, (void *)RenVer, (void *)msh);
+   ParallelQsort(LibParIdx, msh->VerCod[1], msh->NmbVer, 2 * sizeof(int64_t), CmpFnc);
+
+   msh->Old2New = malloc( (size_t)(msh->NmbVer+1) * sizeof(int) );
+   assert(msh->Old2New);
+
+   for(i=1;i<=msh->NmbVer;i++)
+      msh->Old2New[ msh->VerCod[i][0] ] = i;
+
+   TmpCrd = malloc( (msh->NmbVer + 1) * 3 * sizeof(double) );
+   assert(TmpCrd);
+
+   for(i=1;i<=msh->NmbVer;i++)
+      for(j=0;j<3;j++)
+         TmpCrd[ i * 3 + j ] = msh->CrdTab[ msh->VerCod[i][0] * 3 + j ];
+
+   memcpy(msh->CrdTab, TmpCrd, msh->NmbVer * 3 * sizeof(double));
+   free(TmpCrd);
+
+#ifdef WITH_METIS
+   NewGrn = malloc( (msh->NmbVer + 1) * sizeof(int) );
+   assert(NewGrn);
+
+   for(i=1;i<=msh->NmbVer;i++)
+      NewGrn[i] = msh->VerGrn[ msh->VerCod[i][0] ];
+
+   free(msh->VerGrn);
+   msh->VerGrn = NewGrn;
+
+   puts("set vertex color and grain");
+   for(i=1;i<=msh->NmbVer;i++)
+      msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
+#endif
+
+
+   // --------------------
+   // Elements renumbering
+   // --------------------
+
+   for(t=LplEdg; t<LplMax; t++)
+   {
+      if(!msh->NmbEle[t])
+         continue;
+
+      msh->EleTyp[t] = NewType(LibParIdx, msh->NmbEle[t]);
+      msh->TypIdx = t;
+      msh->EleCod[t] = malloc( (msh->NmbEle[t] + 1) * 2 * sizeof(int64_t) );
+      assert(msh->EleCod[t]);
+      LaunchParallel(LibParIdx, msh->EleTyp[t], 0, (void *)RenEle, (void *)msh);
+      ParallelQsort(LibParIdx, msh->EleCod[t][1], msh->NmbEle[t], 2 * sizeof(int64_t), CmpFnc);
+
+      siz = EleSiz[t];
+
+      TmpEle = malloc( (msh->NmbEle[t] + 1) * siz * sizeof(int) );
+      assert(TmpEle);
+
+      for(i=1;i<=msh->NmbEle[t];i++)
+         for(j=0;j<siz;j++)
+            TmpEle[ i * siz + j ] = msh->EleTab[t][ msh->EleCod[t][i][0] * siz + j ];
+
+      memcpy(msh->EleTab[t], TmpEle, (msh->NmbEle[t] + 1) * siz * sizeof(int));
+      free(TmpEle);
+
+#ifdef WITH_METIS
+      for(i=1;i<=msh->NmbEle[t];i++)
+      {
+         msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * siz ] ];
+         msh->EleGrn[t][i] = msh->VerGrn[ msh->EleTab[t][ i * siz ] ];
+      }
+#endif
+   }
+
+   StopParallel(LibParIdx);
+
+
+#ifdef WITH_METIS
+
+   // -----------------------------------------------------------------
+   // Color-grain mode: setup global colouring and each entities grains
+   // -----------------------------------------------------------------
+
+   if(NmbGrn)
+   {
+      CurCol = msh->VerCol[1];
+      NmbCol = 1;
+      CurGrn = msh->VerGrn[1];
+      NmbGrn = 1;
+
+      for(i=1;i<=msh->NmbVer;i++)
+      {
+         if(msh->VerCol[i] == CurCol)
+            msh->VerCol[i] = NmbCol;
+         else
+         {
+            CurCol = msh->VerCol[i];
+            msh->VerCol[i] = ++NmbCol;
+         }
+
+         if(msh->VerGrn[i] == CurGrn)
+            msh->VerGrn[i] = NmbGrn;
+         else
+         {
+            CurGrn = msh->VerGrn[i];
+            msh->VerGrn[i] = ++NmbGrn;
+         }
+      }
+
+      // Derive element's colors and grains from the vertices
+      for(t=LplEdg; t<LplMax; t++)
+      {
+         for(i=1;i<=msh->NmbEle[t];i++)
+         {
+            msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * EleSiz[t] ] ];
+            msh->EleGrn[t][i] = msh->VerGrn[ msh->EleTab[t][ i * EleSiz[t] ] ];
+         }
+      }
+
+      // Allocate a single colour table for the whole mesh as colours
+      // are based on vertices only
+      msh->ColPar = malloc( (msh->NmbCol + 1) * 3 * sizeof(int) );
+      assert(msh->ColPar);
+
+      // Each kind of entity needs a dedicated grain table to store
+      // the begin and ending indices. Some grains may be empty
+      msh->VerGrnPar = malloc( (msh->NmbGrn + 1) * 4 * sizeof(int) );
+      assert(msh->VerGrnPar);
+
+      for(t=LplEdg; t<LplMax; t++)
+         if(msh->NmbEle[t])
+         {
+            msh->EleGrnPar[t] = malloc( (msh->NmbGrn + 1) * 2 * sizeof(int) );
+            assert(msh->EleGrnPar[t]);
+         }
+
+      // Setup vertex colours and grains partitions
+      CurGrn = msh->VerGrn[1];
+      NmbGrn = 1;
+      msh->VerGrnPar[ NmbGrn ][0][0] = 1;
+      msh->VerGrnPar[ NmbGrn ][0][2] = msh->VerCol[1];
+      msh->VerGrnPar[ NmbGrn ][0][3] = msh->VerGrn[1];
+
+      CurCol = msh->VerCol[1];
+      NmbCol = 1;
+      msh->ColPar[ NmbCol ][0] = 1;
+      msh->ColPar[ NmbCol ][2] = NmbGrn;
+
+      for(i=1;i<msh->NmbVer;i++)
+      {
+         if(msh->VerGrn[i] != CurGrn)
+         {
+            msh->VerGrnPar[ NmbGrn ][0][1] = i - 1;
+            NmbGrn++;
+            msh->VerGrnPar[ NmbGrn ][0][0] = i;
+            CurGrn = msh->VerGrn[i];
+            msh->VerGrnPar[ NmbGrn ][0][2] = msh->VerCol[i];
+            msh->VerGrnPar[ NmbGrn ][0][3] = msh->VerGrn[i];
+
+            if(msh->VerCol[i] != CurCol)
+            {
+               msh->ColPar[ NmbCol ][1] = NmbGrn - 1;
+               NmbCol++;
+               msh->ColPar[ NmbCol ][0] = NmbGrn;
+               CurCol = msh->VerCol[i];
+               msh->ColPar[ NmbCol ][2] = msh->VerCol[i];
+            }
+         }
+      }
+
+      msh->VerGrnPar[ NmbGrn ][0][1] = msh->NmbVer;
+      msh->ColPar[ NmbCol ][1] = NmbGrn;
+
+      for(i=1;i<=NmbGrn;i++)
+         printf(  "vertex grain %3d (%3d/%3d): %8d -> %8d, size: %8d\n",
+                  i, msh->VerGrnPar[i][0][2], msh->VerGrnPar[i][0][3],
+                  msh->VerGrnPar[i][0][0], msh->VerGrnPar[i][0][1],
+                  msh->VerGrnPar[i][0][1] - msh->VerGrnPar[i][0][0] + 1);
+
+      for(i=1;i<=NmbCol;i++)
+         printf(  "vertex color %3d (%3d): %8d -> %8d, size: %8d\n",
+                  i, msh->ColPar[i][2], msh->ColPar[i][0], msh->ColPar[i][1],
+                  msh->ColPar[i][1] - msh->ColPar[i][0] + 1);
+
+      for(t= LplEdg; t<LplMax; t++)
+      {
+         if(!msh->NmbEle[t])
+            continue;
+
+         for(i=1;i<=NmbGrn;i++)
+            msh->EleGrnPar[t][i][0] = msh->EleGrnPar[t][i][1] = 0;
+
+         printf("ele %d = %d items\n", t, msh->NmbEle[t]);
+         for(i=1;i<=msh->NmbEle[t];i++)
+         {
+            grn = msh->EleGrn[t][i];
+
+            if(!msh->EleGrnPar[t][ grn ][0])
+            {
+               msh->EleGrnPar[t][ grn ][0] = i;
+               msh->EleGrnPar[t][ grn ][1] = i;
+            }
+            else
+            {
+               msh->EleGrnPar[t][ grn ][0] = MIN(msh->EleGrnPar[t][ grn ][0], i);
+               msh->EleGrnPar[t][ grn ][1] = MAX(msh->EleGrnPar[t][ grn ][1], i);
+            }
+         }
+
+         for(i=1;i<=NmbGrn;i++)
+         {
+            printf(  "%s grain %3d: %8d -> %8d, size: %8d\n",
+                     EleNam[t], i,
+                     msh->EleGrnPar[t][i][0], msh->EleGrnPar[t][i][1],
+                     msh->EleGrnPar[t][i][1] - msh->EleGrnPar[t][i][0] + 1 );
+         }
+      }
+
+      ChkColGrn(msh);
+
+      // Send vertices color and grain to the LPlib
+      SetColorGrains(ParIdx, msh->VerTyp, msh->NmbCol, (int *)msh->ColPar,
+                     msh->NmbGrn, (int *)msh->VerGrnPar);
+
+      // Send tets color and grain to the LPlib
+      SetColorGrains(ParIdx, msh->EleTyp[ LplEdg ], msh->NmbCol, (int *)msh->ColPar,
+                     msh->NmbGrn, (int *)msh->EleGrnPar[ LplEdg ]);
+
+      // Send tets color and grain to the LPlib
+      SetColorGrains(ParIdx, msh->EleTyp[ LplTet ], msh->NmbCol, (int *)msh->ColPar,
+                     msh->NmbGrn, (int *)msh->EleGrnPar[ LplTet ]);
+
+      puts("vertex, edges and tets color grains set");
+   }
+#endif
+
+
+   return(msh);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Free all elements' numbering tables and the global structure itself        */
+/*----------------------------------------------------------------------------*/
+
+void FreeNumberingStruct(LplSct *ren)
+{
+   int t;
+
+   for(t=0; t<LplMax; t++)
+      if(ren->RenTab[t])
+         free(ren->RenTab[t]);
+
+   free(ren);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Evaluate elements' numbering ranging from 0 (perfect) to 1 (random)        */
+/*----------------------------------------------------------------------------*/
+
+double EvaluateRenumbering(int EleTyp, int NmbEle, int *EleTab)
+{
+   int      i, MinVer = EleTab[3], MaxVer = EleTab[3];
+   double   dlt, NumQal = 0.;
+
+   for(i=3;i<NmbEle * EleSiz[ EleTyp ];i++)
+   {
+      if(EleTab[i] != EleTab[ i+1 ])
+      {
+         dlt = (double)EleTab[i] - (double)EleTab[ i+1 ];
+         NumQal += POW(dlt);
+      }
+
+      MinVer = MIN(MinVer, EleTab[i]);
+      MaxVer = MAX(MaxVer, EleTab[i]);
+   }
+
+   dlt = (double)MaxVer - (double)MinVer;
+   NumQal /= (NmbEle * EleSiz[ EleTyp ] * POW(dlt));
+
+   return(NumQal);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int RestoreNumbering(LplSct *ren, int NmbVer, double *CrdTab, ... )
+{
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Get an entity's index in the old numbering from its current one            */
+/*----------------------------------------------------------------------------*/
+
+int GetOldIndex(LplSct *ren, int t, int idx)
+{
+   return(ren->RenTab[t][ idx ][0]);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Get an entity's index in the current numbering from its old one            */
+/*----------------------------------------------------------------------------*/
+
+int GetNewIndex(LplSct *ren, int t, int idx)
+{
+   return(ren->RenTab[t][ idx ][1]);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute a mesh's bounding box                                              */
+/*----------------------------------------------------------------------------*/
+
+static void SetBndBox(LplSct *msh)
+{
+   int i, j;
+
+   msh->box[0] = msh->box[3] = msh->CrdTab[3];
+   msh->box[1] = msh->box[4] = msh->CrdTab[4];
+   msh->box[2] = msh->box[5] = msh->CrdTab[5];
+
+   for(i=1;i<=msh->NmbVer;i++)
+      for(j=0;j<3;j++)
+      {
+         msh->box[j  ] = MIN(msh->box[j  ], msh->CrdTab[ i*3 + j ]);
+         msh->box[j+3] = MAX(msh->box[j+3], msh->CrdTab[ i*3 + j ]);
+      }
+
+   // normalize the bounding box to map the geometry on a 64 bit cube
+   for(j=0;j<3;j++)
+      msh->box[j+3] = pow(2,64) / (msh->box[j+3] - msh->box[j]);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Comparison of two items for the qsort                                      */
+/*----------------------------------------------------------------------------*/
+
+int CmpFnc(const void *a, const void *b)
+{
+   uint64_t *pa = (uint64_t *)a, *pb = (uint64_t *)b;
+
+   if(pa[1] > pb[1])
+      return(1);
+   else
+      return(-1);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute the hilbert code from 3d coordinates                               */
+/*----------------------------------------------------------------------------*/
+
+static uint64_t GetHilCod(double crd[3], double box[6], int itr, int mod)
+{
+   uint64_t IntCrd[3], m=1ULL<<63, cod;
+   int      j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};
+   double   TmpCrd[3];
+   int      rot[8], GeoCod[8]={0,3,7,4,1,2,6,5}; // Hilbert
+   int      OctCod[8] = {5,4,7,6,1,0,3,2}; // octree or Z curve
+   int      HilCod[8][8] = {
+            {0,7,6,1,2,5,4,3}, {0,3,4,7,6,5,2,1},
+            {0,3,4,7,6,5,2,1}, {2,3,0,1,6,7,4,5},
+            {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7},
+            {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7} };
+
+   if(mod == RNDMOD)
+      return(rand());
+
+   // Convert double precision coordinates to integers
+   for(j=0;j<3;j++)
+   {
+      TmpCrd[j] = (crd[j] - box[j]) * box[j+3];
+      IntCrd[j] = (uint64_t)TmpCrd[j];
+   }
+
+   // Binary hilbert renumbering loop
+   cod = 0;
+
+   for(j=0;j<8;j++)
+      rot[j] = GeoCod[j];
+
+   for(b=0;b<itr;b++)
+   {
+      GeoWrd = 0;
+
+      for(j=0;j<3;j++)
+      {
+         if(IntCrd[j] & m)
+            GeoWrd |= BitTab[j];
+
+         IntCrd[j] = IntCrd[j]<<1;
+      }
+
+      if(mod == OCTMOD)
+      {
+         NewWrd = OctCod[ GeoWrd ];
+         cod = cod<<3 | NewWrd;
+      }
+      else
+      {
+         NewWrd = rot[ GeoWrd ];
+         cod = cod<<3 | NewWrd;
+
+         for(j=0;j<8;j++)
+            rot[j] = HilCod[ NewWrd ][ rot[j] ];
+      }
+   }
+
+   return(cod);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Parallel loop renumbering vertices                                         */
+/*----------------------------------------------------------------------------*/
+
+void RenVer(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
+{
+   int i;
+   uint64_t ColCod = 0, GrnCod = 0, DegCod = 0, SchCod = 0;
+
+   // Set the vertex code with the hilbert code, shifted by 11 bits in the case of
+   // GMlib mode to make room for the high degree bit and the 10 bit ref hash tag
+   for(i=BegIdx; i<=EndIdx; i++)
+   {
+      if(msh->ColGrnMod)
+      {
+         ColCod = (msh->VerCol[i] & msh->ColMsk) << msh->ColLft;
+         GrnCod = (msh->VerGrn[i] & msh->GrnMsk) << msh->GrnLft;
+      }
+
+      if(msh->GmlMod)
+         DegCod = (msh->VerDeg[i] & msh->DegMsk) << msh->DegLft;
+
+      if(msh->mod == IniMod)
+         SchCod = i;
+      else
+         SchCod = GetHilCod(&msh->CrdTab[ i*3 ], msh->box, MAXITR, msh->mod);
+
+      SchCod = SchCod >> msh->VerHilRgt;
+
+      msh->VerCod[i][0] = i;
+      msh->VerCod[i][1] = ColCod | GrnCod | DegCod | SchCod;
+   }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Compute the barycenter of any kind of element                              */
+/*----------------------------------------------------------------------------*/
+
+static void SetMidCrd(int NmbVer, int *EleTab, LplSct *msh, double *crd)
+{
+   int         i, j, MaxEdg;
+   double      *TetCrd[4], len, MinLen, MaxLen;
+
+   // Default treatment is to compute the element's barycenter
+   for(j=0;j<3;j++)
+      crd[j] = 0.;
+
+   for(i=0;i<NmbVer;i++)
+      for(j=0;j<3;j++)
+         crd[j] += msh->CrdTab[ EleTab[i] * 3 + j ];
+
+   for(j=0;j<3;j++)
+      crd[j] /= NmbVer;
+
+
+   return;
+   // Special handling of tetrahedra: if the element is anisotropic,
+   // use the longest edge midpoint instedad of the tet's barycenter
+   // as it better represents an elongated element
+   if(msh->TypIdx == LplTet)
+   {
+      MinLen = FLT_MAX;
+      MaxEdg = -1;
+
+      for(i=0;i<4;i++)
+         TetCrd[i] = &msh->CrdTab[ EleTab[ i * NmbVer ] * 3 ];
+
+      // Compute each edge length and search for the shortest and longest ones
+      for(i=0;i<6;i++)
+      {
+         len = POW(TetCrd[ tvpe[i][0] ][0] - TetCrd[ tvpe[i][1] ][0])
+             + POW(TetCrd[ tvpe[i][0] ][1] - TetCrd[ tvpe[i][1] ][1])
+             + POW(TetCrd[ tvpe[i][0] ][2] - TetCrd[ tvpe[i][1] ][2]);
+
+         MinLen = MIN(MinLen, len);
+
+         if(MaxEdg == -1 || len > MaxLen)
+         {
+            MaxLen = len;
+            MaxEdg = i;
+         }
+      }
+
+      // If the longest edge is more than three times longer than the shortest one
+      // the tet is anisotropic so its barycenter coordinates are replaced by
+      // the longest edge's center point
+      if(MaxEdg != -1 && MaxLen > POW(3) * MinLen)
+         for(j=0;j<3;j++)
+            crd[j] = (TetCrd[ tvpe[ MaxEdg ][0] ][j] + TetCrd[ tvpe[ MaxEdg ][1] ][j]) / 2.;
+   }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Parallel loop renumbering any kind of element                              */
+/*----------------------------------------------------------------------------*/
+
+void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
+{
+   char     *BytPtr;
+   int      i, j, ref, t = msh->TypIdx, siz = EleSiz[t];
+   double   crd[3];
+   uint64_t ColCod = 0, GrnCod = 0, RefCod = 0, SchCod = 0;
+
+   // Set the elements SFC code from their barycenter
+   for(i=BegIdx; i<=EndIdx; i++)
+   {
+      for(j=0;j<siz;j++)
+         msh->EleTab[t][ i * siz + j ] =
+            msh->Old2New[ msh->EleTab[t][ i * siz + j ] ];
+
+      if(msh->ColGrnMod)
+      {
+         ColCod = (msh->EleCol[t][i] & msh->ColMsk) << msh->ColLft;
+         GrnCod = (msh->EleGrn[t][i] & msh->GrnMsk) << msh->GrnLft;
+      }
+
+      if(msh->GmlMod && ((t == LplTri || (t == LplQad))))
+      {
+         BytPtr = (char *)&msh->EleRef[t][i];
+         ref = BytPtr[0] + BytPtr[1] + BytPtr[2] + BytPtr[3];
+         RefCod = (ref & msh->RefMsk) << msh->RefLft;
+      }
+      else
+         RefCod = 0;
+
+      if(msh->mod == IniMod)
+         SchCod = i;
+      else
+      {
+         SetMidCrd(siz, &msh->EleTab[t][ i * siz ], msh, crd);
+         SchCod = GetHilCod(crd, msh->box, MAXITR, msh->mod);
+      }
+
+      if((t == LplTri) || (t == LplQad))
+         SchCod = SchCod >> msh->FacHilRgt;
+      else if((t >= LplTet) && (t <= LplHex))
+         SchCod = SchCod >> msh->VolHilRgt;
+      else
+         SchCod = 0;
+
+      msh->EleCod[t][i][0] = i;
+      msh->EleCod[t][i][1] = ColCod | GrnCod | RefCod | SchCod;
+   }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set the code 10 upper bit with a hash key based on element's ref           */
+/*----------------------------------------------------------------------------*/
+
+static void SetVerDeg(LplSct *msh)
+{
+   int i, j, t, (*DegTab)[ LplMax ];
+ 
+   // Allocate a vertex degree table with one scalar per kind of element
+   DegTab = calloc( (size_t)(msh->NmbVer + 1), LplMax * sizeof(int));
+   assert(DegTab);
+
+   // Add each element's vertices to the degree associated to its kind
+   for(t=0; t<LplMax; t++)
+      for(i=1;i<=msh->NmbEle[t];i++)
+         for(j=0;j<EleSiz[t];j++)
+            DegTab[ msh->EleTab[t][i * EleSiz[t] + j ] ][t]++;
+
+   // Set the high or low degree flag
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      if( (DegTab[i][1] > MaxDeg[1][0])
+      ||  (DegTab[i][2] > MaxDeg[2][0])
+      ||  (DegTab[i][3] > MaxDeg[3][0])
+      ||  (DegTab[i][6] > MaxDeg[6][0]) )
+      {
+         msh->VerDeg[i] = 1;
+         msh->HghDeg++;
+
+         for(j=0;j<LplMax;j++)
+            msh->MaxDeg[j] = MAX(msh->MaxDeg[j], DegTab[i][j]);
+      }
+      else
+         msh->VerDeg[i] = 0;
+
+      // Count the number of over connected vertices
+      if( (DegTab[i][1] > MaxDeg[1][1])
+      ||  (DegTab[i][2] > MaxDeg[2][1])
+      ||  (DegTab[i][3] > MaxDeg[3][1])
+      ||  (DegTab[i][6] > MaxDeg[6][1]) )
+      {
+         msh->OvrDeg++;
+      }
+   }
+
+   // Set the right vector size for each kind of element ball
+   for(j=0;j<LplMax;j++)
+      if(msh->MaxDeg[j])
+         msh->DegVec[j] = pow(2., ceil(log2(msh->MaxDeg[j])));
+
+   // Print statistics about vertex connectivity
+   printf(  "High-connected vertices      : %3.6f%%\n",
+            (100. * (float)msh->HghDeg) / (float)msh->NmbVer );
+
+   printf(  "Over-connected vertices      : %3.6f%%\n",
+            (100. * (float)msh->OvrDeg) / (float)msh->NmbVer );
+
+   for(j=0;j<LplMax;j++)
+      if(msh->MaxDeg[j])
+         printf(  "Ball of %s     : max deg = %3d, vec size = %3d\n",
+                  EleNam[j], msh->MaxDeg[j],  msh->DegVec[j] );
+
+   puts("");
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Set the code 10 upper bit with a hash key based on element's ref           */
+/*----------------------------------------------------------------------------*/
+
+static void SetMatSlc(LplSct *msh)
+{
+   int      i, NmbEdg, *DegTab, VecCnt[6] = {0};
+   uint64_t cod, DegTot = 0, VecTot = 0;
+
+   // Allocate a degree table with one scalar per kind of element
+   DegTab = calloc( (size_t)(msh->NmbVer + 1), sizeof(int));
+   assert(DegTab);
+
+   NmbEdg = SetDeg(msh, DegTab);
+   printf("Unique edges extracted       : %d\n", NmbEdg);
+
+   // Set the vertex degree with its slice vector size code: 1 -> 5
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      if(DegTab[i] <= 16)
+         cod = 1;
+      else if(DegTab[i] <= 32)
+         cod = 2;
+      else if(DegTab[i] <= 64)
+         cod = 3;
+      else if(DegTab[i] <= 128)
+         cod = 4;
+      else
+         cod = 5;
+
+      msh->VerDeg[i] = cod;
+      VecCnt[ cod ]++;
+      DegTot += DegTab[i];
+   }
+
+   VecTot = 16 * VecCnt[1] + 32 * VecCnt[2] + 64 * VecCnt[3]
+         + 128 * VecCnt[4] + 256 * VecCnt[5];
+
+   puts("");
+   puts  ("vector |  %age  | number");
+   puts  ("----------------------------");
+   printf("   16  | %6.2f | %10d\n", (float)(100 * VecCnt[1]) / msh->NmbVer, VecCnt[1]);
+   printf("   32  | %6.2f | %10d\n", (float)(100 * VecCnt[2]) / msh->NmbVer, VecCnt[2]);
+   printf("   64  | %6.2f | %10d\n", (float)(100 * VecCnt[3]) / msh->NmbVer, VecCnt[3]);
+   printf("  128  | %6.2f | %10d\n", (float)(100 * VecCnt[4]) / msh->NmbVer, VecCnt[4]);
+   printf("  256  | %6.2f | %10d\n", (float)(100 * VecCnt[5]) / msh->NmbVer, VecCnt[5]);
+
+   puts("");
+   printf("vector filling : %3.2f%%\n", (float)(100 * DegTot) / VecTot);
+   printf("real non-zero  : %lld\n", DegTot);
+   printf("vector non-zero: %lld\n", VecTot);
+   puts("");
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Build the list of unique edges sequentialy                                 */
+/*----------------------------------------------------------------------------*/
+
+static int SetDeg(LplSct *msh, int *DegTab)
+{
+   int i, j, idx0, idx1, key, MinIdx, MaxIdx, siz, col, *tet, NmbEdg = 0;
+   HshSct *hsh, *buc;
+
+   // Allocate the hash table to store all edges
+   col = siz = msh->NmbEle[ LplTet ];
+   hsh = malloc( 7LL * (size_t)siz * sizeof(HshSct));
+   assert(hsh);
+
+   // Clear the hash table's direct entries,
+   // there is no need to clear the collision entries
+   memset(hsh, 0, siz * sizeof(HshSct));
+
+   // Loop over each tet and each tet's edges
+   for(i=1;i<=siz;i++)
+   {
+      tet = &msh->EleTab[ LplTet ][i * EleSiz[ LplTet ] ];
+
+      for(j=0;j<6;j++)
+      {
+         // Compute the hashing key from the edge's vertex indices
+         idx0 = tet[ tvpe[j][0] ];
+         idx1 = tet[ tvpe[j][1] ];
+
+         if(idx0 < idx1)
+         {
+            MinIdx = idx0;
+            MaxIdx = idx1;
+         }
+         else
+         {
+            MinIdx = idx1;
+            MaxIdx = idx0;
+         }
+
+         key = (3 * MinIdx + 5 * MaxIdx) % siz;
+
+         // If the bucket is empty, store the edge
+         if(!hsh[ key ].MinIdx)
+         {
+            hsh[ key ].MinIdx = MinIdx;
+            hsh[ key ].MaxIdx = MaxIdx;
+            NmbEdg++;
+            continue;
+         }
+
+         // Otherwise, search through the linked list
+         do
+         {
+            // If the same edge is found in the hash table, do nothing
+            if( (hsh[ key ].MinIdx == MinIdx) && (hsh[ key ].MaxIdx == MaxIdx) )
+               break;
+
+            // If not, allocate a new bucket from the overflow table
+            // and link it to the main entry
+            if(hsh[ key ].NexBuc)
+               key = hsh[ key ].NexBuc;
+            else
+            {
+               hsh[ key ].NexBuc = col;
+               key = col++;
+               hsh[ key ].MinIdx = MinIdx;
+               hsh[ key ].MaxIdx = MaxIdx;
+               hsh[ key ].NexBuc = 0;
+               NmbEdg++;
+               break;
+            }
+         }while(1);
+      }
+   }
+
+   for(i=0;i<siz;i++)
+   {
+      buc = &hsh[i];
+
+      if(buc->MinIdx)
+      {
+         DegTab[ buc->MinIdx ]++;
+         DegTab[ buc->MaxIdx ]++;
+      }
+   }
+
+   buc = &hsh[ siz ];
+
+   while(buc->MinIdx)
+   {
+      DegTab[ buc->MinIdx ]++;
+      DegTab[ buc->MaxIdx ]++;
+      buc++;
+   }
+
+   free(hsh);
+
+   return(NmbEdg);
+}
+
+
+#ifdef WITH_METIS
+
+
+/*----------------------------------------------------------------------------*/
+/* Look for possible vertex pinch between different grains from the same color*/
+/*----------------------------------------------------------------------------*/
+
+static void ChkColGrn(LplSct *msh)
+{
+   int i, j, k, VerIdx, NmbCol = 0;
+   int *VerColTab = calloc(msh->NmbVer + 1, sizeof(int));
+   int *VerGrnTab = calloc(msh->NmbVer + 1, sizeof(int));
+
+   printf("Check color-grain consistency: ");
+
+   for(i=1;i<=msh->NmbCol;i++)
+   {
+      for(j=1;j<=msh->NmbEle[ LplTet ];j++)
+      {
+         if(msh->EleCol[ LplTet ][j] != i)
+            continue;
+
+         for(k=0;k<4;k++)
+         {
+            VerIdx = msh->EleTab[ LplTet ][ j * EleSiz[ LplTet ] + k ];
+
+            if(i > VerColTab[ VerIdx ])
+            {
+               VerColTab[ VerIdx ] = i;
+               VerGrnTab[ VerIdx ] = msh->EleGrn[ LplTet ][j];
+            }
+            else if( (VerColTab[ VerIdx ] == i)
+                  && (VerGrnTab[ VerIdx ] != msh->EleGrn[ LplTet ][j]) )
+            {
+               printf("vertex %d / tet %d / grain %d / color %d, collide with grain %d\n",
+                        VerIdx, j, msh->EleGrn[ LplTet ][j], i, VerGrnTab[ VerIdx ]);
+               NmbCol++;
+            }
+         }
+      }
+   }
+
+   if(!NmbCol)
+      puts("OK");
+   else
+      printf("%d collisions\n", NmbCol);
+
+   free(VerColTab);
+   free(VerGrnTab);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+static int MetisPartitioning(LplSct *msh, int NmbPar)
+{
+   int i;
+   MtsSct mts;
+   puts("a");
+   BuildMetisGraph(msh, &mts);
+   mts.nparts = NmbPar;
+   puts("b");
+
+   if(METIS_PartGraphKway( &mts.nvtxs, &mts.ncon, mts.xadj, mts.adjncy,
+                           NULL, NULL, NULL, &mts.nparts, NULL, NULL,
+                           mts.options, &mts.objval, mts.part ) != METIS_OK)
+   {
+      return(0);
+   }
+
+   puts("c");
+   for(i=0;i<msh->NmbVer;i++)
+      msh->VerGrn[i+1] = mts.part[i]+1;
+
+   puts("d");
+   return(1);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Extract a metis graph from a tet mesh                                      */
+/*----------------------------------------------------------------------------*/
+
+static void BuildMetisGraph(LplSct *msh, MtsSct *mts)
+{
+   int      i, j;
+   int64_t  TotDeg = 0;
+
+   METIS_SetDefaultOptions(mts->options);
+
+   mts->options[ METIS_OPTION_CTYPE ]     = METIS_CTYPE_RM;
+   mts->options[ METIS_OPTION_CTYPE ]     = 0;
+   mts->options[ METIS_OPTION_CONTIG ]    = 1;
+   mts->options[ METIS_OPTION_OBJTYPE ]   = METIS_OBJTYPE_VOL;
+   mts->options[ METIS_OPTION_IPTYPE ]    = METIS_IPTYPE_RANDOM;
+
+   mts->nvtxs  = msh->NmbVer;
+   mts->nedges = msh->TotDeg;
+   mts->ncon   = 1;
+   mts->VerDeg = malloc( msh->NmbVer       * sizeof(idx_t) );
+   mts->xadj   = malloc( (msh->NmbVer + 1) * sizeof(idx_t) );
+   mts->part   = malloc( msh->NmbVer       * sizeof(idx_t) );
+   mts->adjncy = malloc( msh->TotDeg       * sizeof(idx_t) );
+
+   if(!mts->xadj || !mts->VerDeg || ! mts->adjncy || !mts->part)
+      exit(1);
+
+   for(i=0;i<msh->NmbVer;i++)
+   {
+      mts->xadj[i] = TotDeg;
+      mts->VerDeg[i] = msh->AdrBalRk1[i+2] - msh->AdrBalRk1[i+1];
+
+      for(j=msh->AdrBalRk1[i+1]; j<msh->AdrBalRk1[i+2]; j++)
+         mts->adjncy[j] = msh->LstBalRk1[j] - 1;
+
+      TotDeg += mts->VerDeg[i];
+   }
+
+   mts->xadj[ msh->NmbVer ] = TotDeg;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Setup the vertex to vertex balls table compatible with colorgrains         */
+/*----------------------------------------------------------------------------*/
+
+static void SetV2VBal(LplSct *msh)
+{
+   int      i, j, a, b;
+   int64_t  TabSiz = 0;
+
+   msh->AdrBalRk1 = calloc(msh->NmbVer + 2, sizeof(int64_t));
+   msh->VerDeg = calloc(msh->NmbVer + 1, sizeof(int));
+
+   // Set vertices degree
+   for(i=1;i<=msh->NmbEle[ LplEdg ];i++)
+      for(j=0;j<2;j++)
+         msh->VerDeg[ msh->EleTab[ LplEdg ][ i * 2 + j ] ]++;
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      msh->AdrBalRk1[i] = TabSiz;
+      TabSiz += msh->VerDeg[i];
+      msh->VerDeg[i] = 0;
+   }
+
+   msh->AdrBalRk1[ msh->NmbVer + 1 ] = TabSiz;
+
+   // Allocate the global balls table and give each vertex a pointer to its own table
+   msh->LstBalRk1 = malloc(TabSiz * sizeof(int));
+   msh->TotDeg = TabSiz;
+
+   if(!msh->AdrBalRk1 || !msh->LstBalRk1)
+   {
+      puts("Failed to allocate memory");
+      exit(1);
+   }
+
+   // Fill the ball tables with elements type and index
+   for(i=1;i<=msh->NmbEle[ LplEdg ];i++)
+   {
+      a = msh->EleTab[ LplEdg ][ i * 2     ];
+      b = msh->EleTab[ LplEdg ][ i * 2 + 1 ];
+      msh->LstBalRk1[ msh->AdrBalRk1[a] + msh->VerDeg[a]++ ] = b;
+      msh->LstBalRk1[ msh->AdrBalRk1[b] + msh->VerDeg[b]++ ] = a;
+   }
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+static int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
+{
+   int1d k;
+
+   for (k = 0; k < nbv; k++)
+   {
+      if (verLst[k] == iVer) return k;
+   }
+
+   return -1;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+static void AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+   int1d son, fat, jVer;
+
+   if (Pos[iVer] > 0) return;
+
+   (*NbrHepLst)++;
+   son = *NbrHepLst;
+   //--- reorder the list
+   while (son > 1)
+   {
+      fat  = son / 2;   // son>>1;
+      jVer = HepLst[fat];
+      if ((ColVer2Ver[iVer][0] > ColVer2Ver[jVer][0]) ||
+          (ColVer2Ver[iVer][0] == ColVer2Ver[jVer][0] && ColVer2Ver[iVer][1] > ColVer2Ver[jVer][1]))
+      {   // switch father and son
+         HepLst[son] = jVer;
+         Pos[jVer]   = son;
+         son         = fat;
+      }
+      else
+      {   // set vertex at is position
+         HepLst[son] = iVer;
+         Pos[iVer]   = son;
+         return;
+      }
+   }
+
+   if (son != 1)
+   {
+      fprintf(stderr, "  ## ERROR Red2_AddHeapList: Add heap list\n");
+      exit(1);
+   }
+
+   HepLst[son] = iVer;
+   Pos[iVer]   = son;
+
+   return;
+}
+
+
+/*
+
+  Remove the top vertex from the list
+   - First, remove the top vertex
+   - Second, position the last vertex at the top of the list
+   - Third, traverse the list from top downwards to reposition the first element
+
+*/
+static int1d RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+   int1d iVer, jVer, lVer, son1, son2, fat;
+
+   //--- Remove the top vertex
+   iVer      = HepLst[1];
+   Pos[iVer] = -1;
+
+   //--- Put the last vertex at the top of the list
+   jVer = HepLst[*NbrHepLst];
+   fat  = 1;
+   (*NbrHepLst)--;
+
+   //--- Traverse the list from top downwards to reposition the first element
+   while ((*NbrHepLst) > 2 * fat)
+   {
+      son1 = 2 * fat;
+      son2 = son1 + 1;
+      if ((ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[HepLst[son2]][0]) ||
+          (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[HepLst[son2]][0] &&
+           ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[HepLst[son2]][1]))
+      {
+         if ((ColVer2Ver[HepLst[son1]][0] > ColVer2Ver[jVer][0]) ||
+             (ColVer2Ver[HepLst[son1]][0] == ColVer2Ver[jVer][0] && ColVer2Ver[HepLst[son1]][1] > ColVer2Ver[jVer][1]))
+         {
+            lVer        = HepLst[son1];
+            HepLst[fat] = lVer;
+            Pos[lVer]   = fat;
+            fat         = son1;
+         }
+         else
+         {   // list is updated
+            HepLst[fat] = jVer;
+            Pos[jVer]   = fat;
+            return iVer;
+         }
+      }
+      else
+      {
+         if ((ColVer2Ver[HepLst[son2]][0] > ColVer2Ver[jVer][0]) ||
+             (ColVer2Ver[HepLst[son2]][0] == ColVer2Ver[jVer][0] && ColVer2Ver[HepLst[son2]][1] > ColVer2Ver[jVer][1]))
+         {   // switch jVer and son2 (Peut-etre fat and son2?)
+            lVer        = HepLst[son2];
+            HepLst[fat] = lVer;
+            Pos[lVer]   = fat;
+            fat         = son2;
+         }
+         else
+         {   // list is updated
+            HepLst[fat] = jVer;
+            Pos[jVer]   = fat;
+            return iVer;
+         }
+      }
+   }
+
+   //--- I am at the bottom of the list: v take this position
+   HepLst[fat] = jVer;
+   Pos[jVer]   = fat;
+
+   return iVer;
+}
+
+
+/*
+
+  Update the position of a vertex in the heap list if its distance is modified
+
+*/
+static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
+{
+   int1d jVer, son, fat;
+   son = Pos[iVer];
+
+   while (son > 1)
+   {
+      fat  = son / 2;
+      jVer = HepLst[fat];
+
+      if ((ColVer2Ver[iVer][0] > ColVer2Ver[jVer][0]) ||
+          (ColVer2Ver[iVer][0] == ColVer2Ver[jVer][0] && ColVer2Ver[iVer][1] > ColVer2Ver[jVer][1]))
+      {   // switch father and son
+         HepLst[son] = jVer;
+         Pos[jVer]   = son;
+         son         = fat;
+      }
+      else
+      {   // set vertex at is position
+         HepLst[son] = iVer;
+         Pos[iVer]   = son;
+         return;
+      }
+   }
+
+   //--- I am at the top of the list ie son = 1
+   if (son != 1)
+   {
+      fprintf(stderr, "  ## ERROR UpdateHeapListCol: Update heap list son = %d \n", son);
+      exit(1);
+   }
+
+   HepLst[son] = iVer;
+   Pos[iVer]   = son;
+
+   return;
+}
+
+
+static void ComputeNeighborsRank2_3d(uint64_t *AdrBalRk1, int *LstBalRk1, int1d iVer, int1d **LstBalRk2,
+                                     int1d *NbrEdgRk2)
+{
+   int1d  jVer, iVoi, nbv, nbr, iLay, beg, end, cpt;
+   int1d  i, ive, idx, flg, sizLst, cptLay = 0, NbrLay;
+   int1d *verLst;
+
+   //--- Init
+   sizLst = 512;
+   verLst = (int1d *)malloc(sizeof(int1d) * (sizLst));
+   memset(verLst, 0, sizeof(int1d) * 512);
+
+   nbv    = 0;
+   NbrLay = 1;
+
+   verLst[0] = iVer;   // Put the first to not treat it the vertices of Rk 2 BUT don't put it in the final list
+
+   nbv++;
+
+   cpt = 0;
+
+   //--- Vertices neighbors of rank 1: for each vertex get its ball of elements
+   jVer = iVer;
+   nbr  = AdrBalRk1[jVer + 1] - AdrBalRk1[jVer];
+
+   for (i = 0; i < nbr; i++)
+   {
+      idx  = AdrBalRk1[jVer] + i;
+      iVoi = LstBalRk1[idx];
+
+
+      //- add new vertex neighbor
+      verLst[nbv] = iVoi;
+      nbv++;
+
+      cpt++;
+
+      if (nbv >= sizLst)
+      {
+         sizLst *= 2;
+         verLst  = (int1d *)realloc(verLst, sizeof(int1d) * (sizLst));
+      }
+   }
+
+   beg = 0;
+   end = nbv;
+   //--- Vertices neighbors of rank 2: for each vertex get its ball of elements
+
+   for (iLay = 0; iLay < NbrLay; iLay++)
+   {
+      for (ive = beg; ive < end; ++ive)
+      {
+         jVer = verLst[ive];
+         nbr  = AdrBalRk1[jVer + 1] - AdrBalRk1[jVer];
+
+         for (i = 0; i < nbr; i++)
+         {
+            idx  = AdrBalRk1[jVer] + i;
+            iVoi = LstBalRk1[idx];
+
+            flg = Wlf2_CheckIfVertexIsInTheList(iVoi, nbv, verLst);
+
+            if (flg >= 0) continue;
+
+            //- add new vertex neighbor
+            verLst[nbv] = iVoi;
+            nbv++;
+            cptLay++;   // count the numver of vertices addes in that layer
+            // for computing the neigboors oh the same layer for the enxt pass
+
+            cpt++;
+
+            if (nbv >= sizLst)
+            {
+               sizLst *= 2;
+               verLst  = (int1d *)realloc(verLst, sizeof(int1d) * (sizLst));
+            }
+         }
+      }
+      beg     = end;
+      end    += cptLay;
+      cptLay  = 0;
+   }
+
+   *NbrEdgRk2 = nbv - 1;
+
+   LstBalRk2[iVer] = (int1d *)malloc(sizeof(int1d) * cpt);
+   for (i = 1; i < nbv; i++)
+   {
+      LstBalRk2[iVer][i - 1] = verLst[i];
+   }
+   free(verLst);
+   verLst = NULL;
+
+   return;
+}
+
+
+static void InitializeWolfNscDataBaseNeighboorRank2(int NmbVer, int NmbEdg, int *EdgTab, uint64_t *AdrBalRk1,
+                                                    int *LstBalRk1, int1d *AdrBalRk2, int1d **LstBalRk2)
+{
+   int iVer;
+
+   AdrBalRk2[0] = 0;
+
+   for (iVer = 1; iVer <= NmbVer; iVer++)
+   {
+      ComputeNeighborsRank2_3d(AdrBalRk1, LstBalRk1, iVer, LstBalRk2, &(AdrBalRk2[iVer]));
+   }
+}
+
+static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, uint64_t *AdrBalRk1, int *LstBalRk1,
+                                           int *AdrBalRk2, int **LstBalRk2, int *VidPar)
+{
+   int1d   NbrCol, i, flag1, flag = 0;
+   int1d   iVer, iCol, jCol, iPar, jPar, iVoi, idx, idxPar, jdxPar;
+   int1d   jVer, nbrVoi;
+   int1d   idxCol, jdxCol, NbrHepLst, NbrParTgt, IteBck, test, colRef;
+   int1d  *cntPar = NULL, *colPar = NULL;
+   int1d  *LstCol = NULL;
+   int1d  *HepLst, *Pos, *GphColPar;
+   int2d  *ColVer2Ver;
+   int56d  CntCol;
+   int11d  BackUpCol;
+   NbrParTgt = NmbPth;
+
+   for (i = 0; i < 30; i++)
+   {
+      CntCol[i] = 0;
+   }
+
+   HepLst     = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
+   Pos        = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
+   ColVer2Ver = (int2d *)malloc((nbrPar + 1) * sizeof(int2d));
+   cntPar     = (int1d *)calloc(nbrPar + 1, sizeof(int1d));
+   colPar     = (int1d *)calloc((nbrPar + 1) * 1000, sizeof(int1d));
+   GphColPar  = (int1d *)calloc((nbrPar + 1), sizeof(int1d));
+   // use to order the partition according to their increasing degree, second int stock the idPar after ordering
+
+   // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
+
+   for (iVer = 1; iVer <= NmbVer; iVer++)
+   {
+      nbrVoi = AdrBalRk2[iVer];
+      idxPar = VidPar[iVer];
+
+      for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+      {
+         jVer   = LstBalRk2[iVer][iVoi];
+         jdxPar = VidPar[jVer];
+
+         if (idxPar == jdxPar)
+            continue;
+
+         else
+         {
+            flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000 * idxPar]);
+            // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+
+            if (cntPar[idxPar] > 1000 || cntPar[jdxPar] > 1000)
+            {
+               printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
+               exit(1);
+            }
+
+            if (flag1 == -1)
+            {
+               colPar[1000 * idxPar + cntPar[idxPar]] = jdxPar;
+               cntPar[idxPar]++;
+            }
+
+            else
+            {
+               continue;
+            }
+         }
+      }
+   }
+
+   LstCol       = (int1d *)calloc(100, sizeof(int1d));
+
+   NbrHepLst = 0;
+   idx       = 0;
+   NbrCol    = 0;
+
+   for (iPar = 1; iPar <= nbrPar; iPar++)
+   {
+      nbrVoi              = cntPar[iPar];
+      ColVer2Ver[iPar][0] = 0;        // Nbr Voisins coloriés
+      ColVer2Ver[iPar][1] = nbrVoi;   // Personne n'est colorié
+      Pos[iPar]           = 0;
+
+      if (nbrVoi > idx)
+      {
+         flag = iPar;
+         idx  = nbrVoi;
+      }
+   }
+
+   AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+   for (iPar = 1; iPar <= nbrPar; iPar++)
+   {
+      iCol = 0;
+      jPar = HepLst[1];
+
+      RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+      nbrVoi = cntPar[jPar];
+
+      if (nbrVoi > 500)
+      {
+         printf("Maillage de merde \n");
+         exit(1);
+      }
+
+      for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+      {
+         idxPar = colPar[1000 * jPar + iVoi];
+         ColVer2Ver[idxPar][0]++;
+         // ColVer2Ver[kVer][0]++;
+         ColVer2Ver[idxPar][1]--;
+
+         if (ColVer2Ver[idxPar][1] < 0)
+         {
+            printf("ON A COLORIÉ TROP DE VOISINS A idxPar = %d\n", idxPar);
+            exit(1);
+         }
+         // printf(" \t iVoi = %d kVer = %d",iVoi, kVer);
+         if (ColVer2Ver[idxPar][0] == 1)
+         {
+            AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+         }
+         if (ColVer2Ver[idxPar][0] > 1 && GphColPar[idxPar] == 0)
+         {
+            UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
+         }
+
+         LstCol[iVoi] = GphColPar[idxPar];
+      }
+
+      int1d nbrMin = nbrPar * 2;
+      for (i = 1; i < 30; i++)
+      {
+         if ((CntCol[i] != 0) || i <= 10)
+         {
+            // if ( i<=9) {
+            iVoi = 0;
+            jCol = i;
+
+            while (iVoi < nbrVoi)
+            {
+               if (LstCol[iVoi] == jCol)   // On skip la boucle car 'jCol est déja pris
+                  goto nexCol;
+               // else if ( LstCol[iVoi] < jCol && LstCol[iVoi+1] > jCol ) // On a trouvé que la couleur 'flag' c'est
+               // bon
+               //   iCol = jCol;
+               // else
+               iVoi++;
+            }
+
+            // this color is available
+            if (iCol == 0)
+            {
+               iCol   = jCol;
+               nbrMin = CntCol[i];
+            }
+            else
+            {
+               if (CntCol[i] < nbrMin)
+               {
+                  iCol   = jCol;
+                  nbrMin = CntCol[i];
+               }
+            }
+         }
+
+      nexCol:
+         continue;
+      }
+
+
+      if (iCol == 0)
+      {   // On a fait tous les voisins et toutes les couleurs consécutives sont données
+         iCol = LstCol[nbrVoi - 1] + 1;
+      }
+
+      GphColPar[jPar] = iCol;
+
+      CntCol[iCol]++;
+
+      if (iCol > NbrCol)
+      {
+         NbrCol = iCol;
+      }
+   }
+
+   //---- Check up of evrything
+   flag   = 0;
+   colRef = 0;
+   for (iCol = 1; iCol <= NbrCol; iCol++)
+   {
+      BackUpCol[iCol] = CntCol[iCol] - NbrParTgt;
+      if (BackUpCol[iCol] != 0)
+      {
+         flag++;   // Coutn for the number of problem (must be even)
+         printf("\t Color %d has a wrong number of partition %d (Target = %d) \t", iCol, CntCol[iCol], NbrParTgt);
+      }
+   }
+
+   // printf("flag = %d so we have %d partitions to transfer \n", flag, flag/2);
+   if (flag == 0)
+      IteBck = 0;
+   else
+      IteBck = 5;
+
+   while (flag > 0 && IteBck > 0)
+   {
+      idxCol = 0;
+      jdxCol = 0;
+      for (iCol = 1; iCol <= NbrCol; iCol++)
+      {
+         //--- find idxCol such that idxCol has to less and jdxCol to much partitions for a transfer
+         if (BackUpCol[iCol] < 0 && idxCol == 0 && iCol != colRef) idxCol = iCol;
+
+         if (BackUpCol[iCol] > 0 && jdxCol == 0) jdxCol = iCol;
+      }
+      //--if we find a couple of color for transfer lets try
+      if (idxCol != 0 && jdxCol != 0)
+      {
+         colRef = idxCol;   //-- to prevent from treating the same color again and again
+         //-- Looking for a partition for the transfer
+         for (iPar = 1; iPar <= nbrPar; iPar++)
+         {
+            test   = 0;
+            nbrVoi = cntPar[iPar];
+            iCol   = GphColPar[iPar];
+
+
+            if (iCol == jdxCol)
+            {   //-- iPar is a partition that is in color with to many partition:
+                // it is candidate for transfer, test for jdxCol
+               // printf("Voisins de %d : ",iPar);
+               for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+               {
+                  jPar = colPar[1000 * (iPar) + iVoi];
+                  jCol = GphColPar[jPar];
+                  // printf("\t%% %d col : %d", jPar, jCol);
+                  if (jCol == idxCol) test = 1;
+               }
+               // printf("\n");
+               if (test == 0)
+               {   // Test is good iPar is a champion !!!
+                  CntCol[idxCol]++;
+                  CntCol[jdxCol]--;
+                  GphColPar[iPar] = idxCol;
+
+                  BackUpCol[idxCol]++;
+                  BackUpCol[jdxCol]--;
+
+                  flag = flag - 2;
+                  goto end;
+               }
+            }
+         }
+      }
+   end:
+      IteBck--;
+   }
+
+   if (flag != 0) printf("Balance is not good\n");
+
+   return (GphColPar);
+}
+
+#endif

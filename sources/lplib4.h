@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.03                                  */
+/*                               LPlib V4.10                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: aug 26 2025                                           */
+/*   Last modification: sep 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -33,6 +33,42 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
+/*----------------------------------------------------------------------------*/
+/* Defines                                                                    */
+/*----------------------------------------------------------------------------*/
+
+#define LplGpu 1
+
+enum LplTyp {  LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex,
+               LplEdgP2, LplTriP2, LplQadQ2, LplTetP2, LplPyrP2, LplPriP2,
+               LplHexQ2, LplMax };
+
+enum RenTyp {LplNoRenum, LplHilbert, LplZcurve};
+
+
+/*----------------------------------------------------------------------------*/
+/* Structures                                                                 */
+/*----------------------------------------------------------------------------*/
+
+typedef struct
+{
+   int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp;
+   int      NmbEle[ LplMax ], *EleTab[ LplMax ], EleTyp[ LplMax ], GmlMod;
+   int      MaxDeg[ LplMax ], DegVec[ LplMax ], HghDeg, OvrDeg;
+   int      ColGrnFlg, ColGrnMod, NmbCol, NmbGrn, *VerGrn, *VerCol;
+   int      (*ColPar)[3], (*VerGrnPar)[ LplMax ][4], (*EleGrnPar[ LplMax ])[2];
+   int      ColBit, GrnBit, DegBit, RefBit, VerHilBit, FacHilBit, VolHilBit;
+   int      ColLft, GrnLft, DegLft, RefLft, VerHilRgt, FacHilRgt, VolHilRgt;
+   int      *VerDeg, *VerBal, *LstBalRk1, *RefTab;
+   int      (*BalTab)[2], *AdrBalRk2, *EleCol[ LplMax ], *EleGrn[ LplMax ];
+   int      **LstBalRk2, *VerRef, *EleRef[ LplMax ];
+   uint64_t ColMsk, GrnMsk, DegMsk, RefMsk, *AdrBalRk1, TotDeg;
+   uint64_t (*RenTab[ LplMax ])[2], (*VerCod)[2], (*EleCod[ LplMax ])[2];
+   double   box[6];
+   double   MinSiz, MaxSiz, *CrdTab;
+}LplSct;
 
 
 /*----------------------------------------------------------------------------*/
@@ -77,6 +113,12 @@ int      HalveDependencyBlocks   (int64_t, int, int);
 int      SetColorGrains          (int64_t, int, int, int *, int, int *);
 int      LaunchColorGrains       (int64_t, int, void *, void *);
 int      SetElementsColorGrain   (int64_t, int, int, int , itg *);
+LplSct  *MeshRenumbering         (int64_t, int, int, int, int, ...);
+void     FreeNumberingStruct     (LplSct *);
+double   EvaluateRenumbering     (int, int, int *);
+int      RestoreNumbering        (LplSct *, int, double *, ...);
+int      GetOldIndex             (LplSct *, int, int);
+int      GetNewIndex             (LplSct *, int, int);
 
 #ifdef __cplusplus
 } // end extern "C"
