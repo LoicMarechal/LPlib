@@ -49,9 +49,9 @@ int main(int ArgCnt, char **ArgVec)
       NmbCpu = atoi(*++ArgVec);
 
    // Alloocate and initialize all three vectors
-   vec1 = malloc((size_t)(size+1) * sizeof(double));
-   vec2 = malloc((size_t)(size+1) * sizeof(double));
-   vec3 = malloc((size_t)(size+1) * sizeof(double));
+   vec1 = calloc(size+1, sizeof(double));
+   vec2 = calloc(size+1, sizeof(double));
+   vec3 = calloc(size+1, sizeof(double));
 
    if(!vec1 || !vec2 || !vec3)
    {
