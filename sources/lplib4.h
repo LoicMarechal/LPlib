@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 03 2025                                           */
+/*   Last modification: sep 05 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -58,7 +58,7 @@ typedef struct
    int      NmbEle[ LplMax ], *EleTab[ LplMax ], EleTyp[ LplMax ], GmlMod;
    int      MaxDeg[ LplMax ], DegVec[ LplMax ], HghDeg, OvrDeg;
    int      ColGrnFlg, ColGrnMod, NmbCol, NmbGrn, *VerGrn, *VerCol;
-   int      (*ColPar)[3], (*VerGrnPar)[ LplMax ][4], (*EleGrnPar[ LplMax ])[2];
+   int      (*ColPar)[2], (*VerGrnPar)[2], (*EleGrnPar[ LplMax ])[2];
    int      ColBit, GrnBit, DegBit, RefBit, VerHilBit, FacHilBit, VolHilBit;
    int      ColLft, GrnLft, DegLft, RefLft, VerHilRgt, FacHilRgt, VolHilRgt;
    int      *VerDeg, *VerBal, *LstBalRk1, *RefTab;

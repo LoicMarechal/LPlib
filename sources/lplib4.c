@@ -3222,7 +3222,8 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 /* Read, renumber through a Hilbert SFC and write the mesh                    */
 /*----------------------------------------------------------------------------*/
 
-LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int dim, ...)
+LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
+                        int RenTyp, int GmlMod, int dim, ...)
 {
    int      i, j, t, siz, NmbCpu = 10, *TmpEle;
    int64_t  LibParIdx;
@@ -3231,7 +3232,8 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int 
    va_list  VarArg;
    char     *SchStr[4] = {"Hilbert", "Z-curve", "random", "initial"};
 #ifdef WITH_METIS
-   int grn, *NewGrn, *ColTab, CurCol, CurGrn, NmbCol;
+   int      grn, *NewGrn, *ColTab, CurCol, CurGrn;
+   int      NmbCol, (*ColPar)[3], (*VerGrnPar)[4];
 #endif
 
    // Check mandatory inputs
@@ -3546,13 +3548,13 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int 
 
       // Allocate a single colour table for the whole mesh as colours
       // are based on vertices only
-      msh->ColPar = malloc( (msh->NmbCol + 1) * 3 * sizeof(int) );
-      assert(msh->ColPar);
+      ColPar = malloc( (msh->NmbCol + 1) * 3 * sizeof(int) );
+      assert(ColPar);
 
       // Each kind of entity needs a dedicated grain table to store
       // the begin and ending indices. Some grains may be empty
-      msh->VerGrnPar = malloc( (msh->NmbGrn + 1) * 4 * sizeof(int) );
-      assert(msh->VerGrnPar);
+      VerGrnPar = malloc( (msh->NmbGrn + 1) * 4 * sizeof(int) );
+      assert(VerGrnPar);
 
       for(t=LplEdg; t<LplMax; t++)
          if(msh->NmbEle[t])
@@ -3564,57 +3566,75 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int 
       // Setup vertex colours and grains partitions
       CurGrn = msh->VerGrn[1];
       NmbGrn = 1;
-      msh->VerGrnPar[ NmbGrn ][0][0] = 1;
-      msh->VerGrnPar[ NmbGrn ][0][2] = msh->VerCol[1];
-      msh->VerGrnPar[ NmbGrn ][0][3] = msh->VerGrn[1];
+      VerGrnPar[ NmbGrn ][0] = 1;
+      VerGrnPar[ NmbGrn ][2] = msh->VerCol[1];
+      VerGrnPar[ NmbGrn ][3] = msh->VerGrn[1];
 
       CurCol = msh->VerCol[1];
       NmbCol = 1;
-      msh->ColPar[ NmbCol ][0] = 1;
-      msh->ColPar[ NmbCol ][2] = NmbGrn;
+      ColPar[ NmbCol ][0] = 1;
+      ColPar[ NmbCol ][2] = NmbGrn;
 
       for(i=1;i<msh->NmbVer;i++)
       {
          if(msh->VerGrn[i] != CurGrn)
          {
-            msh->VerGrnPar[ NmbGrn ][0][1] = i - 1;
+            VerGrnPar[ NmbGrn ][1] = i - 1;
             NmbGrn++;
-            msh->VerGrnPar[ NmbGrn ][0][0] = i;
+            VerGrnPar[ NmbGrn ][0] = i;
             CurGrn = msh->VerGrn[i];
-            msh->VerGrnPar[ NmbGrn ][0][2] = msh->VerCol[i];
-            msh->VerGrnPar[ NmbGrn ][0][3] = msh->VerGrn[i];
+            VerGrnPar[ NmbGrn ][2] = msh->VerCol[i];
+            VerGrnPar[ NmbGrn ][3] = msh->VerGrn[i];
 
             if(msh->VerCol[i] != CurCol)
             {
-               msh->ColPar[ NmbCol ][1] = NmbGrn - 1;
+               ColPar[ NmbCol ][1] = NmbGrn - 1;
                NmbCol++;
-               msh->ColPar[ NmbCol ][0] = NmbGrn;
+               ColPar[ NmbCol ][0] = NmbGrn;
                CurCol = msh->VerCol[i];
-               msh->ColPar[ NmbCol ][2] = msh->VerCol[i];
+               ColPar[ NmbCol ][2] = msh->VerCol[i];
             }
          }
       }
 
-      msh->VerGrnPar[ NmbGrn ][0][1] = msh->NmbVer;
-      msh->ColPar[ NmbCol ][1] = NmbGrn;
-
-      for(i=1;i<=NmbGrn;i++)
-         printf(  "vertex grain %3d (%3d/%3d): %8d -> %8d, size: %8d\n",
-                  i, msh->VerGrnPar[i][0][2], msh->VerGrnPar[i][0][3],
-                  msh->VerGrnPar[i][0][0], msh->VerGrnPar[i][0][1],
-                  msh->VerGrnPar[i][0][1] - msh->VerGrnPar[i][0][0] + 1);
+      VerGrnPar[ NmbGrn ][1] = msh->NmbVer;
+      ColPar[ NmbCol ][1] = NmbGrn;
 
       for(i=1;i<=NmbCol;i++)
-         printf(  "vertex color %3d (%3d): %8d -> %8d, size: %8d\n",
-                  i, msh->ColPar[i][2], msh->ColPar[i][0], msh->ColPar[i][1],
-                  msh->ColPar[i][1] - msh->ColPar[i][0] + 1);
+         printf(  "vertex color %2d (%2d): %6d -> %6d, size: %6d\n",
+                  i, ColPar[i][2], ColPar[i][0], ColPar[i][1],
+                  ColPar[i][1] - ColPar[i][0] + 1);
 
-      for(t= LplEdg; t<LplMax; t++)
+      for(i=1;i<=NmbGrn;i++)
+         printf(  "vertex grain %6d (%6d/%6d): %10d -> %10d, size: %10d\n",
+                  i, VerGrnPar[i][2], VerGrnPar[i][3],
+                  VerGrnPar[i][0], VerGrnPar[i][1],
+                  VerGrnPar[i][1] - VerGrnPar[i][0] + 1);
+
+
+      msh->ColPar = malloc((NmbCol + 1) * 2 * sizeof(int));
+      assert(msh->ColPar);
+
+      msh->VerGrnPar = malloc((NmbGrn + 1) * 2 * sizeof(int));
+      assert(msh->VerGrnPar);
+
+      for(i=1;i<=NmbGrn;i++)
+         for(j=0;j<2;j++)
+            msh->VerGrnPar[i][j] = VerGrnPar[i][j];
+
+      for(i=1;i<=NmbCol;i++)
+         for(j=0;j<2;j++)
+            msh->ColPar[i][j] = ColPar[i][j];
+
+      free(ColPar);
+      free(VerGrnPar);
+
+      for(t=LplEdg; t<LplMax; t++)
       {
          if(!msh->NmbEle[t])
             continue;
 
-         for(i=1;i<=NmbGrn;i++)
+         for(i=0;i<=NmbGrn;i++)
             msh->EleGrnPar[t][i][0] = msh->EleGrnPar[t][i][1] = 0;
 
          for(i=1;i<=msh->NmbEle[t];i++)
@@ -3635,7 +3655,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn, int RenTyp, int GmlMod, int 
 
          for(i=1;i<=NmbGrn;i++)
          {
-            printf(  "%s grain %3d: %8d -> %8d, size: %8d\n",
+            printf(  "%s grain %6d: %10d -> %10d, size: %10d\n",
                      EleNam[t], i,
                      msh->EleGrnPar[t][i][0], msh->EleGrnPar[t][i][1],
                      msh->EleGrnPar[t][i][1] - msh->EleGrnPar[t][i][0] + 1 );
