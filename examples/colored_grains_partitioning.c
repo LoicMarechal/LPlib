@@ -154,7 +154,7 @@ int CmpEdg(const void *a, const void *b)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int         i, j, ref, NmbCpu = 0, ver, dim, ret;
+   int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret;
    int         *EdgCol = NULL, *EdgGrn = NULL;
    int64_t     InpMsh, DegTot = 0;
    float       sta[2], acc = 0;
@@ -168,8 +168,16 @@ int main(int ArgCnt, char **ArgVec)
    // --------------------------------------
 
    // Read the number of threads to launch from the command line argument
-   if(ArgCnt > 1)
+   if(ArgCnt == 3)
+   {
       NmbCpu = atoi(*++ArgVec);
+      NmbGrn = atoi(*++ArgVec);
+   }
+   else
+   {
+      puts("colored_grains_partitioning   nbThreads   nbGrains");
+      exit(0);
+   }
 
    // Open the input mesh
    if(!(InpMsh = GmfOpenMesh("../sample_meshes/tet.meshb", GmfRead, &ver, &dim)))
@@ -229,10 +237,6 @@ int main(int ArgCnt, char **ArgVec)
       exit(8);
    }
 
-   puts("");
-   printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n",
-         msh.TetTyp, msh.VerTyp, NmbCpu);
-
    // Read the vertices
    puts("Read vertices");
 
@@ -281,8 +285,11 @@ int main(int ArgCnt, char **ArgVec)
       exit(7);
    }
 
+   printf("VerTyp = %d, EdgTyp = %d, TetTyp = %d, NmbCpu = %d\n",
+         msh.VerTyp, msh.EdgTyp, msh.TetTyp, NmbCpu);
 
-   RenNfo = MeshRenumbering(  msh.ParIdx, 100, LplHilbert, 0, 3,
+
+   RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
                               LplEdg, msh.EdgTyp, msh.NmbEdg, msh.EdgTab, NULL,
                               LplTet, msh.TetTyp, msh.NmbTet, msh.TetTab, NULL,
@@ -303,14 +310,26 @@ int main(int ArgCnt, char **ArgVec)
    EndDependency(msh.ParIdx, sta);
    printf("collisions: %g / %g\n", sta[0], sta[1]);
 
+
+   // -----------------------------
+   // MAIN DEPENDENCY LOOP ON EDGES
+   // -----------------------------
+
+   puts("\nDependency loop on edges:");
    tim = GetWallClock();
 
-   // Loop over tets and acces vertices
-   puts("Dependency loop on edges:");
    for(i=1;i<=NMBITR;i++)
       LaunchParallel(msh.ParIdx, msh.EdgTyp, msh.VerTyp, EdgPar, &msh);
 
    printf("Run time = %g\n", GetWallClock() - tim);
+
+   for(i=1;i<=msh.NmbVer;i++)
+   {
+      DegTot += msh.VerDeg[i];
+      msh.VerDeg[i] = 0;
+   }
+
+   printf("Vertex total degree = %lld\n", DegTot);
 
 
    // ---------------------------------
@@ -322,18 +341,11 @@ int main(int ArgCnt, char **ArgVec)
 
    // Loop over edges and access vertices
    for(i=1;i<=NMBITR;i++)
-   {
-      ret = LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
+      LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
 
-      if(ret)
-      {
-         printf("LaunchColorGrains exited with error code %d\n", ret);
-         exit(10);
-      }
-   }
+   printf("Run time = %g\n\n", GetWallClock() - tim);
 
-   printf("run time = %g\n\n", GetWallClock() - tim);
-
+   DegTot = 0;
 
    for(i=1;i<=msh.NmbVer;i++)
    {
@@ -355,7 +367,9 @@ int main(int ArgCnt, char **ArgVec)
    for(i=1;i<=NMBITR;i++)
       LaunchColorGrains(msh.ParIdx, msh.TetTyp, TetPar, &msh);
 
-   printf("run time = %g\n", GetWallClock() - tim);
+   printf("Run time = %g\n", GetWallClock() - tim);
+
+   DegTot = 0;
 
    for(i=1;i<=msh.NmbVer;i++)
       DegTot += msh.VerDeg[i];

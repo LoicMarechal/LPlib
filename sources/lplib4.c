@@ -3225,7 +3225,7 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 10, *TmpEle;
+   int      i, j, t, siz, NmbCpu = 10, *TmpEle, RenEleTyp[ LplMax ], RenVerTyp;
    int64_t  LibParIdx;
    double   *TmpCrd;
    LplSct   *msh;
@@ -3425,11 +3425,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 
    LibParIdx = InitParallel(NmbCpu);
 
-   msh->VerTyp = NewType(LibParIdx, msh->NmbVer);
+   RenVerTyp = NewType(LibParIdx, msh->NmbVer);
 
    SetBndBox(msh);
 
-   LaunchParallel(LibParIdx, msh->VerTyp, 0, (void *)RenVer, (void *)msh);
+   LaunchParallel(LibParIdx, RenVerTyp, 0, (void *)RenVer, (void *)msh);
    ParallelQsort(LibParIdx, msh->VerCod[1], msh->NmbVer, 2 * sizeof(int64_t), CmpFnc);
 
    msh->Old2New = malloc( (size_t)(msh->NmbVer+1) * sizeof(int) );
@@ -3473,11 +3473,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       if(!msh->NmbEle[t])
          continue;
 
-      msh->EleTyp[t] = NewType(LibParIdx, msh->NmbEle[t]);
+      RenEleTyp[t] = NewType(LibParIdx, msh->NmbEle[t]);
       msh->TypIdx = t;
       msh->EleCod[t] = malloc( (msh->NmbEle[t] + 1) * 2 * sizeof(int64_t) );
       assert(msh->EleCod[t]);
-      LaunchParallel(LibParIdx, msh->EleTyp[t], 0, (void *)RenEle, (void *)msh);
+      LaunchParallel(LibParIdx, RenEleTyp[t], 0, (void *)RenEle, (void *)msh);
       ParallelQsort(LibParIdx, msh->EleCod[t][1], msh->NmbEle[t], 2 * sizeof(int64_t), CmpFnc);
 
       siz = EleSiz[t];
@@ -3599,7 +3599,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 
       VerGrnPar[ NmbGrn ][1] = msh->NmbVer;
       ColPar[ NmbCol ][1] = NmbGrn;
-
+      /*
       for(i=1;i<=NmbCol;i++)
          printf(  "vertex color %2d (%2d): %6d -> %6d, size: %6d\n",
                   i, ColPar[i][2], ColPar[i][0], ColPar[i][1],
@@ -3610,7 +3610,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                   i, VerGrnPar[i][2], VerGrnPar[i][3],
                   VerGrnPar[i][0], VerGrnPar[i][1],
                   VerGrnPar[i][1] - VerGrnPar[i][0] + 1);
-
+*/
 
       msh->ColPar = malloc((NmbCol + 1) * 2 * sizeof(int));
       assert(msh->ColPar);
@@ -3652,14 +3652,14 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                msh->EleGrnPar[t][ grn ][1] = MAX(msh->EleGrnPar[t][ grn ][1], i);
             }
          }
-
+         /*
          for(i=1;i<=NmbGrn;i++)
          {
             printf(  "%s grain %6d: %10d -> %10d, size: %10d\n",
                      EleNam[t], i,
                      msh->EleGrnPar[t][i][0], msh->EleGrnPar[t][i][1],
                      msh->EleGrnPar[t][i][1] - msh->EleGrnPar[t][i][0] + 1 );
-         }
+         }*/
       }
 
       ChkColGrn(msh);
