@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.10                                  */
+/*                               LPlib V4.11                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 04 2025                                           */
+/*   Last modification: sep 29 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,7 +83,8 @@
 #define RNDMOD    2
 
 enum {HilMod=0, OctMod, RndMod, IniMod, TopMod};
-enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, CpyMem, EndPth};
+enum ParCmd {  RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk,
+               ClrMem, CpyMem, RunGrnWrk, EndPth };
 
 
 /*----------------------------------------------------------------------------*/
@@ -93,7 +94,7 @@ enum ParCmd {RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk, ClrMem, CpyMem, EndPth}
 typedef struct WrkSct
 {
    itg               BegIdx, EndIdx, ItlTab[ MaxPth ][2];
-   int               NmbDep, *DepWrdTab, GrpIdx, rnd;
+   int               NmbDep, *DepWrdTab, GrpIdx, rnd, GrnIdx;
    double            RunTim;
    struct WrkSct     *pre, *nex;
 }WrkSct;
@@ -108,15 +109,15 @@ typedef struct GrpSct
 typedef struct
 {
    itg               NmbLin, MaxNmbLin;
-   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp, NmbCol, NmbGrn;
-   int               NmbDepWrd, *DepWrdMat, *RunDepTab, (*ColTab)[2], (*GrnTab)[2];
+   int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp;
+   int               NmbDepWrd, *DepWrdMat, *RunDepTab;
    WrkSct            *SmlWrkTab, *BigWrkTab;
    GrpSct            *NexGrp;
 }TypSct;
 
 typedef struct
 {
-   int               idx, NmbDetWrk, GrnIdx;
+   int               idx, NmbDetWrk;
    char              *ClrAdr, *DstAdr, *SrcAdr;
    size_t            StkSiz, CpyMemSiz, ClrMemSiz;
    void *            *UsrStk;
@@ -151,8 +152,12 @@ typedef struct ParSct
 {
    int               NmbCpu, WrkCpt, NmbPip, PenPip, RunPip, NmbTyp, DynSch;
    int               req, cmd, *PipWrd, SizMul, NmbVarArg, NmbDep;
-   int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt, CurCol;
+   int               WrkSizSrt, NmbItlBlk, ItlBlkSiz, BufMax, BufCpt;
    int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon, clk;
+   int               NmbGrnWrk, GrnWrkSiz, DepGrnSiz, NmbCol, NmbGrn, *GrnMat;
+   int               (*GrnTab[ LplMax ])[2], (*ColTab)[2], CurCol;
+   int               NmbDepWrd, *RunDepTab, *ColCpt, *GrnCol, *M1, *M2;
+   int               NmbGrnWrd, *GrnWrdMat, *RunGrnTab, TypIdx[ LplMax ];
    size_t            StkSiz;
    void              *lmb, *VarArgTab[ MaxVarArg ];
    float             sta[2];
@@ -162,7 +167,7 @@ typedef struct ParSct
    pthread_t         PipPth;
    PthSct            *PthTab;
    TypSct            *TypTab, *CurTyp, *DepTyp, *typ1, *typ2;
-   WrkSct            *NexWrk, *BufWrk[ MaxPth / 4 ];
+   WrkSct            *NexWrk, *BufWrk[ MaxPth / 4 ], *GrnWrkTab;
 }ParSct;
 
 typedef struct
@@ -261,6 +266,7 @@ int               CmpWrk         (const void *, const void *);
 static void      *PipHdl         (void *);
 static void      *PthHdl         (void *);
 static WrkSct    *NexWrk         (ParSct *, int);
+static WrkSct    *NexGrn         (ParSct *, int);
 void              PipSrt         (PipArgSct *);
 static void       CalVarArgPip   (PipSct *, void *);
 static void       CalVarArgPrc   (itg, itg, int, ParSct *);
@@ -274,9 +280,9 @@ static void      *GrnHdl         (void *ptr);
 static void       UpdBlkSiz      (ParSct *, TypSct *);
 static void       SetBndBox      (LplSct *);
 static void       SetMidCrd      (int , int *, LplSct *, double *);
-static int               CmpFnc         (const void *, const void *);
-static void              RenVer         (int, int, int, LplSct *);
-static void              RenEle         (int, int, int, LplSct *);
+static int        CmpFnc         (const void *, const void *);
+static void       RenVer         (int, int, int, LplSct *);
+static void       RenEle         (int, int, int, LplSct *);
 static void       SetVerDeg      (LplSct *);
 static void       SetMatSlc      (LplSct *);
 static int        SetDeg         (LplSct *, int *);
@@ -284,6 +290,9 @@ static uint64_t   GetHilCod      (double *, double *, int, int);
 
 #ifdef WITH_METIS
 static void       ChkColGrn      (LplSct *);
+static int        SetColors      (int64_t, int, int (*)[2], int);
+static int        SetGrains      (int64_t, int, int, int (*)[2]);
+static void       SetGrnDep      (ParSct *, LplSct *);
 static void       SetV2VBal      (LplSct *);
 static void       BuildMetisGraph(LplSct *, MtsSct *);
 static int        MetisPartitioning(LplSct *, int);
@@ -833,7 +842,7 @@ float LaunchParallelMultiArg( int64_t ParIdx, int TypIdx1, int TypIdx2,
 
 static void *PthHdl(void *ptr)
 {
-   itg i, beg, end;
+   itg i, j, beg, end;
    PthSct *pth = (PthSct *)ptr;
    ParSct *par = pth->par;
 
@@ -911,6 +920,38 @@ static void *PthHdl(void *ptr)
                par->WrkCpt++;
 
                if(!(pth->wrk = NexWrk(par, pth->idx)))
+               {
+                  par->req = 1;
+                  pthread_cond_signal(&par->ParCnd);
+                  pthread_mutex_unlock(&par->ParMtx);
+                  break;
+               }
+
+               if(par->req)
+                  pthread_cond_signal(&par->ParCnd);
+
+               pthread_mutex_unlock(&par->ParMtx);
+            }while(1);
+         }break;
+
+         // Call user's procedure with small WP using dynamic scheduling
+         case RunGrnWrk :
+         {
+            do
+            {
+               // Run the WP
+               if(par->NmbVarArg)
+                  CalVarArgPrc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->wrk->GrnIdx, par);
+               else
+                  par->prc(pth->wrk->BegIdx, pth->wrk->EndIdx, pth->wrk->GrnIdx, par->arg);
+
+               // Locked acces to global parameters: 
+               // update WP count, tag WP done and signal the main loop
+               pthread_mutex_lock(&par->ParMtx);
+
+               par->WrkCpt++;
+
+               if(!(pth->wrk = NexGrn(par, pth->idx)))
                {
                   par->req = 1;
                   pthread_cond_signal(&par->ParCnd);
@@ -1033,6 +1074,56 @@ static WrkSct *NexWrk(ParSct *par, int PthIdx)
 
    // Return the next available wp in buffer and unlink it from the todo list
    return(par->BufCpt ? par->BufWrk[ --par->BufCpt ] : NULL);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Get the next WP to be computed                                             */
+/*----------------------------------------------------------------------------*/
+
+static WrkSct *NexGrn(ParSct *par, int PthIdx)
+{
+   PthSct *pth = &par->PthTab[ PthIdx ];
+   WrkSct *wrk;
+
+   // Remove previous work's tags
+   if(pth->wrk)
+   {
+      ClrBit(par->RunDepTab, pth->wrk->GrnIdx);
+      par->ColCpt[ par->GrnCol[ pth->wrk->GrnIdx ] ]--;
+
+      if(!par->ColCpt[ par->GrnCol[ pth->wrk->GrnIdx ] ])
+         par->CurCol++;
+   }
+
+   wrk = par->NexWrk;
+
+   while(wrk && (par->GrnCol[ wrk->GrnIdx ] <= par->CurCol + 1) )
+   {
+      // Check for dependencies
+      if((wrk->GrnIdx <= par->ColTab[ par->CurCol ][1])
+      || ( (par->CurCol < par->NmbCol) && (wrk->GrnIdx <= par->ColTab[ par->CurCol+1 ][1])
+         && !AndWrd(par->NmbDepWrd, wrk->DepWrdTab, par->RunDepTab) ) )
+      {
+         // Unlink wp
+         if(wrk->pre)
+            wrk->pre->nex = wrk->nex;
+         else
+            par->NexWrk = wrk->nex;
+
+         if(wrk->nex)
+            wrk->nex->pre = wrk->pre;
+
+         // Add new work's tags
+         SetBit(par->RunDepTab, wrk->GrnIdx);
+
+         return(wrk);
+      }
+
+      wrk = wrk->nex;
+   }
+
+   return(NULL);
 }
 
 
@@ -2067,91 +2158,100 @@ static int SetGrp(ParSct *par, TypSct *typ)
 
 
 /*----------------------------------------------------------------------------*/
-/*Loop over the type's color and launch a thread for each grain               */
+/* Launch the loop prc on typ1 element depending on typ2                      */
 /*----------------------------------------------------------------------------*/
 
-int LaunchColorGrains(int64_t ParIdx, int TypIdx, void *prc, void *PtrArg)
+float LaunchColorGrains(int64_t ParIdx, int typ, void *prc, void *PtrArg)
 {
-   int      i, col, ret, NmbPth;
-   void     *sta;
+   int      i, j;
+   float    acc = 0.;
+   PthSct   *pth;
    ParSct   *par = (ParSct *)ParIdx;
-   TypSct   *typ;
-   GrnSct   *grn, GrnTab[ 1100 ];
-   pthread_attr_t attr;
 
    // Get and check lib parallel instance
    if(!ParIdx)
-      return(1);
+      return(-1.);
 
-   // Check bounds
-   if( (TypIdx < 1) || (TypIdx > MaxTyp) )
-      return(2);
+   // Lock acces to global parameters
+   pthread_mutex_lock(&par->ParMtx);
 
-   typ =  &par->TypTab[ TypIdx ];
+   par->cmd = RunGrnWrk;
+   par->prc = (void (*)(itg, itg, int, void *))prc;
+   par->arg = PtrArg;
+   par->typ1 = NULL;
+   par->typ2 = NULL;
+   par->NexWrk = par->GrnWrkTab;
+   par->WrkCpt = 0;
+   par->sta[0] = par->sta[1] = 0.;
+   par->req = 0;
+   par->NmbDep = 0;
+   par->CurCol = 1;
 
-   // Setup a thread arguments structure to set them as joinable
-   pthread_attr_init(&attr);
-   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+   // Clear running wp
+   for(i=0;i<par->NmbCpu;i++)
+      par->PthTab[i].wrk = NULL;
 
-   // Loop over the colors
-   for(col=1;col<=typ->NmbCol;col++)
+   ClrWrd(par->NmbGrnWrd, par->RunGrnTab);
+
+   // Build a linked list of wp
+   for(i=0;i<par->NmbGrnWrk;i++)
    {
-      NmbPth = 0;
-
-      // Loop overt the color's grains
-      for(i=typ->ColTab[ col ][0]; i<=typ->ColTab[ col ][1]; i++)
-      {
-         // Point to the next local grain structure
-         grn = &GrnTab[ NmbPth++ ];
-
-         grn->GrnIdx = i;
-         grn->BegIdx = typ->GrnTab[i][0];
-         grn->EndIdx = typ->GrnTab[i][1];
-         grn->par = par;
-         grn->prc = prc;
-         grn->arg = PtrArg;
-
-         // Reset the thread structure
-         memset(&grn->pth, 0, sizeof(pthread_t));
-
-         // Launch the cleared thread with the curent grain information
-         pthread_create(&grn->pth, &attr, GrnHdl, (void *)grn);
-      }
-
-      NmbPth = 0;
-
-      // Loop over the grain threads and wait for their completion
-      for(i=typ->ColTab[ col ][0]; i<=typ->ColTab[ col ][1]; i++)
-      {
-         grn = &GrnTab[ NmbPth++ ];
-         ret = pthread_join(grn->pth, &sta);
-
-         if(ret)
-         {
-            printf("ERROR; return code from pthread_join() is %d\n", ret);
-            exit(-1);
-         }
-      }
+      par->GrnWrkTab[i].pre = &par->GrnWrkTab[ i-1 ];
+      par->GrnWrkTab[i].nex = &par->GrnWrkTab[ i+1 ];
+      par->GrnWrkTab[i].GrnIdx = i + 1;
+      par->GrnWrkTab[i].BegIdx = par->GrnTab[ typ ][i+1][0];
+      par->GrnWrkTab[i].EndIdx = par->GrnTab[ typ ][i+1][1];
    }
 
-   pthread_attr_destroy(&attr);
+   par->GrnWrkTab[0].pre = par->GrnWrkTab[ par->NmbGrnWrk - 1 ].nex = NULL;
 
-   return(0);
-}
+   for(i=1;i<=par->NmbCol;i++)
+      par->ColCpt[i] = par->ColTab[i][1] - par->ColTab[i][0] + 1;
 
 
-/*----------------------------------------------------------------------------*/
-/* Thread handler launching and waiting for user's procedure completion       */
-/*----------------------------------------------------------------------------*/
+   // Main loop: wake up threads and wait for completion or blocked threads
+   do
+   {
+      // Search for some idle threads
+      par->req = 0;
 
-static void *GrnHdl(void *ptr)
-{
-   GrnSct *grn = (GrnSct *)ptr;
-   void (*prc)(int, int, int, void *) = grn->prc;
+      for(i=0;i<par->NmbCpu;i++)
+      {
+         pth = &par->PthTab[i];
 
-   prc(grn->BegIdx, grn->EndIdx, grn->GrnIdx, grn->arg);
+         if(pth->wrk)
+            continue;
 
-   return(NULL);
+         if(!(pth->wrk = NexGrn(par, i)))
+         {
+            par->req = 1;
+            break;
+         }
+
+         // Wake up the thread and provide it with a WP list
+         pthread_mutex_lock(&pth->mtx);
+         pthread_cond_signal(&pth->cnd);
+         pthread_mutex_unlock(&pth->mtx);
+      }
+
+      // If every WP are done : exit the parallel loop
+      if(par->WrkCpt == par->NmbGrnWrk)
+         break;
+
+      // Otherwise, wait for a blocked thread
+      pthread_cond_wait(&par->ParCnd, &par->ParMtx);
+   }while(1);
+
+   pthread_mutex_unlock(&par->ParMtx);
+
+   // Compute the average concurrency factor
+   acc = par->sta[0] ? (par->sta[1] / par->sta[0]) : 0;
+
+   // Clear the main datatyp loop to indicate that no LaunchParallel is running
+   par->typ1 = 0;
+
+   // Return the concurrency factor
+   return(acc);
 }
 
 
@@ -2159,99 +2259,41 @@ static void *GrnHdl(void *ptr)
 /* Provide the LPlib with color and grain index for each entities             */
 /*----------------------------------------------------------------------------*/
 
-int SetColorGrains(  int64_t ParIdx, int TypIdx,
-                     int NmbCol, int *ColTab,
-                     int NmbGrn, int *GrnTab )
+static int SetColors(int64_t ParIdx, int NmbCol, int (*ColTab)[2], int NmbGrn)
 {
    ParSct *par = (ParSct *)ParIdx;
-   TypSct *typ;
-
-   // Check type validity
-   if( (TypIdx < 1) || (TypIdx > MaxTyp) )
-      return(1);
-
-   typ = &par->TypTab[ TypIdx ];
 
    // Allocate and copy memory to store colors information
-   typ->NmbCol = NmbCol;
-   typ->ColTab = LPL_malloc(par->lmb, (NmbCol+1) * 2 * sizeof(int));
+   par->NmbCol = NmbCol;
+   par->NmbGrn = NmbGrn;
+   par->ColTab = LPL_malloc(par->lmb, (NmbCol+1) * 2 * sizeof(int));
 
-   if(!typ->ColTab)
-      return(2);
+   if(!par->ColTab)
+      return(1);
 
-   memcpy(typ->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
-
-   // Allocate and copy memory to store grains information
-   typ->NmbGrn = NmbGrn;
-   typ->GrnTab = LPL_malloc(par->lmb, (NmbGrn+1) * 2 * sizeof(int));
-
-   if(!typ->GrnTab)
-      return(3);
-
-   memcpy(typ->GrnTab, GrnTab, (NmbGrn+1) * 2 * sizeof(int));
+   memcpy(par->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
 
    return(0);
 }
 
 
 /*----------------------------------------------------------------------------*/
-/* Set an element field colors and grains from their vertices information     */
-/* Elements must be sorted against trheir color and grain beforehand          */
+/* Provide the LPlib with color and grain index for each entities             */
 /*----------------------------------------------------------------------------*/
 
-int SetElementsColorGrain( int64_t ParIdx, int VerTypIdx, int EleTypIdx,
-                           int EleSiz, itg *EleTab )
+static int SetGrains(int64_t ParIdx, int MshTyp, int TypIdx, int (*GrnTab)[2])
 {
-   int i, VerIdx, CurGrn = 1, BegIdx = 1;
    ParSct *par = (ParSct *)ParIdx;
-   TypSct *VerTyp, *EleTyp;
 
-   // Make sur there are vertices and this element kind
-   if(VerTypIdx < 1 || VerTypIdx > MaxTyp || EleTypIdx < 1 || EleTypIdx > MaxTyp)
+   par->TypIdx[ MshTyp ] = TypIdx;
+
+   // Allocate and copy memory to store grains information
+   par->GrnTab[ MshTyp ] = LPL_malloc(par->lmb, (par->NmbGrn+1) * 2 * sizeof(int));
+
+   if(!par->GrnTab[ MshTyp ])
       return(1);
 
-   VerTyp = &par->TypTab[ VerTypIdx ];
-   EleTyp = &par->TypTab[ EleTypIdx ];
-
-   // Vertices must have colors and grains set
-   if(!VerTyp->NmbCol || !VerTyp->NmbGrn)
-      return(2);
-
-   // Allocate a color table and a grain table for this element kind
-   if(!(EleTyp->ColTab = LPL_calloc(par->lmb, VerTyp->NmbCol + 1, 2 * sizeof(int))))
-      return(3);
-
-   if(!(EleTyp->GrnTab = LPL_calloc(par->lmb, VerTyp->NmbGrn + 1, 2 * sizeof(int))))
-      return(4);
-
-   // The number of colors and grains partition must match that of the vertices
-   EleTyp->NmbCol = VerTyp->NmbCol;
-   EleTyp->NmbGrn = VerTyp->NmbGrn;
-
-   // Each element's colors partitions point to the same grains as the vertex ones
-   for(i=1;i<=VerTyp->NmbCol;i++)
-   {
-      EleTyp->ColTab[i][0] = VerTyp->ColTab[i][0];
-      EleTyp->ColTab[i][1] = VerTyp->ColTab[i][1];
-   }
-
-   // Setup the first and last element index in each grain
-   for(i=1;i<=EleTyp->NmbLin;i++)
-   {
-      VerIdx = EleTab[ i * EleSiz ];
-
-      if(VerIdx > VerTyp->GrnTab[ CurGrn ][1])
-      {
-         EleTyp->GrnTab[ CurGrn ][0] = BegIdx;
-         EleTyp->GrnTab[ CurGrn ][1] = i - 1;
-         CurGrn++;
-         BegIdx = i;
-      }
-   }
-
-   // Special setup for the last grain
-   EleTyp->GrnTab[ CurGrn ][0] = BegIdx;
-   EleTyp->GrnTab[ CurGrn ][1] = EleTyp->NmbLin;
+   memcpy(par->GrnTab[ MshTyp ], GrnTab, (par->NmbGrn+1) * 2 * sizeof(int));
 
    return(0);
 }
@@ -3217,6 +3259,31 @@ static void CalVarArgPip(PipSct *pip, void *prc)
    }
 }
 
+static int GetRk2Deg(int VerIdx, uint64_t *AdrBalRk1, int *LstBalRk1)
+{
+   int i, j, k, flg, bal[1000], deg = 0;
+
+   for(i=AdrBalRk1[ VerIdx ]; i<AdrBalRk1[ VerIdx+1 ]; i++)
+   {
+      for(j=AdrBalRk1[ LstBalRk1[i] ]; j<AdrBalRk1[ LstBalRk1[i] + 1 ]; j++)
+      {
+         flg = 1;
+
+         for(k=0;k<deg;k++)
+            if(LstBalRk1[j] == bal[k])
+            {
+               flg = 0;
+               break;
+            }
+
+         if(flg)
+            bal[deg++] = LstBalRk1[j];
+      }
+   }
+
+   return(deg);
+}
+
 
 /*----------------------------------------------------------------------------*/
 /* Read, renumber through a Hilbert SFC and write the mesh                    */
@@ -3225,7 +3292,8 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 10, *TmpEle, RenEleTyp[ LplMax ], RenVerTyp;
+   int      i, j, k, t, siz, NmbCpu = 10, *TmpEle;
+   int      RenEleTyp[ LplMax ], RenVerTyp;
    int64_t  LibParIdx;
    double   *TmpCrd;
    LplSct   *msh;
@@ -3234,6 +3302,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 #ifdef WITH_METIS
    int      grn, *NewGrn, *ColTab, CurCol, CurGrn;
    int      NmbCol, (*ColPar)[3], (*VerGrnPar)[4];
+   ParSct   *par = (ParSct *)ParIdx;
 #endif
 
    // Check mandatory inputs
@@ -3269,6 +3338,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 
    va_end(VarArg);
 
+   // We need at least some vertices
    if(!msh->NmbVer || !msh->CrdTab)
    {
       free(msh);
@@ -3278,9 +3348,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 #ifdef WITH_METIS
    if(NmbGrn)
    {
+      // Activate the color-grain mode
       msh->NmbGrn = NmbGrn;
       msh->ColGrnMod = 1;
 
+      // Allocate a color and a grain table for each mesh entities
       msh->VerGrn = calloc(msh->NmbVer + 1, sizeof(int));
       assert(msh->VerGrn);
 
@@ -3299,11 +3371,13 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          assert(msh->EleGrn[t]);
       }
 
+      // Partition the mesh into grains with Metis
       puts("set vertex balls rank 1");
       SetV2VBal(msh);
       puts("metis part");
       MetisPartitioning(msh, NmbGrn);
 
+      // Allocate and setup rank2 vertex balls
       msh->AdrBalRk2 = calloc(msh->NmbVer + 1, sizeof(int));
       msh->LstBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
 
@@ -3312,6 +3386,8 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                                                 msh->AdrBalRk1, msh->LstBalRk1,
                                                 msh->AdrBalRk2, msh->LstBalRk2 );
 
+
+      // Give a color to each grain
       puts("color partitions");
       ColTab = ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn, msh->NmbVer,
                                                 msh->AdrBalRk1, msh->LstBalRk1,
@@ -3319,6 +3395,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                                                 msh->VerGrn );
 
       puts("set vertex color and grain");
+      // Propagate the color-grain information to elements
       for(i=1;i<=msh->NmbVer;i++)
          msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
 
@@ -3335,6 +3412,8 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          }
       }
 
+      // Look for the number a color and grains and define the required
+      // number of bits needed to store these information
       msh->NmbCol = 0;
 
       for(i=1;i<=NmbGrn;i++)
@@ -3445,22 +3524,26 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       for(j=0;j<3;j++)
          TmpCrd[ i * 3 + j ] = msh->CrdTab[ msh->VerCod[i][0] * 3 + j ];
 
-   memcpy(msh->CrdTab, TmpCrd, msh->NmbVer * 3 * sizeof(double));
+   memcpy(msh->CrdTab, TmpCrd, (msh->NmbVer+1) * 3 * sizeof(double));
    free(TmpCrd);
 
 #ifdef WITH_METIS
-   NewGrn = malloc( (msh->NmbVer + 1) * sizeof(int) );
-   assert(NewGrn);
+   if(NmbGrn)
+   {
+      // As the vertices renumbered, their colors and grains tables must be rebuilt
+      NewGrn = malloc( (msh->NmbVer + 1) * sizeof(int) );
+      assert(NewGrn);
 
-   for(i=1;i<=msh->NmbVer;i++)
-      NewGrn[i] = msh->VerGrn[ msh->VerCod[i][0] ];
+      for(i=1;i<=msh->NmbVer;i++)
+         NewGrn[i] = msh->VerGrn[ msh->VerCod[i][0] ];
 
-   free(msh->VerGrn);
-   msh->VerGrn = NewGrn;
+      free(msh->VerGrn);
+      msh->VerGrn = NewGrn;
 
-   puts("set vertex color and grain");
-   for(i=1;i<=msh->NmbVer;i++)
-      msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
+      puts("set vertex color and grain");
+      for(i=1;i<=msh->NmbVer;i++)
+         msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
+   }
 #endif
 
 
@@ -3473,6 +3556,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       if(!msh->NmbEle[t])
          continue;
 
+      // Renumber all kinds of elements
       RenEleTyp[t] = NewType(LibParIdx, msh->NmbEle[t]);
       msh->TypIdx = t;
       msh->EleCod[t] = malloc( (msh->NmbEle[t] + 1) * 2 * sizeof(int64_t) );
@@ -3493,10 +3577,14 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       free(TmpEle);
 
 #ifdef WITH_METIS
-      for(i=1;i<=msh->NmbEle[t];i++)
+      if(NmbGrn)
       {
-         msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * siz ] ];
-         msh->EleGrn[t][i] = msh->VerGrn[ msh->EleTab[t][ i * siz ] ];
+         // And rebuild their color and grain tables
+         for(i=1;i<=msh->NmbEle[t];i++)
+         {
+            msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * siz ] ];
+            msh->EleGrn[t][i] = msh->VerGrn[ msh->EleTab[t][ i * siz ] ];
+         }
       }
 #endif
    }
@@ -3517,6 +3605,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       CurGrn = msh->VerGrn[1];
       NmbGrn = 1;
 
+      // Build the vertex color-grains partitions
       for(i=1;i<=msh->NmbVer;i++)
       {
          if(msh->VerCol[i] == CurCol)
@@ -3599,7 +3688,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 
       VerGrnPar[ NmbGrn ][1] = msh->NmbVer;
       ColPar[ NmbCol ][1] = NmbGrn;
-      /*
+
       for(i=1;i<=NmbCol;i++)
          printf(  "vertex color %2d (%2d): %6d -> %6d, size: %6d\n",
                   i, ColPar[i][2], ColPar[i][0], ColPar[i][1],
@@ -3610,7 +3699,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                   i, VerGrnPar[i][2], VerGrnPar[i][3],
                   VerGrnPar[i][0], VerGrnPar[i][1],
                   VerGrnPar[i][1] - VerGrnPar[i][0] + 1);
-*/
+
 
       msh->ColPar = malloc((NmbCol + 1) * 2 * sizeof(int));
       assert(msh->ColPar);
@@ -3652,31 +3741,55 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                msh->EleGrnPar[t][ grn ][1] = MAX(msh->EleGrnPar[t][ grn ][1], i);
             }
          }
-         /*
-         for(i=1;i<=NmbGrn;i++)
-         {
-            printf(  "%s grain %6d: %10d -> %10d, size: %10d\n",
-                     EleNam[t], i,
-                     msh->EleGrnPar[t][i][0], msh->EleGrnPar[t][i][1],
-                     msh->EleGrnPar[t][i][1] - msh->EleGrnPar[t][i][0] + 1 );
-         }*/
       }
 
       ChkColGrn(msh);
 
-      // Send vertices color and grain to the LPlib
-      SetColorGrains(ParIdx, msh->VerTyp, msh->NmbCol, (int *)msh->ColPar,
-                     msh->NmbGrn, (int *)msh->VerGrnPar);
+      // Send colors to grains information to the LPlib
+      SetColors(ParIdx, msh->NmbCol, msh->ColPar, msh->NmbGrn);
 
-      // Send tets color and grain to the LPlib
-      SetColorGrains(ParIdx, msh->EleTyp[ LplEdg ], msh->NmbCol, (int *)msh->ColPar,
-                     msh->NmbGrn, (int *)msh->EleGrnPar[ LplEdg ]);
+      // Send grains of vertices to the LPlib
+      SetGrains(ParIdx, LplVer, msh->VerTyp, msh->VerGrnPar);
 
-      // Send tets color and grain to the LPlib
-      SetColorGrains(ParIdx, msh->EleTyp[ LplTet ], msh->NmbCol, (int *)msh->ColPar,
-                     msh->NmbGrn, (int *)msh->EleGrnPar[ LplTet ]);
+      // Send grains of edges to the LPlib
+      SetGrains(ParIdx, LplEdg, msh->EleTyp[ LplEdg ], msh->EleGrnPar[ LplEdg ]);
+
+      // Send grains of tets to the LPlib
+      SetGrains(ParIdx, LplTet, msh->EleTyp[ LplTet ], msh->EleGrnPar[ LplTet ]);
 
       puts("vertex, edges and tets color grains set");
+
+      // Rebuild the rank 1 & 2 balls of vertices after the renumbering
+      puts("set vertex balls rank 1");
+      free(msh->VerDeg);
+      free(msh->AdrBalRk1);
+      free(msh->LstBalRk1);
+      SetV2VBal(msh);
+      memset(msh->AdrBalRk2, 0, (msh->NmbVer + 1) * sizeof(int));
+      memset(msh->LstBalRk2, 0, (msh->NmbVer + 1) * sizeof(int *));
+      puts("set vertex balls rank 2");
+      InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEle[ LplEdg ], msh->EleTab[ LplEdg ],
+                                                msh->AdrBalRk1, msh->LstBalRk1,
+                                                msh->AdrBalRk2, msh->LstBalRk2 );
+
+      // Build the dependencies between grains for the dynamic scheduling
+      SetGrnDep(par, msh);
+
+      // Allocate and setup the grain wroks for use by the Lplib's scheduler
+      par->GrnWrkTab = LPL_calloc(par->lmb, par->NmbGrn , sizeof(WrkSct));
+      assert(par->GrnWrkTab);
+
+      par->NmbGrnWrk = msh->NmbGrn;
+      par->NmbCol = msh->NmbCol;
+
+      par->ColCpt = LPL_calloc(par->lmb, par->NmbCol + 1, sizeof(int));
+      assert(par->ColCpt);
+
+      par->RunDepTab = LPL_calloc(par->lmb, par->NmbGrn / 32 + 1 , sizeof(int));
+      assert(par->RunDepTab);
+
+      for(i=0;i<par->NmbGrn;i++)
+         par->GrnWrkTab[i].DepWrdTab = &par->GrnMat[ (i+1) * par->NmbDepWrd ];
    }
 #endif
 
@@ -4237,6 +4350,80 @@ static int SetDeg(LplSct *msh, int *DegTab)
 
 
 /*----------------------------------------------------------------------------*/
+/* Build the grain depedencies table to enable colorgrains dynamic scheduling */
+/*----------------------------------------------------------------------------*/
+
+static void SetGrnDep(ParSct *par, LplSct *msh)
+{
+   int i, j, k, *VerGrn, v1, v2, g1, g2, c1, c2;
+
+   // Build the grains forward compatibility matrix
+   par->NmbDepWrd = (msh->NmbGrn + 1) / 32 + 1;
+   par->GrnMat = LPL_calloc(  par->lmb, msh->NmbGrn + 1,
+                              par->NmbDepWrd * sizeof(int) );
+
+   // Set all next grain entries to 0
+   par->GrnCol = LPL_calloc(par->lmb, msh->NmbGrn + 1, sizeof(int) );
+   assert(par->GrnCol);
+
+   // Set the identity
+   for(i=1;i<=msh->NmbCol;i++)
+      for(j=msh->ColPar[i][0]; j<=msh->ColPar[i][1]; j++)
+         par->GrnCol[j] = i;
+
+   VerGrn = malloc( (msh->NmbVer + 1) * sizeof(int) );
+   assert(VerGrn);
+
+   par->M1 = LPL_calloc(par->lmb, par->NmbGrn + 1, par->NmbDepWrd * sizeof(int));
+   assert(par->M1);
+
+   par->M2 = LPL_calloc(par->lmb, par->NmbGrn + 1, par->NmbDepWrd * sizeof(int));
+   assert(par->M2);
+
+   // Set grain bits with dependencies
+   for(i=1;i<=msh->NmbGrn;i++)
+      for(j=msh->VerGrnPar[i][0]; j<=msh->VerGrnPar[i][1]; j++)
+         VerGrn[j] = i;
+
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      v1 = i;
+      g1 = VerGrn[ v1 ];
+      c1 = par->GrnCol[ g1 ];
+      SetBit(&par->M1[ g1 * par->NmbDepWrd ], g1);
+
+      for(j=0; j<msh->AdrBalRk2[i]; j++)
+      {
+         v2 = msh->LstBalRk2[i][j];
+         g2 = VerGrn[ v2 ];
+         c2 = par->GrnCol[ g2 ];
+         SetBit(&par->M1[ g1 * par->NmbDepWrd ], g2);
+      }
+   }
+
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      v1 = i;
+      g1 = VerGrn[ v1 ];
+      c1 = par->GrnCol[ g1 ];
+
+      for(j=0; j<msh->AdrBalRk2[i]; j++)
+      {
+         v2 = msh->LstBalRk2[i][j];
+         g2 = VerGrn[ v2 ];
+         c2 = par->GrnCol[ g2 ];
+
+         if(c2 == c1 - 1)
+            SetBit(&par->GrnMat[ g1 * par->NmbDepWrd ], g2);
+      }
+   }
+
+   free(VerGrn);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Look for possible vertex pinch between different grains from the same color*/
 /*----------------------------------------------------------------------------*/
 
@@ -4286,6 +4473,7 @@ static void ChkColGrn(LplSct *msh)
 
 
 /*----------------------------------------------------------------------------*/
+/* Build the dual graph from a mesh and call Metis to get the grains          */
 /*----------------------------------------------------------------------------*/
 
 static int MetisPartitioning(LplSct *msh, int NmbPar)
