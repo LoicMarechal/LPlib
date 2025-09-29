@@ -38,11 +38,15 @@ list (APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}")
 # SET FILES AND DIRECTORIES TO BE BUILT
 #######################################
 
+include_directories (${PROJECT_SOURCE_DIR}/sources)
+include_directories (${PROJECT_SOURCE_DIR}/utilities)
+
 find_package(Threads)
-find_package(libMeshb 8)
+find_package(libMeshb 8 CONFIG)
 
 if(WITH_METIS)
-   find_package(metis)
+   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+   find_package(METIS)
 endif()
 
 if(libMeshb_FOUND)
@@ -63,8 +67,6 @@ if(METIS_FOUND)
    message ("METIS_LIBRARIES " ${METIS_LIBRARIES})
 endif()
 
-include_directories (${PROJECT_SOURCE_DIR}/sources)
-include_directories (${PROJECT_SOURCE_DIR}/utilities)
 add_subdirectory (sources)
 
 install (FILES LICENSE.txt copyright.txt DESTINATION share/LPlib)

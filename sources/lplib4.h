@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.10                                  */
+/*                               LPlib V4.11                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 05 2025                                           */
+/*   Last modification: sep 15 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -110,9 +110,7 @@ int      ChkBlkDep               (int64_t, int, int, int);
 int      SetExtendedAttributes   (int64_t , ...);
 int      HalveSmallBlocks        (int64_t, int, int);
 int      HalveDependencyBlocks   (int64_t, int, int);
-int      SetColorGrains          (int64_t, int, int, int *, int, int *);
-int      LaunchColorGrains       (int64_t, int, void *, void *);
-int      SetElementsColorGrain   (int64_t, int, int, int , itg *);
+float    LaunchColorGrains       (int64_t, int, void *, void *);
 LplSct  *MeshRenumbering         (int64_t, int, int, int, int, ...);
 void     FreeNumberingStruct     (LplSct *);
 double   EvaluateRenumbering     (int, int, int *);

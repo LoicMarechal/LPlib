@@ -28,7 +28,3 @@ install (TARGETS adaptive_blocking DESTINATION share/LPlib/examples COMPONENT ex
 add_executable(build_edges build_edges.c)
 target_link_libraries(build_edges LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
 install (TARGETS build_edges DESTINATION share/LPlib/examples COMPONENT examples)
-
-add_executable(colored_grains colored_grains.c ${PROJECT_SOURCE_DIR}/utilities/lplib4_helpers.c)
-target_link_libraries(colored_grains LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
-install (TARGETS colored_grains DESTINATION share/LPlib/examples COMPONENT examples)

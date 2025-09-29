@@ -44,7 +44,7 @@
 typedef struct
 {
    int      TetTyp, EdgTyp, VerTyp, NmbCol, NmbGrn, *VerDeg;
-   itg      (*EdgTab)[2], (*TetTab)[4];
+   itg      (*EdgTab)[2], (*TetTab)[4], *TetRef;
    int      (*ColPar)[2], (*VerGrnPar)[2], (*TetGrnPar)[2];
    int64_t  NmbVer, NmbEdg, NmbTet;
    double   *VerSol, (*VerCrd)[3];
@@ -61,7 +61,7 @@ void EdgPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 {
    int i, j, idx;
    double sol;
-   //printf("start grain %3d: %8d -> %8d\n", GrnIdx, BegIdx, EndIdx);
+
    // Loop over the edges, loop over their vertices and increment the degree
    for(i=BegIdx;i<=EndIdx;i++)
       for(j=0;j<2;j++)
@@ -95,6 +95,14 @@ void TetPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
       }
 }
 
+
+void SetTetRef(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+{
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      msh->TetRef[i] = GrnIdx;
+}
 
 /*----------------------------------------------------------------------------*/
 /* Touch tet's memory: for ccNUMA experiments only                            */
@@ -156,7 +164,7 @@ int main(int ArgCnt, char **ArgVec)
 {
    int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret;
    int         *EdgCol = NULL, *EdgGrn = NULL;
-   int64_t     InpMsh, DegTot = 0;
+   int64_t     InpMsh, OutMsh, DegTot = 0;
    float       sta[2], acc = 0;
    double      tim = 0;
    MshSct      msh;
@@ -288,6 +296,23 @@ int main(int ArgCnt, char **ArgVec)
    printf("VerTyp = %d, EdgTyp = %d, TetTyp = %d, NmbCpu = %d\n",
          msh.VerTyp, msh.EdgTyp, msh.TetTyp, NmbCpu);
 
+   if(!(OutMsh = GmfOpenMesh("/tmp/ini.meshb", GmfWrite, 2, 3)))
+   {
+      puts("Cannot open the file /tmp/ini.meshb");
+      return(1);
+   }
+
+   GmfSetKwd(OutMsh, GmfVertices, msh.NmbVer);
+   GmfSetBlock(OutMsh, GmfVertices, 1, msh.NmbVer, 0, NULL, NULL,
+               GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],
+               GmfInt, &ref, &ref);
+
+   GmfSetKwd(OutMsh, GmfTetrahedra, msh.NmbTet);
+   GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
+               GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
+               GmfInt, &ref, &ref);
+
+   GmfCloseMesh(OutMsh);
 
    RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
@@ -300,7 +325,7 @@ int main(int ArgCnt, char **ArgVec)
    // MAIN DEPENDENCY LOOP ON EDGES
    // -----------------------------
 
-   puts("Set dependency edges - >vertices");
+/*   puts("Set dependency edges - >vertices");
    BeginDependency(msh.ParIdx, msh.EdgTyp, msh.VerTyp);
 
    for(i=1;i<=msh.NmbEdg;i++)
@@ -309,13 +334,13 @@ int main(int ArgCnt, char **ArgVec)
 
    EndDependency(msh.ParIdx, sta);
    printf("collisions: %g / %g\n", sta[0], sta[1]);
-
+*/
 
    // -----------------------------
    // MAIN DEPENDENCY LOOP ON EDGES
    // -----------------------------
 
-   puts("\nDependency loop on edges:");
+/*   puts("\nDependency loop on edges:");
    tim = GetWallClock();
 
    for(i=1;i<=NMBITR;i++)
@@ -330,7 +355,31 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    printf("Vertex total degree = %lld\n", DegTot);
+*/
 
+
+   msh.TetRef = malloc( (msh.NmbTet + 1) * sizeof(int) );
+   LaunchColorGrains(msh.ParIdx, LplTet, SetTetRef, &msh);
+
+   if(!(OutMsh = GmfOpenMesh("/tmp/col.meshb", GmfWrite, 2, 3)))
+   {
+      puts("Cannot open the file /tmp/col.meshb");
+      return(1);
+   }
+
+   GmfSetKwd(OutMsh, GmfVertices, msh.NmbVer);
+   GmfSetBlock(OutMsh, GmfVertices, 1, msh.NmbVer, 0, NULL, NULL,
+               GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],
+               GmfInt, &ref, &ref);
+
+   GmfSetKwd(OutMsh, GmfTetrahedra, msh.NmbTet);
+   GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
+               GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
+               GmfInt, &msh.TetRef[1], &msh.TetRef[ msh.NmbTet ]);
+
+   GmfCloseMesh(OutMsh);
+   free(msh.TetRef);
+   //exit(0);
 
    // ---------------------------------
    // MAIN COLORED GRAINS LOOP ON EDGES
@@ -341,7 +390,7 @@ int main(int ArgCnt, char **ArgVec)
 
    // Loop over edges and access vertices
    for(i=1;i<=NMBITR;i++)
-      LaunchColorGrains(msh.ParIdx, msh.EdgTyp, EdgPar, &msh);
+      LaunchColorGrains(msh.ParIdx, LplEdg, EdgPar, &msh);
 
    printf("Run time = %g\n\n", GetWallClock() - tim);
 
@@ -360,12 +409,12 @@ int main(int ArgCnt, char **ArgVec)
    // MAIN COLORED GRAINS LOOP ON TETS
    // --------------------------------
 
-   puts("\nColored grains scheduling on tets:");
+/*   puts("\nColored grains scheduling on tets:");
    tim = GetWallClock();
-      
+  */    
    // Loop over tets and access vertices
-   for(i=1;i<=NMBITR;i++)
-      LaunchColorGrains(msh.ParIdx, msh.TetTyp, TetPar, &msh);
+/*   for(i=1;i<=NMBITR;i++)
+      LaunchColorGrains(msh.ParIdx, LplTet, TetPar, &msh);
 
    printf("Run time = %g\n", GetWallClock() - tim);
 
@@ -375,7 +424,7 @@ int main(int ArgCnt, char **ArgVec)
       DegTot += msh.VerDeg[i];
 
    printf("Vertex total degree = %lld\n", DegTot);
-
+*/
 
    // ------------------------
    // STOP AND FREE EVERYTHING

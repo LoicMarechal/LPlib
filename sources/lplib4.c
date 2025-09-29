@@ -156,7 +156,7 @@ typedef struct ParSct
    int               NmbSmlBlk, NmbDepBlk, NmbColGrn, GrnNxt, GrnDon, clk;
    int               NmbGrnWrk, GrnWrkSiz, DepGrnSiz, NmbCol, NmbGrn, *GrnMat;
    int               (*GrnTab[ LplMax ])[2], (*ColTab)[2], CurCol;
-   int               NmbDepWrd, *RunDepTab, *ColCpt, *GrnCol, *M1, *M2;
+   int               NmbDepWrd, *RunDepTab, *ColCpt, *GrnCol;
    int               NmbGrnWrd, *GrnWrdMat, *RunGrnTab, TypIdx[ LplMax ];
    size_t            StkSiz;
    void              *lmb, *VarArgTab[ MaxVarArg ];
@@ -4374,33 +4374,10 @@ static void SetGrnDep(ParSct *par, LplSct *msh)
    VerGrn = malloc( (msh->NmbVer + 1) * sizeof(int) );
    assert(VerGrn);
 
-   par->M1 = LPL_calloc(par->lmb, par->NmbGrn + 1, par->NmbDepWrd * sizeof(int));
-   assert(par->M1);
-
-   par->M2 = LPL_calloc(par->lmb, par->NmbGrn + 1, par->NmbDepWrd * sizeof(int));
-   assert(par->M2);
-
    // Set grain bits with dependencies
    for(i=1;i<=msh->NmbGrn;i++)
       for(j=msh->VerGrnPar[i][0]; j<=msh->VerGrnPar[i][1]; j++)
          VerGrn[j] = i;
-
-
-   for(i=1;i<=msh->NmbVer;i++)
-   {
-      v1 = i;
-      g1 = VerGrn[ v1 ];
-      c1 = par->GrnCol[ g1 ];
-      SetBit(&par->M1[ g1 * par->NmbDepWrd ], g1);
-
-      for(j=0; j<msh->AdrBalRk2[i]; j++)
-      {
-         v2 = msh->LstBalRk2[i][j];
-         g2 = VerGrn[ v2 ];
-         c2 = par->GrnCol[ g2 ];
-         SetBit(&par->M1[ g1 * par->NmbDepWrd ], g2);
-      }
-   }
 
    for(i=1;i<=msh->NmbVer;i++)
    {
