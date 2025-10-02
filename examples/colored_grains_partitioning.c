@@ -314,11 +314,14 @@ int main(int ArgCnt, char **ArgVec)
 
    GmfCloseMesh(OutMsh);
 
+   tim = GetWallClock();
    RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
                               LplEdg, msh.EdgTyp, msh.NmbEdg, msh.EdgTab, NULL,
                               LplTet, msh.TetTyp, msh.NmbTet, msh.TetTab, NULL,
                               LplMax );
+
+   printf("Time to renumber = %gs\n", GetWallClock() - tim);
 
 
    // -----------------------------

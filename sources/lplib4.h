@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.11                                  */
+/*                               LPlib V4.12                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 15 2025                                           */
+/*   Last modification: oct 02 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -62,9 +62,9 @@ typedef struct
    int      ColBit, GrnBit, DegBit, RefBit, VerHilBit, FacHilBit, VolHilBit;
    int      ColLft, GrnLft, DegLft, RefLft, VerHilRgt, FacHilRgt, VolHilRgt;
    int      *VerDeg, *VerBal, *LstBalRk1, *RefTab;
-   int      (*BalTab)[2], *AdrBalRk2, *EleCol[ LplMax ], *EleGrn[ LplMax ];
-   int      **LstBalRk2, *VerRef, *EleRef[ LplMax ];
-   uint64_t ColMsk, GrnMsk, DegMsk, RefMsk, *AdrBalRk1, TotDeg;
+   int      (*BalTab)[2], *EleCol[ LplMax ], *EleGrn[ LplMax ];
+   int      *LstBalRk2, *VerRef, *EleRef[ LplMax ];
+   uint64_t ColMsk, GrnMsk, DegMsk, RefMsk, *AdrBalRk1, *AdrBalRk2, TotDeg;
    uint64_t (*RenTab[ LplMax ])[2], (*VerCod)[2], (*EleCod[ LplMax ])[2];
    double   box[6];
    double   MinSiz, MaxSiz, *CrdTab;

@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.11                                  */
+/*                               LPlib V4.12                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: sep 29 2025                                           */
+/*   Last modification: oct 02 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -276,7 +276,6 @@ static int        SetGrp         (ParSct *, TypSct *);
 static void      *LPL_malloc     (void *, int64_t);
 static void      *LPL_calloc     (void *, int64_t, int64_t);
 static void       LPL_free       (void *, void *);
-static void      *GrnHdl         (void *ptr);
 static void       UpdBlkSiz      (ParSct *, TypSct *);
 static void       SetBndBox      (LplSct *);
 static void       SetMidCrd      (int , int *, LplSct *, double *);
@@ -294,13 +293,14 @@ static int        SetColors      (int64_t, int, int (*)[2], int);
 static int        SetGrains      (int64_t, int, int, int (*)[2]);
 static void       SetGrnDep      (ParSct *, LplSct *);
 static void       SetV2VBal      (LplSct *);
+static void       SetRk2Bal      (LplSct *);
 static void       BuildMetisGraph(LplSct *, MtsSct *);
 static int        MetisPartitioning(LplSct *, int);
 static void       InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *,
                                                             uint64_t *, int *,
                                                             int1d *, int1d ** );
 static int       *ColoringPartitionImplicit3dNew(  int, int, int, uint64_t *, 
-                                                   int *, int *, int **,int * );
+                                                   int *, uint64_t *, int *,int * );
 #endif
 
 
@@ -842,7 +842,7 @@ float LaunchParallelMultiArg( int64_t ParIdx, int TypIdx1, int TypIdx2,
 
 static void *PthHdl(void *ptr)
 {
-   itg i, j, beg, end;
+   itg i, beg, end;
    PthSct *pth = (PthSct *)ptr;
    ParSct *par = pth->par;
 
@@ -2163,7 +2163,7 @@ static int SetGrp(ParSct *par, TypSct *typ)
 
 float LaunchColorGrains(int64_t ParIdx, int typ, void *prc, void *PtrArg)
 {
-   int      i, j;
+   int      i;
    float    acc = 0.;
    PthSct   *pth;
    ParSct   *par = (ParSct *)ParIdx;
@@ -2252,50 +2252,6 @@ float LaunchColorGrains(int64_t ParIdx, int typ, void *prc, void *PtrArg)
 
    // Return the concurrency factor
    return(acc);
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Provide the LPlib with color and grain index for each entities             */
-/*----------------------------------------------------------------------------*/
-
-static int SetColors(int64_t ParIdx, int NmbCol, int (*ColTab)[2], int NmbGrn)
-{
-   ParSct *par = (ParSct *)ParIdx;
-
-   // Allocate and copy memory to store colors information
-   par->NmbCol = NmbCol;
-   par->NmbGrn = NmbGrn;
-   par->ColTab = LPL_malloc(par->lmb, (NmbCol+1) * 2 * sizeof(int));
-
-   if(!par->ColTab)
-      return(1);
-
-   memcpy(par->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
-
-   return(0);
-}
-
-
-/*----------------------------------------------------------------------------*/
-/* Provide the LPlib with color and grain index for each entities             */
-/*----------------------------------------------------------------------------*/
-
-static int SetGrains(int64_t ParIdx, int MshTyp, int TypIdx, int (*GrnTab)[2])
-{
-   ParSct *par = (ParSct *)ParIdx;
-
-   par->TypIdx[ MshTyp ] = TypIdx;
-
-   // Allocate and copy memory to store grains information
-   par->GrnTab[ MshTyp ] = LPL_malloc(par->lmb, (par->NmbGrn+1) * 2 * sizeof(int));
-
-   if(!par->GrnTab[ MshTyp ])
-      return(1);
-
-   memcpy(par->GrnTab[ MshTyp ], GrnTab, (par->NmbGrn+1) * 2 * sizeof(int));
-
-   return(0);
 }
 
 
@@ -3259,31 +3215,6 @@ static void CalVarArgPip(PipSct *pip, void *prc)
    }
 }
 
-static int GetRk2Deg(int VerIdx, uint64_t *AdrBalRk1, int *LstBalRk1)
-{
-   int i, j, k, flg, bal[1000], deg = 0;
-
-   for(i=AdrBalRk1[ VerIdx ]; i<AdrBalRk1[ VerIdx+1 ]; i++)
-   {
-      for(j=AdrBalRk1[ LstBalRk1[i] ]; j<AdrBalRk1[ LstBalRk1[i] + 1 ]; j++)
-      {
-         flg = 1;
-
-         for(k=0;k<deg;k++)
-            if(LstBalRk1[j] == bal[k])
-            {
-               flg = 0;
-               break;
-            }
-
-         if(flg)
-            bal[deg++] = LstBalRk1[j];
-      }
-   }
-
-   return(deg);
-}
-
 
 /*----------------------------------------------------------------------------*/
 /* Read, renumber through a Hilbert SFC and write the mesh                    */
@@ -3292,7 +3223,7 @@ static int GetRk2Deg(int VerIdx, uint64_t *AdrBalRk1, int *LstBalRk1)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, k, t, siz, NmbCpu = 10, *TmpEle;
+   int      i, j, t, siz, NmbCpu = 10, *TmpEle;
    int      RenEleTyp[ LplMax ], RenVerTyp;
    int64_t  LibParIdx;
    double   *TmpCrd;
@@ -3304,6 +3235,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    int      NmbCol, (*ColPar)[3], (*VerGrnPar)[4];
    ParSct   *par = (ParSct *)ParIdx;
 #endif
+
+
+   // ---------------------------------------------------------------
+   // Allocate the main data structure, parse and check the arguments
+   // ---------------------------------------------------------------
 
    // Check mandatory inputs
    if(dim != 3)
@@ -3345,6 +3281,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       return(NULL);
    }
 
+
+   // -------------------------------------------------------------------------
+   // Call metis partitioning, the colouring, then setup colors and grains data
+   // -------------------------------------------------------------------------
+
 #ifdef WITH_METIS
    if(NmbGrn)
    {
@@ -3378,14 +3319,8 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       MetisPartitioning(msh, NmbGrn);
 
       // Allocate and setup rank2 vertex balls
-      msh->AdrBalRk2 = calloc(msh->NmbVer + 1, sizeof(int));
-      msh->LstBalRk2 = calloc(msh->NmbVer + 1, sizeof(int *));
-
       puts("set vertex balls rank 2");
-      InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEle[ LplEdg ], msh->EleTab[ LplEdg ],
-                                                msh->AdrBalRk1, msh->LstBalRk1,
-                                                msh->AdrBalRk2, msh->LstBalRk2 );
-
+      SetRk2Bal(msh);
 
       // Give a color to each grain
       puts("color partitions");
@@ -3436,6 +3371,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       puts("colouring done");
    }
 #endif
+
 
    // ----------------------------------------------------------------------
    // Prepare references and degree related data for the GMlib modified sort
@@ -3592,12 +3528,11 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    StopParallel(LibParIdx);
 
 
-#ifdef WITH_METIS
-
    // -----------------------------------------------------------------
    // Color-grain mode: setup global colouring and each entities grains
    // -----------------------------------------------------------------
 
+#ifdef WITH_METIS
    if(NmbGrn)
    {
       CurCol = msh->VerCol[1];
@@ -3718,6 +3653,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       free(ColPar);
       free(VerGrnPar);
 
+      // Derive elements' grain and color from the vertices
       for(t=LplEdg; t<LplMax; t++)
       {
          if(!msh->NmbEle[t])
@@ -3743,6 +3679,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          }
       }
 
+      // Check the colouring validity again after the renumbering
       ChkColGrn(msh);
 
       // Send colors to grains information to the LPlib
@@ -3767,33 +3704,50 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       SetV2VBal(msh);
       memset(msh->AdrBalRk2, 0, (msh->NmbVer + 1) * sizeof(int));
       memset(msh->LstBalRk2, 0, (msh->NmbVer + 1) * sizeof(int *));
+
       puts("set vertex balls rank 2");
-      InitializeWolfNscDataBaseNeighboorRank2(  msh->NmbVer, msh->NmbEle[ LplEdg ], msh->EleTab[ LplEdg ],
-                                                msh->AdrBalRk1, msh->LstBalRk1,
-                                                msh->AdrBalRk2, msh->LstBalRk2 );
+      free(msh->AdrBalRk2);
+      free(msh->LstBalRk2);
+      SetRk2Bal(msh);
 
       // Build the dependencies between grains for the dynamic scheduling
       SetGrnDep(par, msh);
 
       // Allocate and setup the grain wroks for use by the Lplib's scheduler
-      par->GrnWrkTab = LPL_calloc(par->lmb, par->NmbGrn , sizeof(WrkSct));
+      par->GrnWrkTab = calloc(par->NmbGrn , sizeof(WrkSct));
       assert(par->GrnWrkTab);
 
       par->NmbGrnWrk = msh->NmbGrn;
       par->NmbCol = msh->NmbCol;
 
-      par->ColCpt = LPL_calloc(par->lmb, par->NmbCol + 1, sizeof(int));
+      par->ColCpt = calloc(par->NmbCol + 1, sizeof(int));
       assert(par->ColCpt);
 
-      par->RunDepTab = LPL_calloc(par->lmb, par->NmbGrn / 32 + 1 , sizeof(int));
+      par->RunDepTab = calloc(par->NmbGrn / 32 + 1 , sizeof(int));
       assert(par->RunDepTab);
 
       for(i=0;i<par->NmbGrn;i++)
          par->GrnWrkTab[i].DepWrdTab = &par->GrnMat[ (i+1) * par->NmbDepWrd ];
    }
+
+   // Free all working tables
+   free(msh->VerGrn);
+   free(msh->VerCol);
+   free(msh->VerCod);
+   free(msh->Old2New);
+
+   for(t=LplEdg; t<LplMax; t++)
+      if(msh->NmbEle[t])
+      {
+         free(msh->EleCol[t]);
+         free(msh->EleGrn[t]);
+         free(msh->EleCod[t]);
+         free(msh->EleGrnPar[t]);
+         
+      }
 #endif
 
-
+   // Retun the Lpl mesh datastructure that keeps track of the previous numbering
    return(msh);
 }
 
@@ -4350,6 +4304,50 @@ static int SetDeg(LplSct *msh, int *DegTab)
 
 
 /*----------------------------------------------------------------------------*/
+/* Provide the LPlib with color and grain index for each entities             */
+/*----------------------------------------------------------------------------*/
+
+static int SetColors(int64_t ParIdx, int NmbCol, int (*ColTab)[2], int NmbGrn)
+{
+   ParSct *par = (ParSct *)ParIdx;
+
+   // Allocate and copy memory to store colors information
+   par->NmbCol = NmbCol;
+   par->NmbGrn = NmbGrn;
+   par->ColTab = LPL_malloc(par->lmb, (NmbCol+1) * 2 * sizeof(int));
+
+   if(!par->ColTab)
+      return(1);
+
+   memcpy(par->ColTab, ColTab, (NmbCol+1) * 2 * sizeof(int));
+
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Provide the LPlib with color and grain index for each entities             */
+/*----------------------------------------------------------------------------*/
+
+static int SetGrains(int64_t ParIdx, int MshTyp, int TypIdx, int (*GrnTab)[2])
+{
+   ParSct *par = (ParSct *)ParIdx;
+
+   par->TypIdx[ MshTyp ] = TypIdx;
+
+   // Allocate and copy memory to store grains information
+   par->GrnTab[ MshTyp ] = LPL_malloc(par->lmb, (par->NmbGrn+1) * 2 * sizeof(int));
+
+   if(!par->GrnTab[ MshTyp ])
+      return(1);
+
+   memcpy(par->GrnTab[ MshTyp ], GrnTab, (par->NmbGrn+1) * 2 * sizeof(int));
+
+   return(0);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Build the grain depedencies table to enable colorgrains dynamic scheduling */
 /*----------------------------------------------------------------------------*/
 
@@ -4385,9 +4383,9 @@ static void SetGrnDep(ParSct *par, LplSct *msh)
       g1 = VerGrn[ v1 ];
       c1 = par->GrnCol[ g1 ];
 
-      for(j=0; j<msh->AdrBalRk2[i]; j++)
+      for(j=msh->AdrBalRk2[i]; j<msh->AdrBalRk2[i+1]; j++)
       {
-         v2 = msh->LstBalRk2[i][j];
+         v2 = msh->LstBalRk2[j];
          g2 = VerGrn[ v2 ];
          c2 = par->GrnCol[ g2 ];
 
@@ -4568,6 +4566,60 @@ static void SetV2VBal(LplSct *msh)
 
 
 /*----------------------------------------------------------------------------*/
+/* Set vertex to vertex rank 2 balls                                          */
+/*----------------------------------------------------------------------------*/
+
+static void SetRk2Bal(LplSct *msh)
+{
+   int *MrkTab;
+   uint64_t i, j, k, TotDeg = 0, siz = 100, TabSiz = siz * msh->NmbVer;
+
+   // Allocate a mark table and an address table
+   MrkTab = calloc(msh->NmbVer + 1, sizeof(int));
+   assert(MrkTab);
+
+   msh->AdrBalRk2 = malloc((msh->NmbVer + 2) * sizeof(uint64_t));
+   assert(msh->AdrBalRk2);
+
+   msh->LstBalRk2 = malloc(TabSiz * sizeof(int));
+   assert(msh->LstBalRk2);
+
+   // Count the total rank 2 vertex degree and fill the address table
+   for(i=1;i<=msh->NmbVer;i++)
+   {
+      msh->AdrBalRk2[i] = TotDeg;
+
+      for(j=msh->AdrBalRk1[i]; j<msh->AdrBalRk1[ i+1 ]; j++)
+      {
+         for(k=msh->AdrBalRk1[ msh->LstBalRk1[j] ]; k<msh->AdrBalRk1[ msh->LstBalRk1[j] + 1 ]; k++)
+         {
+            if( (MrkTab[ msh->LstBalRk1[k] ] != i) && (msh->LstBalRk1[k] != i) )
+            {
+               if(TotDeg >= TabSiz)
+               {
+                  TabSiz *= 2;
+                  msh->LstBalRk2 = realloc(msh->LstBalRk2, TabSiz * sizeof(int));
+                  assert(msh->LstBalRk2);
+                  puts("WARNING: rank 2 ball table realloc");
+               }
+
+               MrkTab[ msh->LstBalRk1[k] ] = i;
+               msh->LstBalRk2[ TotDeg ] = msh->LstBalRk1[k];
+               TotDeg++;
+            }
+         }
+      }
+   }
+
+   // Set boundary elements
+   msh->AdrBalRk2[0] = 0;
+   msh->AdrBalRk2[ msh->NmbVer+1 ] = TotDeg;
+
+   free(MrkTab);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
 static int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
@@ -4743,119 +4795,8 @@ static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColV
 }
 
 
-static void ComputeNeighborsRank2_3d(uint64_t *AdrBalRk1, int *LstBalRk1, int1d iVer, int1d **LstBalRk2,
-                                     int1d *NbrEdgRk2)
-{
-   int1d  jVer, iVoi, nbv, nbr, iLay, beg, end, cpt;
-   int1d  i, ive, idx, flg, sizLst, cptLay = 0, NbrLay;
-   int1d *verLst;
-
-   //--- Init
-   sizLst = 512;
-   verLst = (int1d *)malloc(sizeof(int1d) * (sizLst));
-   memset(verLst, 0, sizeof(int1d) * 512);
-
-   nbv    = 0;
-   NbrLay = 1;
-
-   verLst[0] = iVer;   // Put the first to not treat it the vertices of Rk 2 BUT don't put it in the final list
-
-   nbv++;
-
-   cpt = 0;
-
-   //--- Vertices neighbors of rank 1: for each vertex get its ball of elements
-   jVer = iVer;
-   nbr  = AdrBalRk1[jVer + 1] - AdrBalRk1[jVer];
-
-   for (i = 0; i < nbr; i++)
-   {
-      idx  = AdrBalRk1[jVer] + i;
-      iVoi = LstBalRk1[idx];
-
-
-      //- add new vertex neighbor
-      verLst[nbv] = iVoi;
-      nbv++;
-
-      cpt++;
-
-      if (nbv >= sizLst)
-      {
-         sizLst *= 2;
-         verLst  = (int1d *)realloc(verLst, sizeof(int1d) * (sizLst));
-      }
-   }
-
-   beg = 0;
-   end = nbv;
-   //--- Vertices neighbors of rank 2: for each vertex get its ball of elements
-
-   for (iLay = 0; iLay < NbrLay; iLay++)
-   {
-      for (ive = beg; ive < end; ++ive)
-      {
-         jVer = verLst[ive];
-         nbr  = AdrBalRk1[jVer + 1] - AdrBalRk1[jVer];
-
-         for (i = 0; i < nbr; i++)
-         {
-            idx  = AdrBalRk1[jVer] + i;
-            iVoi = LstBalRk1[idx];
-
-            flg = Wlf2_CheckIfVertexIsInTheList(iVoi, nbv, verLst);
-
-            if (flg >= 0) continue;
-
-            //- add new vertex neighbor
-            verLst[nbv] = iVoi;
-            nbv++;
-            cptLay++;   // count the numver of vertices addes in that layer
-            // for computing the neigboors oh the same layer for the enxt pass
-
-            cpt++;
-
-            if (nbv >= sizLst)
-            {
-               sizLst *= 2;
-               verLst  = (int1d *)realloc(verLst, sizeof(int1d) * (sizLst));
-            }
-         }
-      }
-      beg     = end;
-      end    += cptLay;
-      cptLay  = 0;
-   }
-
-   *NbrEdgRk2 = nbv - 1;
-
-   LstBalRk2[iVer] = (int1d *)malloc(sizeof(int1d) * cpt);
-   for (i = 1; i < nbv; i++)
-   {
-      LstBalRk2[iVer][i - 1] = verLst[i];
-   }
-   free(verLst);
-   verLst = NULL;
-
-   return;
-}
-
-
-static void InitializeWolfNscDataBaseNeighboorRank2(int NmbVer, int NmbEdg, int *EdgTab, uint64_t *AdrBalRk1,
-                                                    int *LstBalRk1, int1d *AdrBalRk2, int1d **LstBalRk2)
-{
-   int iVer;
-
-   AdrBalRk2[0] = 0;
-
-   for (iVer = 1; iVer <= NmbVer; iVer++)
-   {
-      ComputeNeighborsRank2_3d(AdrBalRk1, LstBalRk1, iVer, LstBalRk2, &(AdrBalRk2[iVer]));
-   }
-}
-
 static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, uint64_t *AdrBalRk1, int *LstBalRk1,
-                                           int *AdrBalRk2, int **LstBalRk2, int *VidPar)
+                                           uint64_t *AdrBalRk2, int *LstBalRk2, int *VidPar)
 {
    int1d   NbrCol, i, flag1, flag = 0;
    int1d   iVer, iCol, jCol, iPar, jPar, iVoi, idx, idxPar, jdxPar;
@@ -4886,12 +4827,12 @@ static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, u
 
    for (iVer = 1; iVer <= NmbVer; iVer++)
    {
-      nbrVoi = AdrBalRk2[iVer];
+      nbrVoi = AdrBalRk2[iVer+1] - AdrBalRk2[iVer];
       idxPar = VidPar[iVer];
 
-      for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+      for (iVoi =  AdrBalRk2[iVer]; iVoi < AdrBalRk2[iVer+1]; iVoi++)
       {
-         jVer   = LstBalRk2[iVer][iVoi];
+         jVer   = LstBalRk2[iVoi];
          jdxPar = VidPar[jVer];
 
          if (idxPar == jdxPar)
