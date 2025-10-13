@@ -78,10 +78,9 @@ void ParEdg2 (itg, itg, int, ParSct *);
 
 itg ParallelBuildEdges(itg NmbEle, int EleTyp, itg *EleTab, itg **UsrEdg)
 {
-   itg      i, HshSiz, IncSiz, adr = 0, NmbEdg = 0, (*EdgTab)[2];
+   itg      i, HshSiz, IncSiz, NmbEdg = 0, (*EdgTab)[2];
    int64_t  LibIdx;
    int      TetTyp, NmbCpu;
-   HshSct   *HshTab;
    ParSct   par[ MaxPth ];
 
    // As for now only tets are supported
@@ -227,9 +226,9 @@ void ParEdg1(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 {
    itg i, key, PthNmbEdg = 0, edg[ MAXEDG ][2];
-   itg siz = par[ PthIdx ].HshSiz, NmbCpu = par[ PthIdx ].NmbCpu;
+   itg NmbCpu = par[ PthIdx ].NmbCpu;
    int NmbEdg, flg, j, k;
-   HshSct *hsh = par[ PthIdx ].HshTab, *buc;
+   HshSct *buc;
    itg (*EdgTab)[2] = par[ PthIdx ].EdgTab;
 
    // Loop over the hash table direct entries following an interleaved stencil

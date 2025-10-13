@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 02 2025                                           */
+/*   Last modification: oct 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -54,8 +54,8 @@ enum RenTyp {LplNoRenum, LplHilbert, LplZcurve};
 
 typedef struct
 {
-   int      NmbVer, *Old2New, MshVer, dim, mod, TypIdx, VerTyp;
-   int      NmbEle[ LplMax ], *EleTab[ LplMax ], EleTyp[ LplMax ], GmlMod;
+   int      *Old2New, MshVer, dim, mod, TypIdx, VerTyp, VrbLvl;
+   int      EleTyp[ LplMax ], GmlMod, *EleTab[ LplMax ];
    int      MaxDeg[ LplMax ], DegVec[ LplMax ], HghDeg, OvrDeg;
    int      ColGrnFlg, ColGrnMod, NmbCol, NmbGrn, *VerGrn, *VerCol;
    int      (*ColPar)[2], (*VerGrnPar)[2], (*EleGrnPar[ LplMax ])[2];
@@ -64,6 +64,7 @@ typedef struct
    int      *VerDeg, *VerBal, *LstBalRk1, *RefTab;
    int      (*BalTab)[2], *EleCol[ LplMax ], *EleGrn[ LplMax ];
    int      *LstBalRk2, *VerRef, *EleRef[ LplMax ];
+   uint64_t NmbVer, NmbEle[ LplMax ];
    uint64_t ColMsk, GrnMsk, DegMsk, RefMsk, *AdrBalRk1, *AdrBalRk2, TotDeg;
    uint64_t (*RenTab[ LplMax ])[2], (*VerCod)[2], (*EleCod[ LplMax ])[2];
    double   box[6];

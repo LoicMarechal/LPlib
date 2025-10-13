@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.12                                  */
+/*                               LPlib V4.13                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 02 2025                                           */
+/*   Last modification: oct 13 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -294,13 +294,10 @@ static int        SetGrains      (int64_t, int, int, int (*)[2]);
 static void       SetGrnDep      (ParSct *, LplSct *);
 static void       SetV2VBal      (LplSct *);
 static void       SetRk2Bal      (LplSct *);
-static void       BuildMetisGraph(LplSct *, MtsSct *);
-static int        MetisPartitioning(LplSct *, int);
-static void       InitializeWolfNscDataBaseNeighboorRank2(  int, int, int *,
-                                                            uint64_t *, int *,
-                                                            int1d *, int1d ** );
-static int       *ColoringPartitionImplicit3dNew(  int, int, int, uint64_t *, 
-                                                   int *, uint64_t *, int *,int * );
+static void       BuildMetisGraph   (LplSct *, MtsSct *);
+static int        MetisPartitioning (LplSct *, int);
+static int       *ColorPartImplicit (int, int, int, uint64_t *, int *,
+                                     uint64_t *, int *,int *, int);
 #endif
 
 
@@ -1102,7 +1099,8 @@ static WrkSct *NexGrn(ParSct *par, int PthIdx)
    {
       // Check for dependencies
       if((wrk->GrnIdx <= par->ColTab[ par->CurCol ][1])
-      || ( (par->CurCol < par->NmbCol) && (wrk->GrnIdx <= par->ColTab[ par->CurCol+1 ][1])
+      || ( par->DynSch && (par->CurCol < par->NmbCol)
+         && (wrk->GrnIdx <= par->ColTab[ par->CurCol+1 ][1])
          && !AndWrd(par->NmbDepWrd, wrk->DepWrdTab, par->RunDepTab) ) )
       {
          // Unlink wp
@@ -2616,7 +2614,11 @@ void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
                      int (*compar)(const void *, const void *) )
 {
    (void)(ParIdx);
+#ifdef __MACH__
+   psort(base, nel, width, compar);
+#else
    qsort(base, nel, width, compar);
+#endif
 }
 
 
@@ -3312,29 +3314,25 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          assert(msh->EleGrn[t]);
       }
 
-      // Partition the mesh into grains with Metis
-      puts("set vertex balls rank 1");
+      // Allocate and setup rank 1 vertex balls
       SetV2VBal(msh);
-      puts("metis part");
+
+      // Partition the mesh into grains with Metis
       MetisPartitioning(msh, NmbGrn);
 
-      // Allocate and setup rank2 vertex balls
-      puts("set vertex balls rank 2");
+      // Allocate and setup rank 2 vertex balls
       SetRk2Bal(msh);
 
       // Give a color to each grain
-      puts("color partitions");
-      ColTab = ColoringPartitionImplicit3dNew(  NmbCpu, NmbGrn, msh->NmbVer,
-                                                msh->AdrBalRk1, msh->LstBalRk1,
-                                                msh->AdrBalRk2, msh->LstBalRk2,
-                                                msh->VerGrn );
+      ColTab = ColorPartImplicit(NmbCpu, NmbGrn, msh->NmbVer,
+                                 msh->AdrBalRk1, msh->LstBalRk1,
+                                 msh->AdrBalRk2, msh->LstBalRk2,
+                                 msh->VerGrn, msh->VrbLvl);
 
-      puts("set vertex color and grain");
       // Propagate the color-grain information to elements
       for(i=1;i<=msh->NmbVer;i++)
          msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
 
-      puts("set elements color and grain");
       for(t=LplEdg; t<LplMax; t++)
       {
          if(!msh->NmbEle[t])
@@ -3354,9 +3352,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       for(i=1;i<=NmbGrn;i++)
          msh->NmbCol = MAX(msh->NmbCol, ColTab[i]);
 
-      printf("NmbCol: %d\n", msh->NmbCol);
-
-      puts("check coloring pinches");
+      // Check that there are no 2nd order pinchments
       ChkColGrn(msh);
 
       // Set the bit field size, maks and left shift to store the color value
@@ -3368,7 +3364,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       msh->GrnBit = ceil(log(msh->NmbGrn) / log(2));
       msh->GrnMsk = (1ULL << msh->GrnBit) - 1ULL;
       msh->GrnLft = 64 - msh->ColBit - msh->GrnBit;
-      puts("colouring done");
    }
 #endif
 
@@ -3423,17 +3418,20 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    // Vertices renumbering
    // --------------------
 
-   printf("Sorting keys table: number of bit per key for each dimension of mesh entities\n");
-   printf(" Entity | rank4 (color) | rank3 (grain) | rank2 (degree or ref) | rank1 (%s)\n",
-            SchStr[ msh->mod ]);
-   printf(" Vertex |      %2d       |      %2d       |           %2d          |      %2d\n",
-            msh->ColBit, msh->GrnBit, msh->DegBit, msh->VerHilBit);
+   if(msh->VrbLvl >= 1)
+   {
+      printf("Sorting keys table: number of bit per key for each dimension of mesh entities\n");
+      printf(" Entity | rank4 (color) | rank3 (grain) | rank2 (degree or ref) | rank1 (%s)\n",
+               SchStr[ msh->mod ]);
+      printf(" Vertex |      %2d       |      %2d       |           %2d          |      %2d\n",
+               msh->ColBit, msh->GrnBit, msh->DegBit, msh->VerHilBit);
 
-   printf(" Face   |      %2d       |      %2d       |           %2d          |      %2d\n",
-            msh->ColBit, msh->GrnBit, msh->RefBit, msh->FacHilBit);
+      printf(" Face   |      %2d       |      %2d       |           %2d          |      %2d\n",
+               msh->ColBit, msh->GrnBit, msh->RefBit, msh->FacHilBit);
 
-   printf(" Volume |      %2d       |      %2d       |           %2d          |      %2d\n",
-            msh->ColBit, msh->GrnBit, 0, msh->VolHilBit);
+      printf(" Volume |      %2d       |      %2d       |           %2d          |      %2d\n",
+               msh->ColBit, msh->GrnBit, 0, msh->VolHilBit);
+   }
 
    msh->VerCod = malloc( (msh->NmbVer + 1) * 2 * sizeof(int64_t) );
    assert(msh->VerCod);
@@ -3476,7 +3474,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       free(msh->VerGrn);
       msh->VerGrn = NewGrn;
 
-      puts("set vertex color and grain");
       for(i=1;i<=msh->NmbVer;i++)
          msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
    }
@@ -3624,17 +3621,19 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       VerGrnPar[ NmbGrn ][1] = msh->NmbVer;
       ColPar[ NmbCol ][1] = NmbGrn;
 
-      for(i=1;i<=NmbCol;i++)
-         printf(  "vertex color %2d (%2d): %6d -> %6d, size: %6d\n",
-                  i, ColPar[i][2], ColPar[i][0], ColPar[i][1],
-                  ColPar[i][1] - ColPar[i][0] + 1);
+      if(msh->VrbLvl >= 1)
+      {
+         for(i=1;i<=NmbCol;i++)
+            printf(  "vertex color %2d (%2d): %6d -> %6d, size: %6d\n",
+                     i, ColPar[i][2], ColPar[i][0], ColPar[i][1],
+                     ColPar[i][1] - ColPar[i][0] + 1);
 
-      for(i=1;i<=NmbGrn;i++)
-         printf(  "vertex grain %6d (%6d/%6d): %10d -> %10d, size: %10d\n",
-                  i, VerGrnPar[i][2], VerGrnPar[i][3],
-                  VerGrnPar[i][0], VerGrnPar[i][1],
-                  VerGrnPar[i][1] - VerGrnPar[i][0] + 1);
-
+         for(i=1;i<=NmbGrn;i++)
+            printf(  "vertex grain %6d (%6d/%6d): %10d -> %10d, size: %10d\n",
+                     i, VerGrnPar[i][2], VerGrnPar[i][3],
+                     VerGrnPar[i][0], VerGrnPar[i][1],
+                     VerGrnPar[i][1] - VerGrnPar[i][0] + 1);
+      }
 
       msh->ColPar = malloc((NmbCol + 1) * 2 * sizeof(int));
       assert(msh->ColPar);
@@ -3694,18 +3693,12 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       // Send grains of tets to the LPlib
       SetGrains(ParIdx, LplTet, msh->EleTyp[ LplTet ], msh->EleGrnPar[ LplTet ]);
 
-      puts("vertex, edges and tets color grains set");
-
       // Rebuild the rank 1 & 2 balls of vertices after the renumbering
-      puts("set vertex balls rank 1");
       free(msh->VerDeg);
       free(msh->AdrBalRk1);
       free(msh->LstBalRk1);
       SetV2VBal(msh);
-      memset(msh->AdrBalRk2, 0, (msh->NmbVer + 1) * sizeof(int));
-      memset(msh->LstBalRk2, 0, (msh->NmbVer + 1) * sizeof(int *));
 
-      puts("set vertex balls rank 2");
       free(msh->AdrBalRk2);
       free(msh->LstBalRk2);
       SetRk2Bal(msh);
@@ -4353,7 +4346,7 @@ static int SetGrains(int64_t ParIdx, int MshTyp, int TypIdx, int (*GrnTab)[2])
 
 static void SetGrnDep(ParSct *par, LplSct *msh)
 {
-   int i, j, k, *VerGrn, v1, v2, g1, g2, c1, c2;
+   int i, j, *VerGrn, v1, v2, g1, g2, c1, c2;
 
    // Build the grains forward compatibility matrix
    par->NmbDepWrd = (msh->NmbGrn + 1) / 32 + 1;
@@ -4362,7 +4355,6 @@ static void SetGrnDep(ParSct *par, LplSct *msh)
 
    // Set all next grain entries to 0
    par->GrnCol = LPL_calloc(par->lmb, msh->NmbGrn + 1, sizeof(int) );
-   assert(par->GrnCol);
 
    // Set the identity
    for(i=1;i<=msh->NmbCol;i++)
@@ -4404,11 +4396,16 @@ static void SetGrnDep(ParSct *par, LplSct *msh)
 
 static void ChkColGrn(LplSct *msh)
 {
-   int i, j, k, VerIdx, NmbCol = 0;
-   int *VerColTab = calloc(msh->NmbVer + 1, sizeof(int));
-   int *VerGrnTab = calloc(msh->NmbVer + 1, sizeof(int));
+   int i, j, k, VerIdx, NmbCol = 0, *VerColTab, *VerGrnTab;
 
-   printf("Check color-grain consistency: ");
+   VerColTab = calloc(msh->NmbVer + 1, sizeof(int));
+   assert(VerColTab);
+
+   VerGrnTab = calloc(msh->NmbVer + 1, sizeof(int));
+   assert(VerGrnTab);
+
+   if(msh->VrbLvl >= 1)
+      printf("Check color-grain consistency: ");
 
    for(i=1;i<=msh->NmbCol;i++)
    {
@@ -4429,18 +4426,25 @@ static void ChkColGrn(LplSct *msh)
             else if( (VerColTab[ VerIdx ] == i)
                   && (VerGrnTab[ VerIdx ] != msh->EleGrn[ LplTet ][j]) )
             {
-               printf("vertex %d / tet %d / grain %d / color %d, collide with grain %d\n",
-                        VerIdx, j, msh->EleGrn[ LplTet ][j], i, VerGrnTab[ VerIdx ]);
+               if(msh->VrbLvl >= 1)
+               {
+                  printf("vertex %d / tet %d / grain %d / color %d, collide with grain %d\n",
+                           VerIdx, j, msh->EleGrn[ LplTet ][j], i, VerGrnTab[ VerIdx ]);
+               }
+
                NmbCol++;
             }
          }
       }
    }
 
-   if(!NmbCol)
-      puts("OK");
-   else
-      printf("%d collisions\n", NmbCol);
+   if(msh->VrbLvl >= 1)
+   {
+      if(!NmbCol)
+         puts("OK");
+      else
+         printf("%d collisions\n", NmbCol);
+   }
 
    free(VerColTab);
    free(VerGrnTab);
@@ -4455,10 +4459,9 @@ static int MetisPartitioning(LplSct *msh, int NmbPar)
 {
    int i;
    MtsSct mts;
-   puts("Build Metis graph");
+
    BuildMetisGraph(msh, &mts);
    mts.nparts = NmbPar;
-   puts("Call Metis partitioning");
 
    if(METIS_PartGraphKway( &mts.nvtxs, &mts.ncon, mts.xadj, mts.adjncy,
                            NULL, NULL, NULL, &mts.nparts, NULL, NULL,
@@ -4467,7 +4470,6 @@ static int MetisPartitioning(LplSct *msh, int NmbPar)
       return(0);
    }
 
-   puts("Extract partitions");
    for(i=0;i<msh->NmbVer;i++)
       msh->VerGrn[i+1] = mts.part[i]+1;
 
@@ -4528,7 +4530,10 @@ static void SetV2VBal(LplSct *msh)
    int64_t  TabSiz = 0;
 
    msh->AdrBalRk1 = calloc(msh->NmbVer + 2, sizeof(int64_t));
+   assert(msh->AdrBalRk1);
+
    msh->VerDeg = calloc(msh->NmbVer + 1, sizeof(int));
+   assert(msh->VerDeg);
 
    // Set vertices degree
    for(i=1;i<=msh->NmbEle[ LplEdg ];i++)
@@ -4546,6 +4551,8 @@ static void SetV2VBal(LplSct *msh)
 
    // Allocate the global balls table and give each vertex a pointer to its own table
    msh->LstBalRk1 = malloc(TabSiz * sizeof(int));
+   assert(msh->LstBalRk1);
+
    msh->TotDeg = TabSiz;
 
    if(!msh->AdrBalRk1 || !msh->LstBalRk1)
@@ -4795,8 +4802,10 @@ static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColV
 }
 
 
-static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, uint64_t *AdrBalRk1, int *LstBalRk1,
-                                           uint64_t *AdrBalRk2, int *LstBalRk2, int *VidPar)
+static int *ColorPartImplicit(int NmbPth, int nbrPar, int NmbVer,
+                              uint64_t *AdrBalRk1, int *LstBalRk1,
+                              uint64_t *AdrBalRk2, int *LstBalRk2,
+                              int *VidPar, int VrbLvl)
 {
    int1d   NbrCol, i, flag1, flag = 0;
    int1d   iVer, iCol, jCol, iPar, jPar, iVoi, idx, idxPar, jdxPar;
@@ -4990,7 +4999,8 @@ static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, u
       if (BackUpCol[iCol] != 0)
       {
          flag++;   // Coutn for the number of problem (must be even)
-         printf("\t Color %d has a wrong number of partition %d (Target = %d) \t", iCol, CntCol[iCol], NbrParTgt);
+         if(VrbLvl >= 1)
+            printf("  Color %d has a wrong number of partition %d (Target = %d)\n", iCol, CntCol[iCol], NbrParTgt);
       }
    }
 
@@ -5054,7 +5064,7 @@ static int *ColoringPartitionImplicit3dNew(int NmbPth, int nbrPar, int NmbVer, u
       IteBck--;
    }
 
-   if (flag != 0) printf("Balance is not good\n");
+   if (VrbLvl >= 1 && flag != 0) printf("Balance is not good\n");
 
    return (GphColPar);
 }

@@ -68,8 +68,8 @@ void EdgPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
       {
          idx = msh->EdgTab[i][j];
          msh->VerDeg[ idx ]++;
-         sol = msh->VerSol[ idx ];
-         msh->VerSol[ idx ] = sqrt(sol * sol + 1.) + 1.;
+/*         sol = msh->VerSol[ idx ];
+         msh->VerSol[ idx ] = sqrt(sol * sol + 1.) + 1.;*/
       }
 }
 
@@ -162,11 +162,12 @@ int CmpEdg(const void *a, const void *b)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret;
+   int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret, DynSch;
    int         *EdgCol = NULL, *EdgGrn = NULL;
    int64_t     InpMsh, OutMsh, DegTot = 0;
    float       sta[2], acc = 0;
    double      tim = 0;
+   char        *MshNam;
    MshSct      msh;
    LplSct      *RenNfo;
 
@@ -176,21 +177,23 @@ int main(int ArgCnt, char **ArgVec)
    // --------------------------------------
 
    // Read the number of threads to launch from the command line argument
-   if(ArgCnt == 3)
+   if(ArgCnt == 5)
    {
+      MshNam = (char *)*++ArgVec;
       NmbCpu = atoi(*++ArgVec);
       NmbGrn = atoi(*++ArgVec);
+      DynSch = atoi(*++ArgVec);
    }
    else
    {
-      puts("colored_grains_partitioning   nbThreads   nbGrains");
+      puts("colored_grains_partitioning   MeshFile   NmbThreads   NmbGrains (0 = dependency loop)   DynamicScheduling (0 or 1)");
       exit(0);
    }
 
    // Open the input mesh
-   if(!(InpMsh = GmfOpenMesh("../sample_meshes/tet.meshb", GmfRead, &ver, &dim)))
+   if(!(InpMsh = GmfOpenMesh(MshNam, GmfRead, &ver, &dim)))
    {
-      puts("Cannot open the file ../sample_meshes/tet.meshb");
+      printf("Cannot open the file %s\n", MshNam);
       return(1);
    }
 
@@ -232,6 +235,9 @@ int main(int ArgCnt, char **ArgVec)
       puts("Error initializing the LPlib.");
       exit(5);
    }
+
+   if(!DynSch)
+      SetExtendedAttributes(msh.ParIdx, StaticScheduling, 0);
 
    if(!(msh.TetTyp = NewType(msh.ParIdx, msh.NmbTet)))
    {
@@ -314,6 +320,8 @@ int main(int ArgCnt, char **ArgVec)
 
    GmfCloseMesh(OutMsh);
 
+   printf("\nMesh partitioning & renumbering: ");
+	fflush(stdout);
    tim = GetWallClock();
    RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
@@ -321,7 +329,7 @@ int main(int ArgCnt, char **ArgVec)
                               LplTet, msh.TetTyp, msh.NmbTet, msh.TetTab, NULL,
                               LplMax );
 
-   printf("Time to renumber = %gs\n", GetWallClock() - tim);
+   printf("%gs\n", GetWallClock() - tim);
 
 
    // -----------------------------
@@ -337,13 +345,8 @@ int main(int ArgCnt, char **ArgVec)
 
    EndDependency(msh.ParIdx, sta);
    printf("collisions: %g / %g\n", sta[0], sta[1]);
-*/
 
-   // -----------------------------
-   // MAIN DEPENDENCY LOOP ON EDGES
-   // -----------------------------
-
-/*   puts("\nDependency loop on edges:");
+   puts("\nDependency loop on edges:");
    tim = GetWallClock();
 
    for(i=1;i<=NMBITR;i++)
@@ -382,20 +385,20 @@ int main(int ArgCnt, char **ArgVec)
 
    GmfCloseMesh(OutMsh);
    free(msh.TetRef);
-   //exit(0);
 
    // ---------------------------------
    // MAIN COLORED GRAINS LOOP ON EDGES
    // ---------------------------------
 
-   puts("\nColored grains scheduling on edges:");
+   printf("Color-grain scheduling on edges: ");
+	fflush(stdout);
    tim = GetWallClock();
 
    // Loop over edges and access vertices
    for(i=1;i<=NMBITR;i++)
       LaunchColorGrains(msh.ParIdx, LplEdg, EdgPar, &msh);
 
-   printf("Run time = %g\n\n", GetWallClock() - tim);
+   printf("%g\n", GetWallClock() - tim);
 
    DegTot = 0;
 
@@ -405,7 +408,7 @@ int main(int ArgCnt, char **ArgVec)
       msh.VerDeg[i] = 0;
    }
 
-   printf("Vertex total degree = %lld\n", DegTot);
+   printf("Vertex total accumulated degree: %lld\n\n", DegTot);
 
 
    // --------------------------------
