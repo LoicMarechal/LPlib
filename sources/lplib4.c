@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.13                                  */
+/*                               LPlib V4.20                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 13 2025                                           */
+/*   Last modification: oct 27 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -111,6 +111,9 @@ typedef struct
    itg               NmbLin, MaxNmbLin;
    int               NmbSmlWrk, SmlWrkSiz, DepWrkSiz, NmbGrp;
    int               NmbDepWrd, *DepWrdMat, *RunDepTab;
+#if ( __STDC_VERSION__ > 201100L )
+   _Atomic int       *AtoLok;
+#endif
    WrkSct            *SmlWrkTab, *BigWrkTab;
    GrpSct            *NexGrp;
 }TypSct;
@@ -5067,6 +5070,111 @@ static int *ColorPartImplicit(int NmbPth, int nbrPar, int NmbVer,
    if (VrbLvl >= 1 && flag != 0) printf("Balance is not good\n");
 
    return (GphColPar);
+}
+
+#endif
+
+
+#if ( __STDC_VERSION__ > 201100L )
+
+/*----------------------------------------------------------------------------*/
+/* Allocate an atomic lock for each type's entities                           */
+/*----------------------------------------------------------------------------*/
+
+int AllocAtomicLocks(int64_t ParIdx, int TypIdx)
+{
+   ParSct *par;
+   TypSct *typ;
+
+   // Get and check lib parallel instance
+   if(!ParIdx || (TypIdx < 1) || (TypIdx > MaxTyp))
+      return(0);
+
+   par = (ParSct *)ParIdx;
+   typ = &par->TypTab[ TypIdx ];
+
+   if(!typ->NmbLin)
+      return(0);
+
+   typ->AtoLok = LPL_calloc(par->lmb, typ->NmbLin + 1, sizeof(int));
+
+   if(!typ->AtoLok)
+      return(0);
+
+   return(1);
+}
+
+/*----------------------------------------------------------------------------*/
+/* Allocate an atomic lock for each type's entities                           */
+/*----------------------------------------------------------------------------*/
+
+void FreeAtomicLocks(int64_t ParIdx, int TypIdx)
+{
+   ParSct *par;
+   TypSct *typ;
+
+   // Get and check lib parallel instance
+   if(!ParIdx || (TypIdx < 1) || (TypIdx > MaxTyp))
+      return;
+
+   par = (ParSct *)ParIdx;
+   typ = &par->TypTab[ TypIdx ];
+
+   if(!typ->NmbLin || !typ->AtoLok)
+      return;
+
+   LPL_free(par->lmb, typ->AtoLok);
+   typ->AtoLok = NULL;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Blocking wait for an atomic lock to be released                            */
+/*----------------------------------------------------------------------------*/
+
+void AtomicLock(int64_t ParIdx, int TypIdx, int ItmIdx)
+{
+   ParSct *par;
+   TypSct *typ;
+   int expected = 0;
+
+   // Get and check lib parallel instance
+   if(!ParIdx || (TypIdx < 1) || (TypIdx > MaxTyp))
+      return;
+
+   par = (ParSct *)ParIdx;
+   typ = &par->TypTab[ TypIdx ];
+
+   if(!typ->NmbLin || (ItmIdx <1) || (ItmIdx > typ->NmbLin))
+      return;
+
+   //if the lock is 0(unlock), then set it to 1(lock).
+   //if the CAS fails, the expected will be set to 1, so we need to change it to 0 again.
+   while(!atomic_compare_exchange_weak(&typ->AtoLok[ ItmIdx ], &expected,1))
+      expected = 0;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Non blocking release of an atomic lock                                     */
+/*----------------------------------------------------------------------------*/
+
+void AtomicUnlock(int64_t ParIdx, int TypIdx, int ItmIdx)
+{
+   ParSct *par;
+   TypSct *typ;
+
+   // Get and check lib parallel instance
+   if(!ParIdx || (TypIdx < 1) || (TypIdx > MaxTyp))
+      return;
+
+   par = (ParSct *)ParIdx;
+   typ = &par->TypTab[ TypIdx ];
+
+   if(!typ->NmbLin || (ItmIdx <1) || (ItmIdx > typ->NmbLin))
+      return;
+
+   typ->AtoLok[ ItmIdx ] = 0;
 }
 
 #endif

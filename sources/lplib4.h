@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.12                                  */
+/*                               LPlib V4.20                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 03 2025                                           */
+/*   Last modification: oct 27 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -23,6 +23,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
+
+#if ( __STDC_VERSION__ > 201100L )
+#include <stdatomic.h>
+#endif
 
 #ifdef INT64
 #define itg int64_t
@@ -118,6 +122,13 @@ double   EvaluateRenumbering     (int, int, int *);
 int      RestoreNumbering        (LplSct *, int, double *, ...);
 int      GetOldIndex             (LplSct *, int, int);
 int      GetNewIndex             (LplSct *, int, int);
+
+#if ( __STDC_VERSION__ > 201100L )
+int      AllocAtomicLocks        (int64_t, int);
+void     FreeAtomicLocks         (int64_t, int);
+void     AtomicLock              (int64_t, int, int);
+void     AtomicUnlock            (int64_t, int, int);
+#endif
 
 #ifdef __cplusplus
 } // end extern "C"
