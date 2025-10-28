@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: aug 20 2025                                           */
+/*   Last modification: oct 28 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -366,6 +366,7 @@ int main(int ArgCnt, char **ArgVec)
 
    msh.TetRef = malloc( (msh.NmbTet + 1) * sizeof(int) );
    LaunchColorGrains(msh.ParIdx, LplTet, SetTetRef, &msh);
+   //LaunchColorGrainsMultiArg(msh.ParIdx, LplTet, SetTetRef, 1, &msh);
 
    if(!(OutMsh = GmfOpenMesh("/tmp/col.meshb", GmfWrite, 2, 3)))
    {
