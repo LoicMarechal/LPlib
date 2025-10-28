@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.20                                  */
+/*                               LPlib V4.21                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 27 2025                                           */
+/*   Last modification: oct 28 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -2155,6 +2155,37 @@ static int SetGrp(ParSct *par, TypSct *typ)
    LPL_free(par->lmb, TstWrd);
 
    return(1);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Launch a colorgrain parallel procudure with variable arguments.            */
+/* Arguments are passed as pointer to void.                                   */
+/*----------------------------------------------------------------------------*/
+
+float LaunchColorGrainsMultiArg( int64_t ParIdx, int typ,
+                                 void *prc, int NmbArg, ... )
+{
+   int i;
+   float acc;
+   va_list ArgLst;
+   ParSct *par = (ParSct *)ParIdx;
+
+   if(NmbArg > 20)
+      return(-1.);
+
+   par->NmbVarArg = NmbArg;
+   va_start(ArgLst, NmbArg);
+
+   for(i=0;i<NmbArg;i++)
+      par->VarArgTab[i] = va_arg(ArgLst, void *);
+
+   va_end(ArgLst);
+
+   acc = LaunchColorGrains(ParIdx, typ, prc, NULL);
+   par->NmbVarArg = 0;
+
+   return(acc);
 }
 
 
