@@ -46,7 +46,7 @@ find_package(libMeshb 8 CONFIG)
 
 if(WITH_METIS)
    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-   find_package(METIS)
+   find_package(METIS PATHS "/opt/homebrew")
 endif()
 
 if(libMeshb_FOUND)
@@ -63,8 +63,6 @@ endif()
 if(METIS_FOUND)
    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWITH_METIS")
    include_directories (${METIS_INCLUDE_DIRS})
-   message ("METIS_INCLUDE_DIRS " ${METIS_INCLUDE_DIRS})
-   message ("METIS_LIBRARIES " ${METIS_LIBRARIES})
 endif()
 
 add_subdirectory (sources)
@@ -117,4 +115,5 @@ install(FILES
 
 message("-- Build mode            : " ${CMAKE_BUILD_TYPE})
 message("-- cpack target enabled  : " ${WITH_CPACK})
+message("-- Metis                 : " ${METIS_FOUND})
 message("-- Install directory     : " ${CMAKE_INSTALL_PREFIX})

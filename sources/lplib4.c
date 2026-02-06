@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.21                                  */
+/*                               LPlib V4.22                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 28 2025                                           */
+/*   Last modification: feb 06 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -2300,7 +2300,7 @@ int ParallelMemClear(int64_t ParIdx, void *PtrArg, size_t siz)
    char     *tab = (char *)PtrArg;
 
    // Get and check lib parallel instance, adresse and size
-   if(!ParIdx || !tab || (siz < (size_t)par->NmbCpu) )
+   if(!ParIdx || !tab)
       return(0);
 
    // If the memory chunk is too small, clear it sequentially
@@ -2361,7 +2361,7 @@ int ParallelMemCopy(int64_t ParIdx, void *PtrDst, void *PtrSrc, size_t siz)
    char     *SrcTab = (char *)PtrSrc;
 
    // Get and check lib parallel instance, adresse and size
-   if(!ParIdx || !PtrDst || !PtrSrc || (siz < (size_t)par->NmbCpu) )
+   if(!ParIdx || !PtrDst || !PtrSrc)
       return(0);
 
    // If the memory chunk is too small, clear it sequentially
