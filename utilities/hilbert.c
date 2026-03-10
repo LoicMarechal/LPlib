@@ -574,13 +574,24 @@ int main(int ArgCnt, char **ArgVec)
    for(t=0;t<MAXELE;t++)
       if(msh.NmbEle[t])
       {
-         printf("Renumbering %s : ", EleNam[t]);
+         printf("Renumbering %s : \n", EleNam[t]);
+
          timer = 0.;
          GetTim(&timer);
          msh.EleTyp[t] = NewType(LibParIdx, msh.NmbEle[t]);
          msh.TypIdx = t;
          LaunchParallel(LibParIdx, msh.EleTyp[t], 0, (void *)RenEle, (void *)&msh);
+         GetTim(&timer);
+         printf("%g s\n", timer);
+
+         timer = 0.;
+         GetTim(&timer);
          ParallelQsort(LibParIdx, &msh.ele[t][1], msh.NmbEle[t], sizeof(EleSct), CmpFnc);
+         GetTim(&timer);
+         printf("%g s\n", timer);
+
+         timer = 0.;
+         GetTim(&timer);
          SwpMem(&msh, t);
          GetTim(&timer);
          printf("%g s\n", timer);

@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.22                                  */
+/*                               LPlib V4.31                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: feb 06 2026                                           */
+/*   Last modification: mar 10 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -190,6 +190,13 @@ typedef struct
 {
    itg MinIdx, MaxIdx, NexBuc;
 }HshSct;
+
+typedef struct
+{
+   itg j;
+   unsigned char (*a)[16], (*b)[16];
+   uint64_t (*gc)[256], *c;
+}RdxSct;
 
 #ifdef WITH_METIS
 typedef struct
@@ -2641,7 +2648,7 @@ void GetLplibInformation(int64_t ParIdx, int *NmbCpu, int *NmbTyp)
 
 
 /*----------------------------------------------------------------------------*/
-/* Call qsort in parallel then call merge sort in serial                      */
+/* Call the parallel version of qsort on macOS or the serial one otherwise    */
 /*----------------------------------------------------------------------------*/
 
 void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
@@ -2653,6 +2660,102 @@ void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
 #else
    qsort(base, nel, width, compar);
 #endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Sort 32 bits integers with a serial radix sort algorithm                   */
+/*----------------------------------------------------------------------------*/
+
+void RadixSort32bits(int64_t ParIdx, void *base, size_t nel)
+{
+   unsigned char (*a)[8], (*b)[8], (*tmp)[8];
+   uint32_t i, c[256], s, t, p;
+   int j;
+
+   a = base;
+   b = malloc(nel * 8);
+
+   if(!b)
+      return;
+
+   for(j=0;j<4;j++)
+   {
+      memset(c, 0, 256 * 4);
+
+      for(i=0;i<nel;i++)
+         c[a[i][j]]++;
+
+      s = 0;
+
+      for(i=0;i<256;i++)
+      {
+         t = c[i];
+         c[i] = s;
+         s += t;
+      }
+
+      for(i=0;i<nel;i++)
+      {
+         p = c[a[i][j]];
+         c[a[i][j]]++;
+         memcpy(b[p], a[i], 8);
+      }
+      
+      tmp = a;
+      a = b;
+      b = tmp;
+   }
+
+   free(b);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Sort 64 bits integers with a serial radix sort algorithm                   */
+/*----------------------------------------------------------------------------*/
+
+void RadixSort64bits(int64_t ParIdx, void *base, size_t nel)
+{
+   unsigned char (*a)[16], (*b)[16], (*tmp)[16];
+   uint64_t i, c[256], s, t, p;
+   int j;
+
+   a = base;
+   b = malloc(nel * 16);
+
+   if(!b)
+      return;
+
+   for(j=0;j<8;j++)
+   {
+      memset(c, 0, 256 * 8);
+
+      for(i=0;i<nel;i++)
+         c[a[i][j]]++;
+
+      s = 0;
+
+      for(i=0;i<256;i++)
+      {
+         t = c[i];
+         c[i] = s;
+         s += t;
+      }
+
+      for(i=0;i<nel;i++)
+      {
+         p = c[a[i][j]];
+         c[a[i][j]]++;
+         memcpy(b[p], a[i], 16);
+      }
+      
+      tmp = a;
+      a = b;
+      b = tmp;
+   }
+
+   free(b);
 }
 
 
@@ -3896,7 +3999,7 @@ static int CmpFnc(const void *a, const void *b)
 /* Compute the hilbert code from 3d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
-static uint64_t GetHilCod(double crd[3], double box[6], int itr, int mod)
+static uint64_t GetHilCod(double *crd, double *box, int itr, int mod)
 {
    uint64_t IntCrd[3], m=1ULL<<63, cod;
    int      j, b, GeoWrd, NewWrd, BitTab[3] = {1,2,4};

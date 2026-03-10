@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.21                                  */
+/*                               LPlib V4.31                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: oct 28 2025                                           */
+/*   Last modification: mar 10 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -104,6 +104,8 @@ int      ParallelMemClear           (int64_t, void *, size_t);
 int      ParallelMemCopy            (int64_t, void *, void *, size_t);
 void     ParallelQsort              (int64_t, void *, size_t, size_t, 
                                      int (*)(const void *, const void *));
+void     RadixSort32bits            (int64_t, void *, size_t);
+void     RadixSort64bits            (int64_t, void *, size_t);
 int      ResizeType                 (int64_t, int, itg);
 void     StopParallel               (int64_t);
 int      UpdateDependency           (int64_t, int, int, itg, itg);
