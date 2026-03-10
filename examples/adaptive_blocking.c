@@ -9,7 +9,7 @@
 /*   Description:       adaptive blocking direct and indirect memory writes   */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 28 2023                                           */
-/*   Last modification: mar 01 2023                                           */
+/*   Last modification: jun 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,8 +22,8 @@
 #include <stdlib.h>
 #include <float.h>
 #include <stdint.h>
-#include "lplib3.h"
-#include "libmeshb7.h"
+#include "lplib4.h"
+#include "libmeshb8.h"
 
 
 /*----------------------------------------------------------------------------*/

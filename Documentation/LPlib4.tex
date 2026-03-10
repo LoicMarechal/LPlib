@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large February 2024 \\
-\normalsize Document v1.74, library v3.81
+\Large August 2025 \\
+\normalsize Document v1.81, library v4.03
 \end{flushright}
 
 \end{titlepage}
@@ -565,6 +565,12 @@ main()
 This way, procedures 1 and 2 will run concurrently on separate processors and, if 1 completes before 2, procedure 3 will even run concurrently with 2.
 
 
+\subsection{Colored grains scheduling}
+
+THis kind of scheduling is used to handle concurent indirect memory writes, like the depdency loops seen before, but it uses a completely different kind of partitioning and scheduling. The whole mesh needs to be partitionned through the colgrain command.
+
+
+
 %
 %  3 / COMMANDS
 %
@@ -946,7 +952,45 @@ code       & int    & error code is 1 if everything went right and 0 otherwise \
 \subsubsection*{Description}
 It works similarly to the C library memset command.
 
-Parallel memclear is only useful for \emph{ccNUMA} computers. It may not improve, or even degrade, speed for crossbar systems like most machines under 16 cores.
+Parallel memclear is only useful for sizes greater than 100 MB. Below this threashold, the system memset function is called sequentially. As this operation is purely memory bound, do not expect a scaling greater than 2 to 4.
+
+
+\subsection{ParallelMemCopy}
+
+\subsubsection*{Syntax}
+\tt{code = ParallelMemCopy(LibIndex, dst table, src table, size);}
+\normalfont
+
+\subsubsection*{Parameters}
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Parameter  & type   & description \\
+\hline
+LibIndex   & int    & instance number of \emph{LPlib} \\
+\hline
+dst table  & void * & pointer to a memory area that will receive the copy \\
+\hline
+src table  & void * & pointer to a memory area that will be copied \\
+\hline
+size       & long   & number of bytes to be copied \\
+\hline
+\end{tabular}
+
+\medskip
+
+\noindent
+\begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
+\hline
+Return     & type   & description \\
+\hline
+code       & int    & error code is 1 if everything went right and 0 otherwise \\
+\hline
+\end{tabular}
+
+\subsubsection*{Description}
+It works similarly to the C library memcpy command.
+
+Parallel memcopy is only useful for sizes greater than 100 MB. Below this threashold, the system memcpy function is called sequentially. As this operation is purely memory bound, do not expect a scaling greater than 2 to 4.
 
 
 \subsection{ParallelQsort}

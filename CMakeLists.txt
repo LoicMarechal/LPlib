@@ -3,12 +3,13 @@
 # GLOBAL CONFIGURATION VARIABLES
 ################################
 
-cmake_minimum_required (VERSION 3.10)
-set (LPlib_VERSION_MAJOR 3)
-set (LPlib_VERSION_MINOR 80)
+cmake_minimum_required (VERSION 3.18)
+set (LPlib_VERSION_MAJOR 4)
+set (LPlib_VERSION_MINOR 00)
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
 option(WITH_CPACK "Enable cpack target to generate a zip file containing binaries" OFF)
+option(WITH_METIS "Enable call to Metis partitioning for colorgrains renumbering" OFF)
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -22,7 +23,11 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
    if (WIN32)
       set(CMAKE_INSTALL_PREFIX "$ENV{HOMEPATH}/cmakebuilds" CACHE PATH "..." FORCE)
    else ()
-      set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/cmakebuilds/$ENV{OSTYPE}-$ENV{MACHTYPE}" CACHE PATH "..." FORCE)
+      if (DEFINED ENV{OSTYPE} AND DEFINED ENV{MACHTYPE})
+         set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/cmakebuilds/$ENV{OSTYPE}-$ENV{MACHTYPE}" CACHE PATH "..." FORCE)
+      else ()
+         set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/cmakebuilds" CACHE PATH "..." FORCE)
+      endif ()
    endif()
 endif ()
 
@@ -35,10 +40,14 @@ list (APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}")
 
 include_directories (${PROJECT_SOURCE_DIR}/sources)
 include_directories (${PROJECT_SOURCE_DIR}/utilities)
-add_subdirectory (sources)
 
 find_package(Threads)
-find_package(libMeshb 7)
+find_package(libMeshb 8 CONFIG)
+
+if(WITH_METIS)
+   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+   find_package(METIS)
+endif()
 
 if(libMeshb_FOUND)
    include_directories (${libMeshb_INCLUDE_DIRS})
@@ -46,10 +55,17 @@ if(libMeshb_FOUND)
    add_subdirectory (utilities)
 else()
    message (WARNING "
-   libMeshb.7 could not be found.
+   libMeshb.8 could not be found.
    Consequently, examples and utilities will not be built.
    You can download it from GitHUB at https://github.com/LoicMarechal/libMeshb")
 endif()
+
+if(METIS_FOUND)
+   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWITH_METIS")
+   include_directories (${METIS_INCLUDE_DIRS})
+endif()
+
+add_subdirectory (sources)
 
 install (FILES LICENSE.txt copyright.txt DESTINATION share/LPlib)
 install (DIRECTORY sample_meshes DESTINATION share/LPlib)
@@ -80,7 +96,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
 find_package(Threads)
 set(LPlib_INCLUDE_DIRS ${CMAKE_INSTALL_PREFIX}/include)
 set(LPlib_HELPERS_DIRS ${CMAKE_INSTALL_PREFIX}/helpers)
-set(LPlib_LIBRARIES LP.3 ${CMAKE_THREAD_LIBS_INIT})
+set(LPlib_LIBRARIES LP.4 ${CMAKE_THREAD_LIBS_INIT})
 set(LPlib_FOUND TRUE)
 ")
 write_basic_package_version_file(
@@ -99,4 +115,5 @@ install(FILES
 
 message("-- Build mode            : " ${CMAKE_BUILD_TYPE})
 message("-- cpack target enabled  : " ${WITH_CPACK})
+message("-- Metis                 : " ${METIS_FOUND})
 message("-- Install directory     : " ${CMAKE_INSTALL_PREFIX})

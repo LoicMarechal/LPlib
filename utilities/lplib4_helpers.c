@@ -2,58 +2,40 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V0.1                           */
+/*                               LPlib Helpers V1.1                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   oct 31 2024                                           */
+/* Last modification:   aug 29 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
-
-
-#ifndef LPLIB3_HELPERS_H
-#define LPLIB3_HELPERS_H
 
 
 /*----------------------------------------------------------------------------*/
 /* Includes                                                                   */
 /*----------------------------------------------------------------------------*/
 
+#include <stdio.h>
+#include <stdarg.h>
+#include <math.h>
 #include <assert.h>
 #include <string.h>
-#include <stdio.h>
-#include "lplib3.h"
-#include "lplib3_helpers.h"
+#include <libmeshb8.h>
+#include "lplib4.h"
+#include "lplib4_helpers.h"
 
 
 /*----------------------------------------------------------------------------*/
-/* Defines                                                                    */
-/*----------------------------------------------------------------------------*/
-
-#ifdef INT64
-#define itg int64_t
-#else
-#define itg int32_t
-#endif
-
-#ifdef REAL32
-#define fpn float
-#else
-#define fpn double
-#endif
-
-
-/*----------------------------------------------------------------------------*/
-/* Defintion of macro commands                                                */
+/* Defintion of macro commands and constants                                  */
 /*----------------------------------------------------------------------------*/
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define POW(a) ((a) * (a))
-#define MAXEDG 1000
+#define POW(a)    ((a) * (a))
+#define MAXEDG    1000
 
 
 /*----------------------------------------------------------------------------*/
@@ -74,18 +56,20 @@ typedef struct
 
 
 /*----------------------------------------------------------------------------*/
-/* Prototypes of local procedures                                             */
-/*----------------------------------------------------------------------------*/
-
-void ParEdg1(itg, itg, int, ParSct *);
-void ParEdg2(itg, itg, int, ParSct *);
-
-
-/*----------------------------------------------------------------------------*/
 /* Global tables                                                              */
 /*----------------------------------------------------------------------------*/
 
-const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+// Tetrahderon's table of edges
+static const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
+
+
+/*----------------------------------------------------------------------------*/
+/* Prototypes of local procedures                                             */
+/*----------------------------------------------------------------------------*/
+
+void ParEdg1 (itg, itg, int, ParSct *);
+void ParEdg2 (itg, itg, int, ParSct *);
+
 
 
 /*----------------------------------------------------------------------------*/
@@ -94,15 +78,14 @@ const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
 
 itg ParallelBuildEdges(itg NmbEle, int EleTyp, itg *EleTab, itg **UsrEdg)
 {
-   itg      i, HshSiz, IncSiz, adr = 0, NmbEdg = 0, (*EdgTab)[2];
+   itg      i, HshSiz, IncSiz, NmbEdg = 0, (*EdgTab)[2];
    int64_t  LibIdx;
    int      TetTyp, NmbCpu;
-   HshSct   *HshTab;
    ParSct   par[ MaxPth ];
 
    // As for now only tets are supported
-   //if(EleTyp != LplTet)
-     //return(0);
+   if(EleTyp != LplTet)
+      return(0);
 
    // Setup LPlib and datatypes
    NmbCpu = GetNumberOfCores();
@@ -243,9 +226,9 @@ void ParEdg1(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 {
    itg i, key, PthNmbEdg = 0, edg[ MAXEDG ][2];
-   itg siz = par[ PthIdx ].HshSiz, NmbCpu = par[ PthIdx ].NmbCpu;
+   itg NmbCpu = par[ PthIdx ].NmbCpu;
    int NmbEdg, flg, j, k;
-   HshSct *hsh = par[ PthIdx ].HshTab, *buc;
+   HshSct *buc;
    itg (*EdgTab)[2] = par[ PthIdx ].EdgTab;
 
    // Loop over the hash table direct entries following an interleaved stencil
@@ -307,5 +290,3 @@ void ParEdg2(itg BegIdx, itg EndIdx, int PthIdx, ParSct *par)
 
    par[ PthIdx ].NmbEdg = PthNmbEdg;
 }
-
-#endif

@@ -1,12 +1,14 @@
+### HIGH PRIORITY
+
 ### STANDARD PRIORITY
+- develop an autotuning mode that run each procedure/datatypes pairs on different number of threads and finds the optimal value.
+- hierarchical block scheduling to enable adaptive block size scheduling
 - develop parallel iterators for FIFO and LIFO stacks
 - local scheduling: bind the scheduler to data local to the thread's memory NUMA node
 - add a command to kill a pipe while running
-- hierarchical block scheduling to enable adaptive block size scheduling
 - develop a lattice scheduling based on geometric blocks, not on element indices blocs
 - link dependency block at creation and do not unlink them while running the parallel loop
 - interleaved procedures: allow multiple procedures to be launched in parallel and processed in a pipelined way
-- implement a data reuse weight in the scheduler
 
 ### DONE
 - handle 64-bit integers
@@ -28,3 +30,10 @@
 - colored grains parallel launcher
 - colored grain partitions setting
 - colored grains partitions inheritance from vertex ones
+- topological Hilbert renumbering based on nodes indices
+- use longest edge mid point instead of the tet barycenter when renumbering anisotropic meshes (hilbert command line)
+- add a dynamic scheduling mode to the colored grains parallelism
+- atomic lock and unlock
+- Radix sort
+- all-in-one renumbering procedure
+- parallel memory clear and copy

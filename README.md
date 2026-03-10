@@ -1,15 +1,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LPlib  version 4.00
+## LPlib  version 4.32
 A parallelization framework for numerical simulation
 
 ## Overview
-The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.  
+The purpose of the **LPlib** is to provide programmers of solvers or automated meshers in the field of scientific computing with an easy, fast and transparent way to parallelize their codes.
 This library is based on posix standard threads, also known as *pthreads*, thus taking advantage of multi-core chips and shared memory architectures supported by most platforms (*Linux*, *macOS*, *Windows*).  
 It is a simple loop parallelization scheme (hence the name Loop Parallelism Library).  
 A serial program can be easily parallelized step by step.  
 It requires no knowledge on parallel programing.  
 Handles transparently concurrent indirect memory writes and dynamic data structures.
+
 Version 4 provides an early implementation of colored grains scheduling for better scaling and memory localization with high core count systems.
 
 ## Build
@@ -39,6 +40,7 @@ You may download some sample meshes to run the examples:
 - move them into /opt/LPlib/sample_meshes/
 - decompress them with `lzip -d *.meshb.lz`
 - you may now enter /opt/LPlib/examples directory and run the various examples
+- optional call to Metis partitioning for the colorgrains renumbering scheme: install the [find Module](https://gitlab.emse.fr/bruchon/Coeur/-/blob/9540195784748cc0ba0eabd0108868297df05757/cmake/Modules/FindMETIS.cmake) and pass the -DWITH\_METIS=ON option to cmake
 
 ## Usage
 It is made of a single *ANSI C* file and a header file to be compiled and linked alongside the calling program.  

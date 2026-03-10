@@ -2,20 +2,20 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V0.1                           */
+/*                               LPlib Helpers V1.1                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   oct 31 2024                                           */
+/* Last modification:   sep 03 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
 
-#ifndef LPLIB3_HELPERS_H
-#define LPLIB3_HELPERS_H
+#ifndef LPLIB4_HELPERS_H
+#define LPLIB4_HELPERS_H
 
 
 /*----------------------------------------------------------------------------*/
@@ -36,13 +36,6 @@
 #define fpn double
 #endif
 
-enum LplTyp {LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex};
-
-
-/*----------------------------------------------------------------------------*/
-/* Prototypes of public structures                                            */
-/*----------------------------------------------------------------------------*/
-
 
 /*----------------------------------------------------------------------------*/
 /* Prototypes of public procedures                                            */
@@ -52,8 +45,8 @@ enum LplTyp {LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex};
 extern "C" {
 #endif
 
-itg ParallelBuildEdges(itg, int, itg *, itg **);
-
+itg      ParallelBuildEdges   (itg, int, itg *, itg **);
+   
 #ifdef __cplusplus
 } // end extern "C"
 #endif

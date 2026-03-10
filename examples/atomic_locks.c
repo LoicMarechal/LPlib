@@ -2,14 +2,15 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                PARALLEL INDIRECT MEMORY WRITES USING LPlib                 */
+/*                      DEPENDNCY-LOOPS VERSUS ATMIC LOCKS                    */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*   Description:       direct and indirect memory writes                     */
+/*   Description:       perform indirect memory writes and compare the runtime*/
+/*                      between sequential, dependency-loop and atomic locks  */
 /*   Author:            Loic MARECHAL                                         */
-/*   Creation date:     jan 15 2015                                           */
-/*   Last modification: jun 03 2025                                           */
+/*   Creation date:     oct 27 2025                                           */
+/*   Last modification: oct 27 2025                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -61,7 +62,7 @@ void TetTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
       for(j=0;j<4;j++)
          t += msh->VerTem[ msh->TetVer[i][j] ];
 
-      msh->TetTem[i] = t;
+      msh->TetTem[i] = t / 4.;
    }
 }
 
@@ -84,7 +85,21 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
    for(i=BegIdx;i<=EndIdx;i++)
       for(j=0;j<4;j++)
          msh->VerTem[ msh->TetVer[i][j] ] +=
-            msh->TetTem[i] / msh->VerDeg[ msh->TetVer[i][j] ];
+            msh->TetTem[i] / (4. * msh->VerDeg[ msh->TetVer[i][j] ]);
+}
+
+void LokVer(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
+{
+   int i, j, VerIdx;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      for(j=0;j<4;j++)
+      {
+         VerIdx = msh->TetVer[i][j];
+         AtomicLock(msh->ParIdx, msh->VerTyp, VerIdx);
+         msh->VerTem[ VerIdx ] += msh->TetTem[i] / (4. * msh->VerDeg[ VerIdx ]);
+         AtomicUnlock(msh->ParIdx, msh->VerTyp, VerIdx);
+      }
 }
 
 
@@ -94,15 +109,25 @@ void VerTem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int      i, j, NmbCpu = GetNumberOfCores(), ver, dim, ref, NmbItr=100;
+   int      i, j, NmbCpu = GetNumberOfCores(), ParMod, ver, dim, ref, NmbItr = 100;
    int64_t  InpMsh;
    float    sta[2], acc=0;
-   double   tim=0;
+   double   tim=0, res;
    MshSct   msh;
 
    // Read the number of threads to launch from the command line argument
-   if(ArgCnt > 1)
-      NmbCpu = atoi(*++ArgVec);
+   if(ArgCnt != 3)
+   {
+      puts("atomic_locks nbThreads mode");
+      puts("choose mode from   1:serial,  2:dependency-loop,  3:atomic-locks");
+      exit(0);
+   }
+
+   NmbCpu = atoi(*++ArgVec);
+   ParMod = atoi(*++ArgVec);
+
+   if(ParMod < 1 || ParMod > 3)
+      exit(1);
 
    // Open the input mesh
    if(!(InpMsh = GmfOpenMesh("../sample_meshes/tet.meshb", GmfRead, &ver, &dim)))
@@ -133,6 +158,16 @@ int main(int ArgCnt, char **ArgVec)
    GmfCloseMesh(InpMsh);
    puts("read done");
 
+
+
+   // Initialize the vertices' temperature with some crap values
+   for(i=1;i<=msh.NmbVer;i++)
+      msh.VerTem[i] = 1.;
+
+   for(i=1;i<=msh.NmbTet;i++)
+      for(j=0;j<4;j++)
+         msh.VerDeg[ msh.TetVer[i][j] ]++;
+
    // Initialize the LPlib and setup the data types
    if(!(msh.ParIdx = InitParallel(NmbCpu)))
    {
@@ -156,55 +191,80 @@ int main(int ArgCnt, char **ArgVec)
    printf("TetTyp = %d, VerTyp = %d, NmbCpu = %d\n",
          msh.TetTyp, msh.VerTyp, NmbCpu);
 
-   // Setup dependencies between tets and vertices 
-   // and compute vertices' degree on the flight
-   BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
-
-   for(i=1;i<=msh.NmbTet;i++)
-      for(j=0;j<4;j++)
-      {
-         AddDependency(msh.ParIdx, i, msh.TetVer[i][j]);
-         msh.VerDeg[ msh.TetVer[i][j] ]++;
-      }
-
-   EndDependency(msh.ParIdx, sta);
-
-   printf("dependencies stats: average = %g %%, maximum = %g %%\n",
-            sta[0], sta[1]);
-
-   // Initialize the vertices' temperature with some crap values
-   for(i=1;i<=msh.NmbVer;i++)
-#ifdef WIN32
-      msh.VerTem[i] = rand();
-#else
-      msh.VerTem[i] = random();
-#endif
-
-   // Perform temperature smoothing steps
-   tim = GetWallClock();
-
-   puts("");
-   for(i=1;i<=NmbItr;i++)
+   if(ParMod == 1)
    {
-      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, 0,
-                                 (void *)TetTem, (void *)&msh)))
+      tim = GetWallClock();
+
+      for(i=1;i<=NmbItr;i++)
       {
-         puts("Error while launching the parallel loop TetTem.");
+         TetTem(1, msh.NmbTet, 0, &msh);
+         VerTem(1, msh.NmbTet, 0, &msh);
+      }
+
+      tim = GetWallClock() - tim;
+
+      printf("%d steps, sequential running time = %gs\n", NmbItr, tim);
+   }
+   else if(ParMod == 2)
+   {
+      // Setup dependencies between tets and vertices 
+      // and compute vertices' degree on the flight
+      BeginDependency(msh.ParIdx, msh.TetTyp, msh.VerTyp);
+
+      for(i=1;i<=msh.NmbTet;i++)
+         for(j=0;j<4;j++)
+            AddDependency(msh.ParIdx, i, msh.TetVer[i][j]);
+
+      EndDependency(msh.ParIdx, sta);
+
+      printf("dependencies stats: average = %g %%, maximum = %g %%\n",
+               sta[0], sta[1]);
+
+      // Perform temperature smoothing steps
+      tim = GetWallClock();
+
+      puts("");
+      for(i=1;i<=NmbItr;i++)
+      {
+         acc += LaunchParallel(msh.ParIdx, msh.TetTyp,          0, TetTem, &msh);
+         acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp, VerTem, &msh);
+      }
+
+      tim = GetWallClock() - tim;
+
+      printf("%d steps, average concurency = %g, // running time = %gs\n",
+               NmbItr, acc / (2 * NmbItr), tim);
+   }
+   else if(ParMod == 3)
+   {
+      if(!AllocAtomicLocks(msh.ParIdx, msh.VerTyp))
+      {
+         puts("Falied to allocate the vertices' atomic locks");
          exit(1);
       }
 
-      if(!(acc += LaunchParallel(msh.ParIdx, msh.TetTyp, msh.VerTyp,
-                                 (void *)VerTem, (void *)&msh)))
+      // Perform temperature smoothing steps
+      tim = GetWallClock();
+
+      puts("");
+      for(i=1;i<=NmbItr;i++)
       {
-         puts("Error while launching the parallel loop VerTem.");
-         exit(1);
+         acc += LaunchParallel(msh.ParIdx, msh.TetTyp, 0, TetTem, &msh);
+         acc += LaunchParallel(msh.ParIdx, msh.TetTyp, 0, LokVer, &msh);
       }
+
+      tim = GetWallClock() - tim;
+
+      printf("%d steps, average concurency = %g, // running time = %gs\n",
+               NmbItr, acc / (2 * NmbItr), tim);
+
+      FreeAtomicLocks(msh.ParIdx, msh.VerTyp);
    }
 
-   tim = GetWallClock() - tim;
+   for(i=1;i<=msh.NmbVer;i++)
+      res += msh.VerTem[i];
 
-   printf(" %d steps, average concurency = %g, // running time = %gs\n",
-            NmbItr, acc / (2 * NmbItr), tim);
+   printf("Residual = %f\n", res);
 
    // Stop and free everything
    StopParallel(msh.ParIdx);
