@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.31                                  */
+/*                               LPlib V4.32                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -2667,47 +2667,54 @@ void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
 /* Sort 32 bits integers with a serial radix sort algorithm                   */
 /*----------------------------------------------------------------------------*/
 
-void RadixSort32bits(int64_t ParIdx, void *base, size_t nel)
+int RadixSort32bits(void *UsrDat, size_t NmbItm)
 {
-   unsigned char (*a)[8], (*b)[8], (*tmp)[8];
-   uint32_t i, c[256], s, t, p;
-   int j;
+   unsigned char (*PtrSrc)[8], (*PtrDst)[8], (*PtrTmp)[8];
+   uint32_t i, j, BucCnt[256], SumCnt, TmpCnt, NewPos;
 
-   a = base;
-   b = malloc(nel * 8);
+   // Use the user's data as source and allocate a destination buffer
+   PtrSrc = UsrDat;
+   PtrDst = malloc(NmbItm * 8);
 
-   if(!b)
-      return;
+   if(!PtrDst)
+      return(0);
 
+   // Loop over the digits
    for(j=0;j<4;j++)
    {
-      memset(c, 0, 256 * 4);
+      // Clear the bucket table and count the occurence of each current digit
+      memset(BucCnt, 0, 256 * 4);
 
-      for(i=0;i<nel;i++)
-         c[a[i][j]]++;
+      for(i=0;i<NmbItm;i++)
+         BucCnt[ PtrSrc[i][j] ]++;
 
-      s = 0;
+      // Accumulate the bucket counters to get the sorted destination position
+      SumCnt = 0;
 
       for(i=0;i<256;i++)
       {
-         t = c[i];
-         c[i] = s;
-         s += t;
+         TmpCnt = BucCnt[i];
+         BucCnt[i] = SumCnt;
+         SumCnt += TmpCnt;
       }
 
-      for(i=0;i<nel;i++)
+      // Copy the source data to their sorted position
+      for(i=0;i<NmbItm;i++)
       {
-         p = c[a[i][j]];
-         c[a[i][j]]++;
-         memcpy(b[p], a[i], 8);
+         NewPos = BucCnt[ PtrSrc[i][j] ];
+         BucCnt[ PtrSrc[i][j] ]++;
+         memcpy(PtrDst[ NewPos ], PtrSrc[i], 8);
       }
-      
-      tmp = a;
-      a = b;
-      b = tmp;
+
+      // Swap the buffers pointers to avoid a useless copy
+      PtrTmp = PtrSrc;
+      PtrSrc = PtrDst;
+      PtrDst = PtrTmp;
    }
 
-   free(b);
+   free(PtrDst);
+
+   return(1);
 }
 
 
@@ -2715,47 +2722,55 @@ void RadixSort32bits(int64_t ParIdx, void *base, size_t nel)
 /* Sort 64 bits integers with a serial radix sort algorithm                   */
 /*----------------------------------------------------------------------------*/
 
-void RadixSort64bits(int64_t ParIdx, void *base, size_t nel)
+int RadixSort64bits(void *UsrDat, size_t NmbItm)
 {
-   unsigned char (*a)[16], (*b)[16], (*tmp)[16];
-   uint64_t i, c[256], s, t, p;
+   unsigned char (*PtrSrc)[16], (*PtrDst)[16], (*PtrTmp)[16];
+   uint64_t i, BucCnt[256], SumCnt, TmpCnt, NewPos;
    int j;
 
-   a = base;
-   b = malloc(nel * 16);
+   // Use the user's data as source and allocate a destination buffer
+   PtrSrc = UsrDat;
+   PtrDst = malloc(NmbItm * 16);
 
-   if(!b)
-      return;
+   if(!PtrDst)
+      return(0);
 
+   // Loop over the digits
    for(j=0;j<8;j++)
    {
-      memset(c, 0, 256 * 8);
+      // Clear the bucket table and count the occurence of each current digit
+      memset(BucCnt, 0, 256 * 8);
 
-      for(i=0;i<nel;i++)
-         c[a[i][j]]++;
+      for(i=0;i<NmbItm;i++)
+         BucCnt[ PtrSrc[i][j] ]++;
 
-      s = 0;
+      // Accumulate the bucket counters to get the sorted destination position
+      SumCnt = 0;
 
       for(i=0;i<256;i++)
       {
-         t = c[i];
-         c[i] = s;
-         s += t;
+         TmpCnt = BucCnt[i];
+         BucCnt[i] = SumCnt;
+         SumCnt += TmpCnt;
       }
 
-      for(i=0;i<nel;i++)
+      // Copy the source data to their sorted position
+      for(i=0;i<NmbItm;i++)
       {
-         p = c[a[i][j]];
-         c[a[i][j]]++;
-         memcpy(b[p], a[i], 16);
+         NewPos = BucCnt[ PtrSrc[i][j] ];
+         BucCnt[PtrSrc[i][j]]++;
+         memcpy(PtrDst[ NewPos ], PtrSrc[i], 16);
       }
       
-      tmp = a;
-      a = b;
-      b = tmp;
+      // Swap the buffers pointers to avoid a useless copy
+      PtrTmp = PtrSrc;
+      PtrSrc = PtrDst;
+      PtrDst = PtrTmp;
    }
 
-   free(b);
+   free(PtrDst);
+
+   return(1);
 }
 
 

@@ -4,7 +4,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.31                                  */
+/*                               LPlib V4.32                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -104,8 +104,8 @@ int      ParallelMemClear           (int64_t, void *, size_t);
 int      ParallelMemCopy            (int64_t, void *, void *, size_t);
 void     ParallelQsort              (int64_t, void *, size_t, size_t, 
                                      int (*)(const void *, const void *));
-void     RadixSort32bits            (int64_t, void *, size_t);
-void     RadixSort64bits            (int64_t, void *, size_t);
+int      RadixSort32bits            (void *, size_t);
+int      RadixSort64bits            (void *, size_t);
 int      ResizeType                 (int64_t, int, itg);
 void     StopParallel               (int64_t);
 int      UpdateDependency           (int64_t, int, int, itg, itg);
