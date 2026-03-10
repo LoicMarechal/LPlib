@@ -28,3 +28,15 @@ install (TARGETS adaptive_blocking DESTINATION share/LPlib/examples COMPONENT ex
 add_executable(build_edges build_edges.c)
 target_link_libraries(build_edges LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
 install (TARGETS build_edges DESTINATION share/LPlib/examples COMPONENT examples)
+
+add_executable(atomic_locks atomic_locks.c)
+target_link_libraries(atomic_locks LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
+install (TARGETS atomic_locks DESTINATION share/LPlib/examples COMPONENT examples)
+
+add_executable(mem_clear_copy mem_clear_copy.c)
+target_link_libraries(mem_clear_copy LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
+install (TARGETS mem_clear_copy DESTINATION share/LPlib/examples COMPONENT examples)
+
+add_executable(compare_sorts compare_sorts.c)
+target_link_libraries(compare_sorts LP.4 ${libMeshb_LIBRARIES} ${math_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${METIS_LIBRARIES})
+install (TARGETS compare_sorts DESTINATION share/LPlib/examples COMPONENT examples)

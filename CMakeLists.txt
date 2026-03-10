@@ -46,7 +46,7 @@ find_package(libMeshb 8 CONFIG)
 
 if(WITH_METIS)
    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-   find_package(METIS PATHS "/opt/homebrew")
+   find_package(METIS)
 endif()
 
 if(libMeshb_FOUND)

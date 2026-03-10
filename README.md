@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LPlib  version 4.10
+## LPlib  version 4.32
 A parallelization framework for numerical simulation
 
 ## Overview

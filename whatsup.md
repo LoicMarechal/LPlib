@@ -1,3 +1,28 @@
+### March 2026
+
+Colored grains parallelism is available and fully working:
+
+ - MeshRenumbering() is a super procedure that partition the mesh with Metis, colors the grains and renumber the whole mesh while taking care of moving the user's data structures. It is an all-in-one functionality.
+ - LaunchColorGrains() runs a parallel loop in the same way as LaunchParallel(), each thread is assigned a full grain and all concurrent grains are guaranteed to be independent from each other.
+
+Parallel memory clearing and copying are provided: ParallelMemClear & ParallelMemCopy.
+
+New fast RADIX sort of 32 or 64 bits for Hilbert codes sorting. It is an order of magnitude faster than the QSORT and even faster than some parallel implementation of qsort.
+
+Atomic operations: this new functionality allows for fine grain synchronization that may be easier to implement in some situation when a single operation must be performed concurrently.
+
+ - AllocAtomicLocks: allocate as many locks as you have entities to process concurrently.
+ - AtomicLock: lock a given entity so no other parallel procedure can access any data protected by this lock.
+ - AtomicUnlock: release the given lock.
+
+Examples to illustrate all this new capabilities:
+
+ - atomic_locks
+ - compare_sorts
+ - mem_clear_copy
+ - colored_grains_partitioning
+
+
 ### September 2025
 
 Beta version of color-grains parallelism now working on a basic example.
