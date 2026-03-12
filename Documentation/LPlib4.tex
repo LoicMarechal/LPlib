@@ -35,8 +35,8 @@
 
 \begin{flushright}
 \Large Lo\"ic MAR\'ECHAL / INRIA, Gamma Project\\
-\Large August 2025 \\
-\normalsize Document v1.81, library v4.03
+\Large March 2026 \\
+\normalsize Document v1.82, library v4.03
 \end{flushright}
 
 \end{titlepage}
@@ -836,17 +836,17 @@ Mandatory initialization of \emph{LPlib} library prior to using any command. The
 \subsubsection*{Parameters}
 \begin{tabular}{|m{2cm}|m{1.5cm}|m{10.5cm}|}
 \hline
-Parameter  & type   & description \\
+Parameter  & type    & description \\
 \hline
-LibIndex   & int    & instance number of \emph{LPlib} \\
+LibIndex   & int64\_t & instance number of \emph{LPlib} \\
 \hline
-type1      & int    & base type index over which to perform the loop \\
+type1      & int     & base type index over which to perform the loop \\
 \hline
-type2      & int    & index of dependency type in case of indirect memory access loop, 0 otherwise \\
+type2      & int     & index of dependency type in case of indirect memory access loop, 0 otherwise \\
 \hline
-procedure  & void * & pointer to a procedure that contains the parallelized loop \\
+procedure  & void *  & pointer to a procedure that contains the parallelized loop \\
 \hline
-Parameters & void * & pointer to a single structure containing every parameter and data needed by the loop \\
+Parameters & void *  & pointer to a single structure containing every parameter and data needed by the loop \\
 \hline
 \end{tabular}
 
