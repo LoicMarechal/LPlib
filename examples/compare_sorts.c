@@ -9,7 +9,7 @@
 /*    Description:         Sort an array of integers with three algorithms    */
 /*    Author:              Loic MARECHAL                                      */
 /*    Creation date:       mar 10 2026                                        */
-/*    Last modification:   mar 10 2026                                        */
+/*    Last modification:   mar 19 2026                                        */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -48,14 +48,19 @@ int compar(const void *a, const void *b)
 
 int main()
 {
+   int64_t ParIdx;
    uint32_t i, (*a)[2];
    double tim;
 
-   a = malloc(nel * 2 * sizeof(uint32_t));
-
-   if(!a)
+   if(!(a = malloc(nel * 2 * sizeof(uint32_t))))
    {
       printf("Failed to allocate %lld bytes\n", nel);
+      exit(1);
+   }
+
+   if(!(ParIdx = InitParallel(0)))
+   {
+      puts("Failed to initialize the LPlib");
       exit(1);
    }
 
@@ -136,7 +141,7 @@ int main()
 
    // Perform a parallel qsort
    tim = GetWallClock();
-   RadixSort32bits(a, nel);
+   RadixSort(ParIdx, nel, a, LplInt, NULL, 0);
    printf("\ntime for radix sort = %g s\n\n", GetWallClock() - tim);
 
    // Print the first and last lines after the sorting

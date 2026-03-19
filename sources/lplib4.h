@@ -44,6 +44,8 @@ extern "C" {
 /*----------------------------------------------------------------------------*/
 
 #define LplGpu 1
+#define LplInt 4
+#define LplLng 8
 
 enum LplTyp {  LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex,
                LplEdgP2, LplTriP2, LplQadQ2, LplTetP2, LplPyrP2, LplPriP2,
@@ -58,7 +60,7 @@ enum RenTyp {LplNoRenum, LplHilbert, LplZcurve};
 
 typedef struct
 {
-   int      *Old2New, MshVer, dim, mod, TypIdx, VerTyp, VrbLvl;
+   int      MshVer, dim, mod, TypIdx, VerTyp, VrbLvl;
    int      EleTyp[ LplMax ], GmlMod, *EleTab[ LplMax ];
    int      MaxDeg[ LplMax ], DegVec[ LplMax ], HghDeg, OvrDeg;
    int      ColGrnFlg, ColGrnMod, NmbCol, NmbGrn, *VerGrn, *VerCol;
@@ -102,10 +104,11 @@ int      LaunchPipelineMultiArg     (int64_t, int, int *, void *prc, int, ...);
 int      NewType                    (int64_t, itg);
 int      ParallelMemClear           (int64_t, void *, size_t);
 int      ParallelMemCopy            (int64_t, void *, void *, size_t);
+int      ParallelOld2New64bits      (int64_t, int64_t, uint64_t (*)[2],
+                                     void *, size_t);
 void     ParallelQsort              (int64_t, void *, size_t, size_t, 
                                      int (*)(const void *, const void *));
-int      RadixSort32bits            (void *, size_t);
-int      RadixSort64bits            (void *, size_t);
+int      RadixSort                  (int64_t, size_t, void*, int, void*, size_t);
 int      ResizeType                 (int64_t, int, itg);
 void     StopParallel               (int64_t);
 int      UpdateDependency           (int64_t, int, int, itg, itg);
