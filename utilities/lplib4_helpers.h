@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V1.1                           */
+/*                               LPlib Helpers V1.2                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   sep 03 2025                                           */
+/* Last modification:   mar 30 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -45,7 +45,8 @@
 extern "C" {
 #endif
 
-itg      ParallelBuildEdges   (itg, int, itg *, itg **);
+itg ParallelBuildEdges(int, itg, int, itg *, itg **);
+int ParallelNeighbours(int, itg, int, itg *, itg *, char *);
    
 #ifdef __cplusplus
 } // end extern "C"
