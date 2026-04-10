@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: mar 19 2026                                           */
+/*   Last modification: apr 10 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -276,7 +276,7 @@ int main(int ArgCnt, char **ArgVec)
 
    // Extract internal edges
    puts("Build edges");
-   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
+   msh.NmbEdg = ParallelBuildEdges( NmbCpu, msh.NmbTet, LplTet,
                                     (itg *)msh.TetTab, (itg **)&msh.EdgTab );
 
    if(!msh.NmbEdg)

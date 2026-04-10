@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib Helpers V1.2                           */
+/*                               LPlib Helpers V1.21                          */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /* Description:         lplib's helper functions' headers                     */
 /* Author:              Loic MARECHAL                                         */
 /* Creation date:       may 16 2024                                           */
-/* Last modification:   mar 30 2026                                           */
+/* Last modification:   apr 10 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -93,6 +93,9 @@ itg ParallelBuildEdges( int NmbCpu, itg NmbEle, int EleTyp,
       return(0);
 
    // Setup LPlib and datatypes
+   if(!NmbCpu)
+      NmbCpu = GetNumberOfCores();
+
    LibIdx = InitParallel(NmbCpu);
    TetTyp = NewType(LibIdx, NmbEle);
 
@@ -317,6 +320,9 @@ int ParallelNeighbours( int NmbCpu, itg NmbEle, int EleTyp,
       return(0);
 
    // Setup LPlib and datatypes
+   if(!NmbCpu)
+      NmbCpu = GetNumberOfCores();
+
    if(!(LibIdx = InitParallel(NmbCpu)))
       return(0);
 
