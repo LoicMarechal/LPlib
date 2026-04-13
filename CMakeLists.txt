@@ -5,7 +5,7 @@
 
 cmake_minimum_required (VERSION 3.18)
 set (LPlib_VERSION_MAJOR 4)
-set (LPlib_VERSION_MINOR 00)
+set (LPlib_VERSION_MINOR 32)
 project (LPlib VERSION ${LPlib_VERSION_MAJOR}.${LPlib_VERSION_MINOR} LANGUAGES C)
 
 option(WITH_CPACK "Enable cpack target to generate a zip file containing binaries" OFF)

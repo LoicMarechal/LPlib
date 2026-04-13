@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 10 2026                                           */
+/*   Last modification: apr 13 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -4504,8 +4504,8 @@ static void SetMatSlc(LplSct *msh)
 
    puts("");
    printf("vector filling : %3.2f%%\n", (float)(100 * DegTot) / VecTot);
-   printf("real non-zero  : %lld\n", DegTot);
-   printf("vector non-zero: %lld\n", VecTot);
+   printf("real non-zero  : %llu\n", DegTot);
+   printf("vector non-zero: %llu\n", VecTot);
    puts("");
 }
 
