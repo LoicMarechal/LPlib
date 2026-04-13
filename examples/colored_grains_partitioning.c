@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: oct 28 2025                                           */
+/*   Last modification: apr 10 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -34,7 +34,7 @@
 
 #define MIN(a,b)  ((a) < (b) ? (a) : (b))
 #define MAX(a,b)  ((a) > (b) ? (a) : (b))
-#define NMBITR 100
+#define NMBITR 1000
 
 
 /*----------------------------------------------------------------------------*/
@@ -163,8 +163,9 @@ int CmpEdg(const void *a, const void *b)
 int main(int ArgCnt, char **ArgVec)
 {
    int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret, DynSch;
-   int         *EdgCol = NULL, *EdgGrn = NULL;
+   int         *EdgCol = NULL, *EdgGrn = NULL, (*TmpEdg)[2];
    int64_t     InpMsh, OutMsh, DegTot = 0;
+   uint64_t    (*RenEdg)[2];
    float       sta[2], acc = 0;
    double      tim = 0;
    char        *MshNam;
@@ -275,7 +276,7 @@ int main(int ArgCnt, char **ArgVec)
 
    // Extract internal edges
    puts("Build edges");
-   msh.NmbEdg = ParallelBuildEdges( msh.NmbTet, LplTet,
+   msh.NmbEdg = ParallelBuildEdges( NmbCpu, msh.NmbTet, LplTet,
                                     (itg *)msh.TetTab, (itg **)&msh.EdgTab );
 
    if(!msh.NmbEdg)
@@ -288,7 +289,17 @@ int main(int ArgCnt, char **ArgVec)
 
    // Sort the edges against their color, grain and hilbert number
    puts("Sort edges");
-   qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
+   //qsort(msh.EdgTab[1], msh.NmbEdg, 2 * sizeof(int), CmpEdg);
+
+   RenEdg = malloc( (msh.NmbEdg + 1) * 2 * sizeof(uint64_t) );
+
+   for(i=1;i<=msh.NmbEdg;i++)
+   {
+      RenEdg[i][0] = (uint64_t)msh.EdgTab[i][0] << 32ULL | msh.EdgTab[i][1];
+      RenEdg[i][1] = i;
+   }
+
+   RadixSort(msh.ParIdx, msh.NmbEdg, RenEdg, LplLng, msh.EdgTab, 2 * sizeof(int));
 
    printf("Input mesh: nmb vertices = %lld\n", msh.NmbVer);
    printf("Input mesh: nmb tets     = %lld\n", msh.NmbTet);

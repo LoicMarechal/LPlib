@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: mar 10 2026                                           */
+/*   Last modification: apr 13 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -22,6 +22,10 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#ifndef __MACH__
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +35,7 @@
 #include <math.h>
 #include <errno.h>
 #include <limits.h>
+#include <time.h>
 #include "lplib4.h"
 
 #ifdef _WIN32
@@ -242,7 +247,7 @@ static const char *EleNam[ LplMax ] = {
    "HexahedraQ2     " };
 
 // For each kind of element: low vertex degree and highest vertex degree
-static const int MaxDeg[ LplMax ][2] = {
+static const int MaxDegVec[ LplMax ][2] = {
    { 0,   0},
    { 2,   8},
    { 8,  32},
@@ -277,7 +282,6 @@ static void      *PipHdl         (void *);
 static void      *PthHdl         (void *);
 static WrkSct    *NexWrk         (ParSct *, int);
 static WrkSct    *NexGrn         (ParSct *, int);
-void              PipSrt         (PipArgSct *);
 static void       CalVarArgPip   (PipSct *, void *);
 static void       CalVarArgPrc   (itg, itg, int, ParSct *);
 static int64_t    IniPar         (int, size_t, void *);
@@ -2527,6 +2531,9 @@ static void *PipHdl(void *ptr)
    PipSct *pip = (PipSct *)ptr;
    ParSct *par = pip->par;
    void (*prc)(void *), (*prcgrn)(int, int, int, void *);
+#ifndef _WIN32
+   const struct timespec duration = {0,1000000};
+#endif
 
    if(pip->GrnIdx)
    {
@@ -2565,8 +2572,10 @@ static void *PipHdl(void *ptr)
             pthread_mutex_unlock(&par->PipMtx);
 #ifdef _WIN32
             Sleep(1);
-#else
+#elif __MAC__
             usleep(1000);
+#else
+            nanosleep(&duration, NULL);
 #endif
          }
       }while(!RunFlg);
@@ -2604,6 +2613,9 @@ void WaitPipeline(int64_t ParIdx)
 {
    int PenPip;
    ParSct *par = (ParSct *)ParIdx;
+#ifndef _WIN32
+   const struct timespec duration = {0,10000};
+#endif
 
    // Get and check lib parallel instance
    if(!ParIdx)
@@ -2616,9 +2628,10 @@ void WaitPipeline(int64_t ParIdx)
       pthread_mutex_unlock(&par->PipMtx);
 #ifdef _WIN32
       Sleep(1);
-#else
-      //usleep(1000);
+#elif __MAC__
       usleep(10);
+#else
+      nanosleep(&duration, NULL);
 #endif
    }while(PenPip);
 }
@@ -2660,6 +2673,147 @@ void ParallelQsort(  int64_t ParIdx, void *base, size_t nel, size_t width,
 #else
    qsort(base, nel, width, compar);
 #endif
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* Sort integers with a serial radix sort algorithm and copy user's data      */
+/*----------------------------------------------------------------------------*/
+
+int RadixSort( int64_t ParIdx, size_t NmbItm, void *UsrIdx, int IdxTyp,
+               void *UsrDat, size_t ItmSiz )
+{
+   uint8_t  (*PtrSrcInt)[8], (*PtrDstInt)[8], (*PtrTmpInt)[8];
+   uint8_t  (*PtrSrcLng)[16], (*PtrDstLng)[16], (*PtrTmpLng)[16];
+   uint32_t j, BucCntInt[256], SumCntInt, TmpCntInt, NewPosInt, (*UsrIdxInt)[2];
+   uint64_t i, BucCntLng[256], SumCntLng, TmpCntLng, NewPosLng, (*UsrIdxLng)[2];
+   void     *TmpDat;
+
+   if(!ParIdx || !NmbItm || !UsrIdx || !IdxTyp)
+      return(0);
+
+   if(IdxTyp == LplInt)
+   {
+      // Use the user's data as source and allocate a destination buffer
+      PtrSrcInt = UsrIdx;
+      PtrDstInt = malloc(NmbItm * 8);
+
+      if(!PtrDstInt)
+         return(0);
+
+      // Loop over the digits
+      for(j=0;j<4;j++)
+      {
+         // Clear the bucket table and count the occurence of each current digit
+         memset(BucCntInt, 0, 256 * 4);
+
+         for(i=0;i<NmbItm;i++)
+            BucCntInt[ PtrSrcInt[i][j] ]++;
+
+         // Accumulate the bucket counters to get the sorted destination position
+         SumCntInt = 0;
+
+         for(i=0;i<256;i++)
+         {
+            TmpCntInt = BucCntInt[i];
+            BucCntInt[i] = SumCntInt;
+            SumCntInt += TmpCntInt;
+         }
+
+         // Copy the source data to their sorted position
+         for(i=0;i<NmbItm;i++)
+         {
+            NewPosInt = BucCntInt[ PtrSrcInt[i][j] ];
+            BucCntInt[ PtrSrcInt[i][j] ]++;
+            memcpy(PtrDstInt[ NewPosInt ], PtrSrcInt[i], 8);
+         }
+
+         // Swap the buffers pointers to avoid a useless copy
+         PtrTmpInt = PtrSrcInt;
+         PtrSrcInt = PtrDstInt;
+         PtrDstInt = PtrTmpInt;
+      }
+
+      free(PtrDstInt);
+
+      if(!UsrDat || !ItmSiz)
+         return(1);
+
+      if(!(TmpDat = malloc( (NmbItm + 1) * ItmSiz )))
+         return(0);
+
+      UsrIdxInt = UsrIdx;
+
+      for(i=1;i<=NmbItm;i++)
+         memcpy(TmpDat + UsrIdxInt[i][1] * ItmSiz, UsrDat + i * ItmSiz, ItmSiz);
+
+      ParallelMemCopy(ParIdx, UsrDat, TmpDat, (NmbItm + 1) * ItmSiz);
+      free(TmpDat);
+
+      return(1);
+   }
+   else if(IdxTyp == LplLng)
+   {
+      // Use the user's data as source and allocate a destination buffer
+      PtrSrcLng = UsrIdx;
+      PtrDstLng = malloc(NmbItm * 16);
+
+      if(!PtrDstLng)
+         return(0);
+
+      // Loop over the digits
+      for(j=0;j<8;j++)
+      {
+         // Clear the bucket table and count the occurence of each current digit
+         memset(BucCntLng, 0, 256 * 8);
+
+         for(i=0;i<NmbItm;i++)
+            BucCntLng[ PtrSrcLng[i][j] ]++;
+
+         // Accumulate the bucket counters to get the sorted destination position
+         SumCntLng = 0;
+
+         for(i=0;i<256;i++)
+         {
+            TmpCntLng = BucCntLng[i];
+            BucCntLng[i] = SumCntLng;
+            SumCntLng += TmpCntLng;
+         }
+
+         // Copy the source data to their sorted position
+         for(i=0;i<NmbItm;i++)
+         {
+            NewPosLng = BucCntLng[ PtrSrcLng[i][j] ];
+            BucCntLng[PtrSrcLng[i][j]]++;
+            memcpy(PtrDstLng[ NewPosLng ], PtrSrcLng[i], 16);
+         }
+      
+         // Swap the buffers pointers to avoid a useless copy
+         PtrTmpLng = PtrSrcLng;
+         PtrSrcLng = PtrDstLng;
+         PtrDstLng = PtrTmpLng;
+      }
+
+      free(PtrDstLng);
+
+      if(!UsrDat || !ItmSiz)
+         return(1);
+
+      if(!(TmpDat = malloc( (NmbItm + 1) * ItmSiz )))
+         return(0);
+
+      UsrIdxLng = UsrIdx;
+
+      for(i=1;i<=NmbItm;i++)
+         memcpy(TmpDat + UsrIdxLng[i][1] * ItmSiz, UsrDat + i * ItmSiz, ItmSiz);
+
+      ParallelMemCopy(ParIdx, UsrDat, TmpDat, (NmbItm + 1) * ItmSiz);
+      free(TmpDat);
+
+      return(1);
+   }
+   else
+      return(0);
 }
 
 
@@ -2775,6 +2929,28 @@ int RadixSort64bits(void *UsrDat, size_t NmbItm)
 
 
 /*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int ParallelOld2New64bits( int64_t ParIdx, int64_t NmbItm, uint64_t (*RenEdg)[2],
+                           void *UsrDat, size_t ItmSiz )
+{
+   void *TmpDat;
+   uint64_t i;
+
+   if(!(TmpDat = malloc( (NmbItm + 1) * ItmSiz )))
+      return(0);
+
+   for(i=1;i<=NmbItm;i++)
+      memcpy(TmpDat + RenEdg[i][1] * ItmSiz, UsrDat + i * ItmSiz, ItmSiz);
+
+   ParallelMemCopy(ParIdx, UsrDat, TmpDat, (NmbItm + 1) * ItmSiz);
+   free(TmpDat);
+
+   return(1);
+}
+
+
+/*----------------------------------------------------------------------------*/
 /* Compute the hilbert code from 3d coordinates                               */
 /*----------------------------------------------------------------------------*/
 
@@ -2840,11 +3016,6 @@ int CmpPrc(const void *a, const void *b)
 {
    uint64_t *pa = (uint64_t *)a, *pb = (uint64_t *)b;
    return(*pa > *pb ? 1 : -1);
-}
-
-void PipSrt(PipArgSct *arg)
-{
-   qsort(arg->base, arg->nel, arg->width, arg->compar);
 }
 
 
@@ -3597,11 +3768,8 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    LaunchParallel(LibParIdx, RenVerTyp, 0, (void *)RenVer, (void *)msh);
    ParallelQsort(LibParIdx, msh->VerCod[1], msh->NmbVer, 2 * sizeof(int64_t), CmpFnc);
 
-   msh->Old2New = malloc( (size_t)(msh->NmbVer+1) * sizeof(int) );
-   assert(msh->Old2New);
-
    for(i=1;i<=msh->NmbVer;i++)
-      msh->Old2New[ msh->VerCod[i][0] ] = i;
+      msh->VerCod[ msh->VerCod[i][0] ][1] = i;
 
    TmpCrd = malloc( (msh->NmbVer + 1) * 3 * sizeof(double) );
    assert(TmpCrd);
@@ -3879,7 +4047,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    free(msh->VerGrn);
    free(msh->VerCol);
    free(msh->VerCod);
-   free(msh->Old2New);
 
    for(t=LplEdg; t<LplMax; t++)
       if(msh->NmbEle[t])
@@ -4184,7 +4351,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
    {
       for(j=0;j<siz;j++)
          msh->EleTab[t][ i * siz + j ] =
-            msh->Old2New[ msh->EleTab[t][ i * siz + j ] ];
+            msh->VerCod[ msh->EleTab[t][ i * siz + j ] ][1];
 
       if(msh->ColGrnMod)
       {
@@ -4243,10 +4410,10 @@ static void SetVerDeg(LplSct *msh)
    // Set the high or low degree flag
    for(i=1;i<=msh->NmbVer;i++)
    {
-      if( (DegTab[i][1] > MaxDeg[1][0])
-      ||  (DegTab[i][2] > MaxDeg[2][0])
-      ||  (DegTab[i][3] > MaxDeg[3][0])
-      ||  (DegTab[i][6] > MaxDeg[6][0]) )
+      if( (DegTab[i][1] > MaxDegVec[1][0])
+      ||  (DegTab[i][2] > MaxDegVec[2][0])
+      ||  (DegTab[i][3] > MaxDegVec[3][0])
+      ||  (DegTab[i][6] > MaxDegVec[6][0]) )
       {
          msh->VerDeg[i] = 1;
          msh->HghDeg++;
@@ -4258,10 +4425,10 @@ static void SetVerDeg(LplSct *msh)
          msh->VerDeg[i] = 0;
 
       // Count the number of over connected vertices
-      if( (DegTab[i][1] > MaxDeg[1][1])
-      ||  (DegTab[i][2] > MaxDeg[2][1])
-      ||  (DegTab[i][3] > MaxDeg[3][1])
-      ||  (DegTab[i][6] > MaxDeg[6][1]) )
+      if( (DegTab[i][1] > MaxDegVec[1][1])
+      ||  (DegTab[i][2] > MaxDegVec[2][1])
+      ||  (DegTab[i][3] > MaxDegVec[3][1])
+      ||  (DegTab[i][6] > MaxDegVec[6][1]) )
       {
          msh->OvrDeg++;
       }
@@ -4337,8 +4504,8 @@ static void SetMatSlc(LplSct *msh)
 
    puts("");
    printf("vector filling : %3.2f%%\n", (float)(100 * DegTot) / VecTot);
-   printf("real non-zero  : %lld\n", DegTot);
-   printf("vector non-zero: %lld\n", VecTot);
+   printf("real non-zero  : %llu\n", DegTot);
+   printf("vector non-zero: %llu\n", VecTot);
    puts("");
 }
 

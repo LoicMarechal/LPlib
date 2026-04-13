@@ -141,7 +141,7 @@ char *EleNam[ MAXELE ] = {
    "HexahedraQ2     " };
 
 // For each kind of element: low vertex degree and highest vertex degree
-int MaxDeg[ MAXELE ][2] = {
+int MaxDegVec[ MAXELE ][2] = {
    { 2,   8},
    { 8,  32},
    { 4,  16},
@@ -1528,10 +1528,10 @@ void SetVerDeg(MshSct *msh)
    {
       ver = &msh->ver[i];
 
-      if( (DegTab[i][1] > MaxDeg[1][0])
-      ||  (DegTab[i][2] > MaxDeg[2][0])
-      ||  (DegTab[i][3] > MaxDeg[3][0])
-      ||  (DegTab[i][6] > MaxDeg[6][0]) )
+      if( (DegTab[i][1] > MaxDegVec[1][0])
+      ||  (DegTab[i][2] > MaxDegVec[2][0])
+      ||  (DegTab[i][3] > MaxDegVec[3][0])
+      ||  (DegTab[i][6] > MaxDegVec[6][0]) )
       {
          ver->deg = 1;
          msh->HghDeg++;
@@ -1543,10 +1543,10 @@ void SetVerDeg(MshSct *msh)
          ver->deg = 0;
 
       // Count the number of over connected vertices
-      if( (DegTab[i][1] > MaxDeg[1][1])
-      ||  (DegTab[i][2] > MaxDeg[2][1])
-      ||  (DegTab[i][3] > MaxDeg[3][1])
-      ||  (DegTab[i][6] > MaxDeg[6][1]) )
+      if( (DegTab[i][1] > MaxDegVec[1][1])
+      ||  (DegTab[i][2] > MaxDegVec[2][1])
+      ||  (DegTab[i][3] > MaxDegVec[3][1])
+      ||  (DegTab[i][6] > MaxDegVec[6][1]) )
       {
          msh->OvrDeg++;
       }
