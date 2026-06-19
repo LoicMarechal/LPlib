@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.32                                  */
+/*                               LPlib V4.34                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: apr 13 2026                                           */
+/*   Last modification: jun 19 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -226,7 +226,7 @@ typedef itg          int56d[56];
 static const int tvpe[6][2] = { {0,1}, {1,2}, {2,0}, {3,0}, {3,1}, {3,2} };
 
 // number of nodes per element kind
-static const int EleSiz[ LplMax ] = {0,2,3,4,4,5,6,8,3,6,9,10,14,18,27};
+static const int EleSiz[ LplMax ] = {0,2,3,4,4,5,6,8,3,6,9,10,14,18,27,1};
 
 // For each kind of element: GMF keyword strings
 static const char *EleNam[ LplMax ] = {
@@ -3548,7 +3548,7 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 10, *TmpEle;
+   int      i, j, t, siz, NmbCpu = 10, *TmpEle, *TmpRef;
    int      RenEleTyp[ LplMax ], RenVerTyp;
    int64_t  LibParIdx;
    double   *TmpCrd;
@@ -3781,6 +3781,25 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    memcpy(msh->CrdTab, TmpCrd, (msh->NmbVer+1) * 3 * sizeof(double));
    free(TmpCrd);
 
+   // Copy the vertices ref to a temporary table
+   if(msh->VerRef)
+   {
+      TmpRef = malloc( (msh->NmbVer + 1) * sizeof(int) );
+      assert(TmpRef);
+
+      for(i=1;i<=msh->NmbVer;i++)
+         TmpRef[i] = msh->VerRef[ msh->VerCod[i][0] ];
+
+      // Copy back the temporary table to the user's table
+      memcpy(msh->VerRef, TmpRef, (msh->NmbVer + 1) * sizeof(int));
+      free(TmpRef);
+   }
+
+   // Set the new to old table
+
+   for(i=1;i<=msh->NmbVer;i++)
+      msh->VerCod[ msh->VerCod[i][0] ][1] = i;
+
 #ifdef WITH_METIS
    if(NmbGrn)
    {
@@ -3817,6 +3836,7 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       LaunchParallel(LibParIdx, RenEleTyp[t], 0, (void *)RenEle, (void *)msh);
       ParallelQsort(LibParIdx, msh->EleCod[t][1], msh->NmbEle[t], 2 * sizeof(int64_t), CmpFnc);
 
+      // Copy the elements nodes to a temporary table while renumbering their node indices
       siz = EleSiz[t];
 
       TmpEle = malloc( (msh->NmbEle[t] + 1) * siz * sizeof(int) );
@@ -3826,8 +3846,27 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          for(j=0;j<siz;j++)
             TmpEle[ i * siz + j ] = msh->EleTab[t][ msh->EleCod[t][i][0] * siz + j ];
 
+      // Copy back the temporary table to the user's table
       memcpy(msh->EleTab[t], TmpEle, (msh->NmbEle[t] + 1) * siz * sizeof(int));
       free(TmpEle);
+
+      // Copy the elements ref to a temporary table
+      if(msh->EleRef[t])
+      {
+         TmpRef = malloc( (msh->NmbEle[t] + 1) * sizeof(int) );
+         assert(TmpRef);
+
+         for(i=1;i<=msh->NmbEle[t];i++)
+            TmpRef[i] = msh->EleRef[t][ msh->EleCod[t][i][0] ];
+
+         // Copy back the temporary table to the user's table
+         memcpy(msh->EleRef[t], TmpRef, (msh->NmbEle[t] + 1) * sizeof(int));
+         free(TmpRef);
+      }
+
+      // Set the new to old table
+      for(i=1;i<=msh->NmbEle[t];i++)
+         msh->EleCod[t][ msh->EleCod[t][i][0] ][1] = i;
 
 #ifdef WITH_METIS
       if(NmbGrn)
@@ -4046,18 +4085,22 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    // Free all working tables
    free(msh->VerGrn);
    free(msh->VerCol);
-   free(msh->VerCod);
 
    for(t=LplEdg; t<LplMax; t++)
       if(msh->NmbEle[t])
       {
          free(msh->EleCol[t]);
          free(msh->EleGrn[t]);
-         free(msh->EleCod[t]);
          free(msh->EleGrnPar[t]);
          
       }
 #endif
+
+   // Store renumbering tables for further index translations
+   msh->RenTab[ LplVer ] = msh->VerCod;
+
+   for(t=LplEdg; t<LplMax; t++)
+      msh->RenTab[t] = msh->EleCod[t];
 
    // Retun the Lpl mesh datastructure that keeps track of the previous numbering
    return(msh);
@@ -4123,7 +4166,7 @@ int RestoreNumbering(LplSct *ren, int NmbVer, double *CrdTab, ... )
 
 int GetOldIndex(LplSct *ren, int t, int idx)
 {
-   return(ren->RenTab[t][ idx ][0]);
+   return(ren->RenTab[t][ idx ][1]);
 }
 
 
@@ -4133,7 +4176,7 @@ int GetOldIndex(LplSct *ren, int t, int idx)
 
 int GetNewIndex(LplSct *ren, int t, int idx)
 {
-   return(ren->RenTab[t][ idx ][1]);
+   return(ren->RenTab[t][ idx ][0]);
 }
 
 

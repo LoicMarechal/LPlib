@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: apr 10 2026                                           */
+/*   Last modification: jun 19 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -43,10 +43,10 @@
 
 typedef struct
 {
-   int      TetTyp, EdgTyp, VerTyp, NmbCol, NmbGrn, *VerDeg;
-   itg      (*EdgTab)[2], (*TetTab)[4], *TetRef;
+   int      TetTyp, EdgTyp, VerTyp, TriTyp, NmbCol, NmbGrn, *VerDeg;
+   itg      (*EdgTab)[2], (*TetTab)[4], (*TriTab)[3], *TetRef, *TriRef;
    int      (*ColPar)[2], (*VerGrnPar)[2], (*TetGrnPar)[2];
-   int64_t  NmbVer, NmbEdg, NmbTet;
+   int64_t  NmbVer, NmbEdg, NmbTet, NmbTri;
    double   *VerSol, (*VerCrd)[3];
    int64_t  ParIdx;
 }MshSct;
@@ -96,6 +96,10 @@ void TetPar(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 }
 
 
+/*----------------------------------------------------------------------------*/
+/* Debugging procedure: set each tet ref with their grain index               */
+/*----------------------------------------------------------------------------*/
+
 void SetTetRef(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 {
    int i;
@@ -103,6 +107,20 @@ void SetTetRef(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
    for(i=BegIdx;i<=EndIdx;i++)
       msh->TetRef[i] = GrnIdx;
 }
+
+
+/*----------------------------------------------------------------------------*/
+/* Debugging procedure: set each triangle ref with their grain index          */
+/*----------------------------------------------------------------------------*/
+
+void SetTriRef(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+{
+   int i;
+
+   for(i=BegIdx;i<=EndIdx;i++)
+      msh->TriRef[i] = GrnIdx;
+}
+
 
 /*----------------------------------------------------------------------------*/
 /* Touch tet's memory: for ccNUMA experiments only                            */
@@ -127,10 +145,10 @@ void ClrVer(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
    int i;
 
    for(i=BegIdx;i<=EndIdx;i++)
+   {
       msh->VerDeg[i] = 0;
-
-   for(i=BegIdx;i<=EndIdx;i++)
       msh->VerSol[i] = 0.;
+   }
 }
 
 
@@ -195,7 +213,7 @@ int main(int ArgCnt, char **ArgVec)
    if(!(InpMsh = GmfOpenMesh(MshNam, GmfRead, &ver, &dim)))
    {
       printf("Cannot open the file %s\n", MshNam);
-      return(1);
+      exit(1);
    }
 
    puts("");
@@ -204,25 +222,30 @@ int main(int ArgCnt, char **ArgVec)
 
    // Query the mesh file
    msh.NmbVer = (int)GmfStatKwd(InpMsh, GmfVertices);
+   msh.NmbTri = (int)GmfStatKwd(InpMsh, GmfTriangles);
    msh.NmbTet = (int)GmfStatKwd(InpMsh, GmfTetrahedra);
 
-   if(!msh.NmbVer || !msh.NmbTet)
+   if(!msh.NmbVer || !msh.NmbTri || !msh.NmbTet)
    {
       puts("Unsupported mesh file");
-      return(2);
+      exit(2);
    }
 
    // Allocate the memory
    puts("Allocate Mesh");
    msh.TetTab = malloc( (msh.NmbTet + 1) * 4 * sizeof(itg) );
+   msh.TriTab = malloc( (msh.NmbTri + 1) * 3 * sizeof(itg) );
+   msh.TetRef = malloc( (msh.NmbTet + 1)     * sizeof(itg) );
+   msh.TriRef = malloc( (msh.NmbTri + 1)     * sizeof(itg) );
    msh.VerCrd = malloc( (msh.NmbVer + 1) * 3 * sizeof(double) );
    msh.VerDeg = calloc( (msh.NmbVer + 1)     , sizeof(int) );
    msh.VerSol = calloc( (msh.NmbVer + 1)     , sizeof(double) );
 
-   if(!msh.TetTab || !msh.VerSol || !msh.VerDeg || !msh.VerCrd)
+   if(!msh.TetTab || !msh.VerSol || !msh.VerDeg || !msh.TriTab
+   || !msh.VerCrd || !msh.TetRef || !msh.TriRef)
    {
       puts("Failed to allocate memory");
-      return(3);
+      exit(3);
    }
 
 
@@ -234,7 +257,7 @@ int main(int ArgCnt, char **ArgVec)
    if(!(msh.ParIdx = InitParallel(NmbCpu)))
    {
       puts("Error initializing the LPlib.");
-      exit(5);
+      exit(4);
    }
 
    if(!DynSch)
@@ -243,13 +266,19 @@ int main(int ArgCnt, char **ArgVec)
    if(!(msh.TetTyp = NewType(msh.ParIdx, msh.NmbTet)))
    {
       puts("Error while creating tetrahedra data type.");
+      exit(5);
+   }
+
+   if(!(msh.TriTyp = NewType(msh.ParIdx, msh.NmbTri)))
+   {
+      puts("Error while creating triangles data type.");
       exit(6);
    }
 
    if(!(msh.VerTyp = NewType(msh.ParIdx, msh.NmbVer)))
    {
       puts("Error while creating vertices data type.");
-      exit(8);
+      exit(7);
    }
 
    // Read the vertices
@@ -265,11 +294,19 @@ int main(int ArgCnt, char **ArgVec)
 #ifdef INT64
    GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
                GmfLongVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
-               GmfLong, &ref, &ref);
+               GmfLong, &msh.TetRef[1], &msh.TetRef[ msh.NmbTet ]);
+
+   GmfGetBlock(InpMsh, GmfTriangles, 1, msh.NmbTri, 0, NULL, NULL,
+               GmfLongVec, 3, msh.TriTab[1], msh.TriTab[ msh.NmbTri ],
+               GmfLong, &msh.TriRef[1], &msh.TriRef[ msh.NmbTri ]);
 #else
    GmfGetBlock(InpMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
                GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
-               GmfInt, &ref, &ref);
+               GmfInt, &msh.TetRef[1], &msh.TetRef[ msh.NmbTet ]);
+
+   GmfGetBlock(InpMsh, GmfTriangles, 1, msh.NmbTri, 0, NULL, NULL,
+               GmfIntVec, 3, msh.TriTab[1], msh.TriTab[ msh.NmbTri ],
+               GmfInt, &msh.TriRef[1], &msh.TriRef[ msh.NmbTri ]);
 #endif
 
    GmfCloseMesh(InpMsh);
@@ -282,7 +319,7 @@ int main(int ArgCnt, char **ArgVec)
    if(!msh.NmbEdg)
    {
       puts("Failed to extract internal edges");
-      exit(4);
+      exit(8);
    }
 
    printf("Nmb edges extracted: %lld\n",  msh.NmbEdg);
@@ -307,29 +344,11 @@ int main(int ArgCnt, char **ArgVec)
    if(!(msh.EdgTyp = NewType(msh.ParIdx, msh.NmbEdg)))
    {
       puts("Error while creating edges data type.");
-      exit(7);
+      exit(9);
    }
 
    printf("VerTyp = %d, EdgTyp = %d, TetTyp = %d, NmbCpu = %d\n",
          msh.VerTyp, msh.EdgTyp, msh.TetTyp, NmbCpu);
-
-   if(!(OutMsh = GmfOpenMesh("/tmp/ini.meshb", GmfWrite, 2, 3)))
-   {
-      puts("Cannot open the file /tmp/ini.meshb");
-      return(1);
-   }
-
-   GmfSetKwd(OutMsh, GmfVertices, msh.NmbVer);
-   GmfSetBlock(OutMsh, GmfVertices, 1, msh.NmbVer, 0, NULL, NULL,
-               GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],
-               GmfInt, &ref, &ref);
-
-   GmfSetKwd(OutMsh, GmfTetrahedra, msh.NmbTet);
-   GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
-               GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
-               GmfInt, &ref, &ref);
-
-   GmfCloseMesh(OutMsh);
 
    printf("\nMesh partitioning & renumbering: ");
 	fflush(stdout);
@@ -337,6 +356,7 @@ int main(int ArgCnt, char **ArgVec)
    RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
                               LplEdg, msh.EdgTyp, msh.NmbEdg, msh.EdgTab, NULL,
+                              LplTri, msh.TriTyp, msh.NmbTri, msh.TriTab, msh.TriRef,
                               LplTet, msh.TetTyp, msh.NmbTet, msh.TetTab, NULL,
                               LplMax );
 
@@ -375,14 +395,14 @@ int main(int ArgCnt, char **ArgVec)
 */
 
 
-   msh.TetRef = malloc( (msh.NmbTet + 1) * sizeof(int) );
+   // Set each tet and triangle ref with their grain index and save the mesh
+   //LaunchColorGrains(msh.ParIdx, LplTri, SetTriRef, &msh);
    LaunchColorGrains(msh.ParIdx, LplTet, SetTetRef, &msh);
-   //LaunchColorGrainsMultiArg(msh.ParIdx, LplTet, SetTetRef, 1, &msh);
 
-   if(!(OutMsh = GmfOpenMesh("/tmp/col.meshb", GmfWrite, 2, 3)))
+   if(!(OutMsh = GmfOpenMesh("/tmp/col.meshb", GmfWrite, ver, dim)))
    {
       puts("Cannot open the file /tmp/col.meshb");
-      return(1);
+      exit(10);
    }
 
    GmfSetKwd(OutMsh, GmfVertices, msh.NmbVer);
@@ -390,13 +410,25 @@ int main(int ArgCnt, char **ArgVec)
                GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],
                GmfInt, &ref, &ref);
 
+   GmfSetKwd(OutMsh, GmfTriangles, msh.NmbTri);
+   /*
+   for(i=1;i<=msh.NmbTri;i++)
+      GmfSetLin(  OutMsh, GmfTriangles,
+                  msh.TriTab[i][0], msh.TriTab[i][1], msh.TriTab[i][2],
+                  msh.TriRef[ GetNewIndex(RenNfo, LplTri, i) ]);
+*/
+   
+   GmfSetBlock(OutMsh, GmfTriangles, 1, msh.NmbTri, 0, NULL, NULL,
+               GmfIntVec, 3, msh.TriTab[1], msh.TriTab[ msh.NmbTri ],
+               GmfInt, &msh.TriRef[1], &msh.TriRef[ msh.NmbTri ]);
+
    GmfSetKwd(OutMsh, GmfTetrahedra, msh.NmbTet);
    GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
                GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
                GmfInt, &msh.TetRef[1], &msh.TetRef[ msh.NmbTet ]);
 
    GmfCloseMesh(OutMsh);
-   free(msh.TetRef);
+
 
    // ---------------------------------
    // MAIN COLORED GRAINS LOOP ON EDGES
@@ -455,6 +487,8 @@ int main(int ArgCnt, char **ArgVec)
    free(msh.VerSol);
    free(msh.EdgTab);
    free(msh.TetTab);
+   free(msh.TriRef);
+   free(msh.TetRef);
 
    return(0);
 }
