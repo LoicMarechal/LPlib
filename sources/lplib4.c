@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.34                                  */
+/*                               LPlib V4.35                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 19 2026                                           */
+/*   Last modification: jun 25 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,11 +83,7 @@
 #define BigMemSiz 100000000ULL
 #define MAXEDG    1000
 #define MAXITR    21
-#define HILMOD    0
-#define OCTMOD    1
-#define RNDMOD    2
 
-enum {HilMod=0, OctMod, RndMod, IniMod, TopMod};
 enum ParCmd {  RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk,
                ClrMem, CpyMem, RunGrnWrk, EndPth };
 
@@ -3548,8 +3544,8 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 10, *TmpEle, *TmpRef;
-   int      RenEleTyp[ LplMax ], RenVerTyp;
+   int      i, j, t, siz, NmbCpu = 10, *TmpEle, *TmpRef, cpt, ins, out, *stk;
+   int      RenEleTyp[ LplMax ], RenVerTyp, idx, ngb, col;
    int64_t  LibParIdx;
    double   *TmpCrd;
    LplSct   *msh;
@@ -3737,12 +3733,13 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    msh->VolHilRgt = msh->ColBit + msh->GrnBit;
 
 
-   // --------------------
-   // Vertices renumbering
-   // --------------------
+   // -----------------------
+   // Prepare for renumbering 
+   // -----------------------
 
    if(msh->VrbLvl >= 1)
    {
+      // Set renumbering masks
       printf("Sorting keys table: number of bit per key for each dimension of mesh entities\n");
       printf(" Entity | rank4 (color) | rank3 (grain) | rank2 (degree or ref) | rank1 (%s)\n",
                SchStr[ msh->mod ]);
@@ -3760,10 +3757,61 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    assert(msh->VerCod);
 
    LibParIdx = InitParallel(NmbCpu);
-
    RenVerTyp = NewType(LibParIdx, msh->NmbVer);
-
    SetBndBox(msh);
+   msh->mod = RenTyp;
+
+
+   // --------------------
+   // Vertices renumbering
+   // --------------------
+
+   // Select between the two different kinds of numbering
+   // profile: BFS, Cuthil McKee, Gibbs
+   // sparse: SFC, Hilbert, Zcurve, random
+   if(RenTyp == LplBfs)
+   {
+      stk = malloc(msh->NmbVer * sizeof(int));
+      assert(stk);
+      cpt = 0;
+
+      for(i=1;i<=msh->NmbVer;i++)
+      {
+         msh->VerCod[i][0] = i;
+         msh->VerCod[i][1] = 0;
+      }
+
+      for(col=1;col<=msh->NmbCol;col++)
+      {
+         for(i=1;i<=msh->NmbVer;i++)
+         {
+            if(msh->VerCol[i] != col || msh->VerCod[i][1])
+               continue;
+
+            msh->VerCod[i][1] = ++cpt;
+            ins = out = 0;
+            stk[ ins++ ] = i;
+
+            while(ins > out)
+            {
+               idx = stk[ out++ ];
+
+               for(j=msh->AdrBalRk1[ idx ]; j<msh->AdrBalRk1[ idx + 1 ]; j++)
+               {
+                  ngb = msh->LstBalRk1[j];
+
+                  if(msh->VerCol[ ngb ] == col && !msh->VerCod[ ngb ][1])
+                  {
+                     msh->VerCod[ ngb ][1] = ++cpt;
+                     stk[ ins++ ] = ngb;
+                  }
+               }
+            }
+         }
+      }
+
+      free(stk);
+   }
 
    LaunchParallel(LibParIdx, RenVerTyp, 0, (void *)RenVer, (void *)msh);
    ParallelQsort(LibParIdx, msh->VerCod[1], msh->NmbVer, 2 * sizeof(int64_t), CmpFnc);
@@ -3833,11 +3881,12 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       msh->TypIdx = t;
       msh->EleCod[t] = malloc( (msh->NmbEle[t] + 1) * 2 * sizeof(int64_t) );
       assert(msh->EleCod[t]);
+      siz = EleSiz[t];
+
       LaunchParallel(LibParIdx, RenEleTyp[t], 0, (void *)RenEle, (void *)msh);
       ParallelQsort(LibParIdx, msh->EleCod[t][1], msh->NmbEle[t], 2 * sizeof(int64_t), CmpFnc);
 
       // Copy the elements nodes to a temporary table while renumbering their node indices
-      siz = EleSiz[t];
 
       TmpEle = malloc( (msh->NmbEle[t] + 1) * siz * sizeof(int) );
       assert(TmpEle);
@@ -4166,7 +4215,7 @@ int RestoreNumbering(LplSct *ren, int NmbVer, double *CrdTab, ... )
 
 int GetOldIndex(LplSct *ren, int t, int idx)
 {
-   return(ren->RenTab[t][ idx ][1]);
+   return(ren->RenTab[t][ idx ][0]);
 }
 
 
@@ -4176,7 +4225,7 @@ int GetOldIndex(LplSct *ren, int t, int idx)
 
 int GetNewIndex(LplSct *ren, int t, int idx)
 {
-   return(ren->RenTab[t][ idx ][0]);
+   return(ren->RenTab[t][ idx ][1]);
 }
 
 
@@ -4237,7 +4286,7 @@ static uint64_t GetHilCod(double *crd, double *box, int itr, int mod)
             {2,3,0,1,6,7,4,5}, {6,5,2,1,0,3,4,7},
             {6,5,2,1,0,3,4,7}, {4,3,2,5,6,1,0,7} };
 
-   if(mod == RNDMOD)
+   if(mod == LplRandom)
       return(rand());
 
    // Convert double precision coordinates to integers
@@ -4265,7 +4314,7 @@ static uint64_t GetHilCod(double *crd, double *box, int itr, int mod)
          IntCrd[j] = IntCrd[j]<<1;
       }
 
-      if(mod == OCTMOD)
+      if(mod == LplZcurve)
       {
          NewWrd = OctCod[ GeoWrd ];
          cod = cod<<3 | NewWrd;
@@ -4306,12 +4355,15 @@ static void RenVer(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
       if(msh->GmlMod)
          DegCod = (msh->VerDeg[i] & msh->DegMsk) << msh->DegLft;
 
-      if(msh->mod == IniMod)
+      if(msh->mod == LplNoRenum)
          SchCod = i;
+      else if(msh->mod == LplBfs)
+         SchCod = msh->VerCod[i][1];
       else
+      {
          SchCod = GetHilCod(&msh->CrdTab[ i*3 ], msh->box, MAXITR, msh->mod);
-
-      SchCod = SchCod >> msh->VerHilRgt;
+         SchCod = SchCod >> msh->VerHilRgt;
+      }
 
       msh->VerCod[i][0] = i;
       msh->VerCod[i][1] = ColCod | GrnCod | DegCod | SchCod;
@@ -4411,20 +4463,24 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
       else
          RefCod = 0;
 
-      if(msh->mod == IniMod)
+      if(msh->mod == LplNoRenum)
          SchCod = i;
+      else if(msh->mod == LplBfs)
+      {
+         SchCod = msh->VerCod[ msh->EleTab[t][ i * siz ] ][1];
+      }
       else
       {
          SetMidCrd(siz, &msh->EleTab[t][ i * siz ], msh, crd);
          SchCod = GetHilCod(crd, msh->box, MAXITR, msh->mod);
-      }
 
-      if((t == LplTri) || (t == LplQad))
-         SchCod = SchCod >> msh->FacHilRgt;
-      else if((t >= LplTet) && (t <= LplHex))
-         SchCod = SchCod >> msh->VolHilRgt;
-      else
-         SchCod = 0;
+         if((t == LplTri) || (t == LplQad))
+            SchCod = SchCod >> msh->FacHilRgt;
+         else if((t >= LplTet) && (t <= LplHex))
+            SchCod = SchCod >> msh->VolHilRgt;
+         else
+            SchCod = 0;
+      }
 
       msh->EleCod[t][i][0] = i;
       msh->EleCod[t][i][1] = ColCod | GrnCod | RefCod | SchCod;

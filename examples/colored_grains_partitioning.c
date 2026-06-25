@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: jun 19 2026                                           */
+/*   Last modification: jun 25 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -140,14 +140,14 @@ void ClrTet(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
 /* Reset vertex degree and solution                                           */
 /*----------------------------------------------------------------------------*/
 
-void ClrVer(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
+void ClrVer(int BegIdx, int EndIdx, int GrnIdx, int *VerDeg, double *VerSol)
 {
    int i;
 
    for(i=BegIdx;i<=EndIdx;i++)
    {
-      msh->VerDeg[i] = 0;
-      msh->VerSol[i] = 0.;
+      VerDeg[i] = 0;
+      VerSol[i] = 0.;
    }
 }
 
@@ -180,7 +180,7 @@ int CmpEdg(const void *a, const void *b)
 
 int main(int ArgCnt, char **ArgVec)
 {
-   int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret, DynSch;
+   int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret, DynSch, RenTyp;
    int         *EdgCol = NULL, *EdgGrn = NULL, (*TmpEdg)[2];
    int64_t     InpMsh, OutMsh, DegTot = 0;
    uint64_t    (*RenEdg)[2];
@@ -196,16 +196,32 @@ int main(int ArgCnt, char **ArgVec)
    // --------------------------------------
 
    // Read the number of threads to launch from the command line argument
-   if(ArgCnt == 5)
+   if(ArgCnt == 6)
    {
       MshNam = (char *)*++ArgVec;
       NmbCpu = atoi(*++ArgVec);
       NmbGrn = atoi(*++ArgVec);
       DynSch = atoi(*++ArgVec);
+      RenTyp = atoi(*++ArgVec);
+
+      if(DynSch != 0 && DynSch != 1)
+         DynSch = 0;
+
+      if(RenTyp == 0)
+         RenTyp = LplHilbert;
+      else if(RenTyp == 1)
+         RenTyp = LplBfs;
+      else
+         RenTyp = LplNoRenum;
    }
    else
    {
-      puts("colored_grains_partitioning   MeshFile   NmbThreads   NmbGrains (0 = dependency loop)   DynamicScheduling (0 or 1)");
+      puts("colored_grains_partitioning  File  Threads  Grains  Scheduling  Renumbering");
+      puts("  File        : input meshfile made of vertices, triangles and tets");
+      puts("  Threads     : number of parallel threads, if 0 then use all available threads");
+      puts("  Grains      : number of grains, if 0 then run loops with dependencies");
+      puts("  Scheduling  : 0 = static, 1 = dynamic");
+      puts("  Renumbering : 0 = Hilbert, 1 = BFS");
       exit(0);
    }
 
@@ -353,7 +369,7 @@ int main(int ArgCnt, char **ArgVec)
    printf("\nMesh partitioning & renumbering: ");
 	fflush(stdout);
    tim = GetWallClock();
-   RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, LplHilbert, 0, 3,
+   RenNfo = MeshRenumbering(  msh.ParIdx, NmbGrn, RenTyp, 0, 3,
                               LplVer, msh.VerTyp, msh.NmbVer, msh.VerCrd, NULL,
                               LplEdg, msh.EdgTyp, msh.NmbEdg, msh.EdgTab, NULL,
                               LplTri, msh.TriTyp, msh.NmbTri, msh.TriTab, msh.TriRef,
@@ -411,13 +427,6 @@ int main(int ArgCnt, char **ArgVec)
                GmfInt, &ref, &ref);
 
    GmfSetKwd(OutMsh, GmfTriangles, msh.NmbTri);
-   /*
-   for(i=1;i<=msh.NmbTri;i++)
-      GmfSetLin(  OutMsh, GmfTriangles,
-                  msh.TriTab[i][0], msh.TriTab[i][1], msh.TriTab[i][2],
-                  msh.TriRef[ GetNewIndex(RenNfo, LplTri, i) ]);
-*/
-   
    GmfSetBlock(OutMsh, GmfTriangles, 1, msh.NmbTri, 0, NULL, NULL,
                GmfIntVec, 3, msh.TriTab[1], msh.TriTab[ msh.NmbTri ],
                GmfInt, &msh.TriRef[1], &msh.TriRef[ msh.NmbTri ]);
@@ -428,6 +437,9 @@ int main(int ArgCnt, char **ArgVec)
                GmfInt, &msh.TetRef[1], &msh.TetRef[ msh.NmbTet ]);
 
    GmfCloseMesh(OutMsh);
+
+   LaunchColorGrainsMultiArg(msh.ParIdx, LplVer, ClrVer, 2, msh.VerDeg, msh.VerSol);
+
 
 
    // ---------------------------------

@@ -4,14 +4,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.34                                  */
+/*                               LPlib V4.35                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 19 2026                                           */
+/*   Last modification: jun 25 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -51,7 +51,7 @@ enum LplTyp {  LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex,
                LplEdgP2, LplTriP2, LplQadQ2, LplTetP2, LplPyrP2, LplPriP2,
                LplHexQ2, LplCrn, LplMax };
 
-enum RenTyp {LplNoRenum, LplHilbert, LplZcurve};
+enum RenTyp {LplNoRenum, LplHilbert, LplZcurve, LplRandom, LplBfs};
 
 
 /*----------------------------------------------------------------------------*/
