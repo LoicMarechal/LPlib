@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.35                                  */
+/*                               LPlib V4.36                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 25 2026                                           */
+/*   Last modification: jun 30 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -3544,10 +3544,11 @@ static void CalVarArgPip(PipSct *pip, void *prc)
 LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
                         int RenTyp, int GmlMod, int dim, ...)
 {
-   int      i, j, t, siz, NmbCpu = 10, *TmpEle, *TmpRef, cpt, ins, out, *stk;
-   int      RenEleTyp[ LplMax ], RenVerTyp, idx, ngb, col;
+   int      i, j, k, t, NmbCpu = 10, *TmpEle, *TmpRef, cpt, ins, out, *stk;
+   int      RenEleTyp[ LplMax ], RenVerTyp, idx, ngb, col, MinIdx, siz;
+   int      NmbBnd, *BndLst;
    int64_t  LibParIdx;
-   double   *TmpCrd;
+   double   *TmpCrd, MinCrd, MinDis, MidCrd[3], VerDis;
    LplSct   *msh;
    va_list  VarArg;
    char     *SchStr[4] = {"Hilbert", "Z-curve", "random", "initial"};
@@ -3769,11 +3770,14 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    // Select between the two different kinds of numbering
    // profile: BFS, Cuthil McKee, Gibbs
    // sparse: SFC, Hilbert, Zcurve, random
-   if(RenTyp == LplBfs)
+   if(RenTyp == LplBfsColor || RenTyp == LplBfsXmin)
    {
       stk = malloc(msh->NmbVer * sizeof(int));
       assert(stk);
       cpt = 0;
+
+      BndLst = malloc(msh->NmbVer * sizeof(int));
+      assert(BndLst);
 
       for(i=1;i<=msh->NmbVer;i++)
       {
@@ -3788,10 +3792,12 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
             if(msh->VerCol[i] != col || msh->VerCod[i][1])
                continue;
 
-            msh->VerCod[i][1] = ++cpt;
+            // Select the first free vertex as a starting seed
+            msh->VerCod[i][1] = 1;
             ins = out = 0;
             stk[ ins++ ] = i;
 
+            // Color all neighboring vertices belonging to the same color
             while(ins > out)
             {
                idx = stk[ out++ ];
@@ -3802,14 +3808,177 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
 
                   if(msh->VerCol[ ngb ] == col && !msh->VerCod[ ngb ][1])
                   {
-                     msh->VerCod[ ngb ][1] = ++cpt;
+                     msh->VerCod[ ngb ][1] = 1;
                      stk[ ins++ ] = ngb;
+                  }
+               }
+            }
+
+            // Clear the tags: the grain starts at stk[0] up to stk[ out ]
+            for(j=0;j<out;j++)
+               msh->VerCod[ stk[j] ][1] = 0;
+
+            // Select the BFS numbering sub-scheme
+            // Xmin: leftmost vertex since the flow comes from the left
+            // Color-driven: color 1 starts from the grain center and move outward
+            // and the next colors start from the previous color vertices
+
+            if(RenTyp == LplBfsXmin)
+            {
+               // Init the lesftmost vertex with the first one from the stack
+               MinCrd = msh->CrdTab[ stk[0] * 3 ];
+               MinIdx = stk[0];
+
+               // Search for a leftmost vertex in the stack
+               for(j=0;j<out;j++)
+                  if(msh->CrdTab[ stk[j] * 3 ] < MinCrd)
+                  {
+                     MinCrd = msh->CrdTab[ stk[j] * 3 ];
+                     MinIdx = stk[j];
+                  }
+
+               // Use the leftmost vertex as the new starting seed
+               msh->VerCod[ MinIdx ][1] = ++cpt;
+               ins = out = 0;
+               stk[ ins++ ] = MinIdx;
+
+               // And repeat the LIFO based numbering
+               while(ins > out)
+               {
+                  idx = stk[ out++ ];
+
+                  for(j=msh->AdrBalRk1[ idx ]; j<msh->AdrBalRk1[ idx + 1 ]; j++)
+                  {
+                     ngb = msh->LstBalRk1[j];
+
+                     if(msh->VerCol[ ngb ] == col && !msh->VerCod[ ngb ][1])
+                     {
+                        msh->VerCod[ ngb ][1] = ++cpt;
+                        stk[ ins++ ] = ngb;
+                     }
+                  }
+               }
+            }
+            else
+            {
+               // Special case for color 1 as there are no previous color
+               // We look for the vertex closest from the grain's barycenter
+               // as a starting seed and number the vertices while moving outward
+               if(col == 1)
+               {
+                  // Compute the grain barycenter
+                  for(j=0;j<out;j++)
+                     for(k=0;k<3;k++)
+                        MidCrd[k] += msh->CrdTab[ stk[j] * 3 + k ];
+
+                  for(k=0;k<3;k++)
+                     MidCrd[k] /= out;
+
+                  MinIdx = stk[0];
+                  MinDis = POW(msh->CrdTab[ MinIdx * 3 + 0 ] - MidCrd[0])
+                         + POW(msh->CrdTab[ MinIdx * 3 + 1 ] - MidCrd[1])
+                         + POW(msh->CrdTab[ MinIdx * 3 + 2 ] - MidCrd[2]);
+
+                  // Look for the closest vertex from the barycenter
+                  for(j=0;j<out;j++)
+                  {
+                     VerDis = POW(msh->CrdTab[ stk[j] * 3 + 0 ] - MidCrd[0])
+                            + POW(msh->CrdTab[ stk[j] * 3 + 1 ] - MidCrd[1])
+                            + POW(msh->CrdTab[ stk[j] * 3 + 2 ] - MidCrd[2]);
+
+                     if(VerDis < MinDis)
+                     {
+                        MinDis = VerDis;
+                        MinIdx = stk[j];
+                     }
+                  }
+
+                  // Use the centermost vertex as a new starting seed
+                  // and repeat the LIFO based numbering process
+                  msh->VerCod[ MinIdx ][1] = ++cpt;
+                  ins = out = 0;
+                  stk[ ins++ ] = MinIdx;
+
+                  while(ins > out)
+                  {
+                     idx = stk[ out++ ];
+
+                     for(j=msh->AdrBalRk1[ idx ]; j<msh->AdrBalRk1[ idx + 1 ]; j++)
+                     {
+                        ngb = msh->LstBalRk1[j];
+
+                        if(msh->VerCol[ ngb ] == col && !msh->VerCod[ ngb ][1])
+                        {
+                           msh->VerCod[ ngb ][1] = ++cpt;
+                           stk[ ins++ ] = ngb;
+                        }
+                     }
+                  }
+               }
+               else
+               {
+                  // For other colors, we initialize the front with all vertices
+                  // neighbouring previous color's entities
+                  NmbBnd = 0;
+
+                  // Build the list of this grain's vertices that are connected
+                  // to at least one vertex belonging to a previous color
+                  for(j=0;j<out;j++)
+                  {
+                     idx = stk[j];
+
+                     for(k=msh->AdrBalRk1[ idx ]; k<msh->AdrBalRk1[ idx + 1 ]; k++)
+                     {
+                        ngb = msh->LstBalRk1[k];
+
+                        if(msh->VerCol[ ngb ] < col)
+                        {
+                           BndLst[ NmbBnd++ ] = idx;
+                           break;
+                        }
+                     }
+                  }
+
+                  // Reset the stack and push all boundary vertices onto it
+                  ins = out = 0;
+
+                  if(NmbBnd)
+                  {
+                     for(j=0;j<NmbBnd;j++)
+                     {
+                        msh->VerCod[ BndLst[j] ][1] = ++cpt;
+                        stk[ ins++ ] = BndLst[j];
+                     }
+                  }
+                  else
+                  {
+                     idx = stk[0];
+                     msh->VerCod[ idx ][1] = ++cpt;
+                     stk[ ins++ ] = idx;
+                  }
+
+                  // The repeat the LIFO based numbering scheme
+                  while(ins > out)
+                  {
+                     idx = stk[ out++ ];
+
+                     for(j=msh->AdrBalRk1[ idx ]; j<msh->AdrBalRk1[ idx + 1 ]; j++)
+                     {
+                        ngb = msh->LstBalRk1[j];
+
+                        if(msh->VerCol[ ngb ] == col && !msh->VerCod[ ngb ][1])
+                        {
+                           msh->VerCod[ ngb ][1] = ++cpt;
+                           stk[ ins++ ] = ngb;
+                        }
+                     }
                   }
                }
             }
          }
       }
 
+      free(BndLst);
       free(stk);
    }
 
@@ -4357,7 +4526,7 @@ static void RenVer(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
 
       if(msh->mod == LplNoRenum)
          SchCod = i;
-      else if(msh->mod == LplBfs)
+      else if(msh->mod == LplBfsColor || msh->mod == LplBfsXmin)
          SchCod = msh->VerCod[i][1];
       else
       {
@@ -4465,7 +4634,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
 
       if(msh->mod == LplNoRenum)
          SchCod = i;
-      else if(msh->mod == LplBfs)
+      else if(msh->mod == LplBfsColor || msh->mod == LplBfsXmin)
       {
          SchCod = msh->VerCod[ msh->EleTab[t][ i * siz ] ][1];
       }

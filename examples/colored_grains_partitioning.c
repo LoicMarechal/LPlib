@@ -9,7 +9,7 @@
 /*   Description:       handle indirect memory writes with colors and grains  */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     sep 09 2024                                           */
-/*   Last modification: jun 25 2026                                           */
+/*   Last modification: jun 30 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -210,7 +210,9 @@ int main(int ArgCnt, char **ArgVec)
       if(RenTyp == 0)
          RenTyp = LplHilbert;
       else if(RenTyp == 1)
-         RenTyp = LplBfs;
+         RenTyp = LplBfsXmin;
+      else if(RenTyp == 2)
+         RenTyp = LplBfsColor;
       else
          RenTyp = LplNoRenum;
    }
@@ -221,7 +223,7 @@ int main(int ArgCnt, char **ArgVec)
       puts("  Threads     : number of parallel threads, if 0 then use all available threads");
       puts("  Grains      : number of grains, if 0 then run loops with dependencies");
       puts("  Scheduling  : 0 = static, 1 = dynamic");
-      puts("  Renumbering : 0 = Hilbert, 1 = BFS");
+      puts("  Renumbering : 0 = Hilbert, 1 = BFS-Xmin, 2 = BFS-Color");
       exit(0);
    }
 
