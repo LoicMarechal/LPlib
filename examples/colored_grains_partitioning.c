@@ -105,7 +105,7 @@ void SetTetRef(int BegIdx, int EndIdx, int GrnIdx, MshSct *msh)
    int i;
 
    for(i=BegIdx;i<=EndIdx;i++)
-      msh->TetRef[i] = GrnIdx;
+      msh->TetRef[i] = (GrnIdx-1) / 10 + 1;
 }
 
 
@@ -147,7 +147,7 @@ void ClrVer(int BegIdx, int EndIdx, int GrnIdx, int *VerDeg, double *VerSol)
    for(i=BegIdx;i<=EndIdx;i++)
    {
       VerDeg[i] = 0;
-      VerSol[i] = 0.;
+      VerSol[i] = i;
    }
 }
 
@@ -181,7 +181,7 @@ int CmpEdg(const void *a, const void *b)
 int main(int ArgCnt, char **ArgVec)
 {
    int         i, j, ref, NmbCpu = 0, NmbGrn, ver, dim, ret, DynSch, RenTyp;
-   int         *EdgCol = NULL, *EdgGrn = NULL, (*TmpEdg)[2];
+   int         *EdgCol = NULL, *EdgGrn = NULL, (*TmpEdg)[2], TypTab[20];
    int64_t     InpMsh, OutMsh, DegTot = 0;
    uint64_t    (*RenEdg)[2];
    float       sta[2], acc = 0;
@@ -416,10 +416,11 @@ int main(int ArgCnt, char **ArgVec)
    // Set each tet and triangle ref with their grain index and save the mesh
    //LaunchColorGrains(msh.ParIdx, LplTri, SetTriRef, &msh);
    LaunchColorGrains(msh.ParIdx, LplTet, SetTetRef, &msh);
+   LaunchColorGrainsMultiArg(msh.ParIdx, LplVer, ClrVer, 2, msh.VerDeg, msh.VerSol);
 
-   if(!(OutMsh = GmfOpenMesh("/tmp/col.meshb", GmfWrite, ver, dim)))
+   if(!(OutMsh = GmfOpenMesh("col.meshb", GmfWrite, ver, dim)))
    {
-      puts("Cannot open the file /tmp/col.meshb");
+      puts("Cannot open the file col.meshb");
       exit(10);
    }
 
@@ -427,12 +428,12 @@ int main(int ArgCnt, char **ArgVec)
    GmfSetBlock(OutMsh, GmfVertices, 1, msh.NmbVer, 0, NULL, NULL,
                GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],
                GmfInt, &ref, &ref);
-
+               /*
    GmfSetKwd(OutMsh, GmfTriangles, msh.NmbTri);
    GmfSetBlock(OutMsh, GmfTriangles, 1, msh.NmbTri, 0, NULL, NULL,
                GmfIntVec, 3, msh.TriTab[1], msh.TriTab[ msh.NmbTri ],
                GmfInt, &msh.TriRef[1], &msh.TriRef[ msh.NmbTri ]);
-
+*/
    GmfSetKwd(OutMsh, GmfTetrahedra, msh.NmbTet);
    GmfSetBlock(OutMsh, GmfTetrahedra, 1, msh.NmbTet, 0, NULL, NULL,
                GmfIntVec, 4, msh.TetTab[1], msh.TetTab[ msh.NmbTet ],
@@ -440,7 +441,21 @@ int main(int ArgCnt, char **ArgVec)
 
    GmfCloseMesh(OutMsh);
 
-   LaunchColorGrainsMultiArg(msh.ParIdx, LplVer, ClrVer, 2, msh.VerDeg, msh.VerSol);
+   /*
+   if(!(OutMsh = GmfOpenMesh("/tmp/col.solb", GmfWrite, ver, dim)))
+   {
+      puts("Cannot open the file /tmp/col.solb");
+      exit(10);
+   }
+
+   TypTab[0] = GmfSca;
+   GmfSetKwd(OutMsh, GmfSolAtVertices, msh.NmbVer, 1, TypTab);
+   puts("1");
+   GmfSetBlock(OutMsh, GmfSolAtVertices, 1, msh.NmbVer, 0, NULL, NULL,
+               GmfDouble, &msh.VerSol[1], &msh.VerSol[ msh.NmbVer ]);
+   puts("2");
+   GmfCloseMesh(OutMsh);*/
+   exit(0);
 
 
 

@@ -9,7 +9,7 @@
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 30 2026                                           */
+/*   Last modification: jul 09 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -83,6 +83,7 @@
 #define BigMemSiz 100000000ULL
 #define MAXEDG    1000
 #define MAXITR    21
+#define MAXCOL    100
 
 enum ParCmd {  RunBigWrk, RunSmlWrk, RunDetWrk, RunColWrk,
                ClrMem, CpyMem, RunGrnWrk, EndPth };
@@ -206,12 +207,12 @@ typedef struct
    idx_t            *adjwgt, options[ METIS_NOPTIONS ];
 }MtsSct;
 
+#endif
+
 typedef itg          int1d;
 typedef itg          int2d[2];
 typedef itg          int11d[11];
 typedef itg          int56d[56];
-
-#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -265,45 +266,48 @@ static const int MaxDegVec[ LplMax ][2] = {
 /* Private procedures' prototypes                                             */
 /*----------------------------------------------------------------------------*/
 
-static int        SetBit         (int *, int);
-static int        GetBit         (int *, int);
-static void       ClrBit         (int *, int);
-static int        AndWrd         (int, int *, int *);
-static void       AddWrd         (int, int *, int *);
-static void       SubWrd         (int, int *, int *);
-static void       ClrWrd         (int, int *);
-static void       CpyWrd         (int, int *, int *);
-int               CmpWrk         (const void *, const void *);
-static void      *PipHdl         (void *);
-static void      *PthHdl         (void *);
-static WrkSct    *NexWrk         (ParSct *, int);
-static WrkSct    *NexGrn         (ParSct *, int);
-static void       CalVarArgPip   (PipSct *, void *);
-static void       CalVarArgPrc   (itg, itg, int, ParSct *);
-static int64_t    IniPar         (int, size_t, void *);
-static void       SetItlBlk      (ParSct *, TypSct *);
-static int        SetGrp         (ParSct *, TypSct *);
-static void      *LPL_malloc     (void *, int64_t);
-static void      *LPL_calloc     (void *, int64_t, int64_t);
-static void       LPL_free       (void *, void *);
-static void       UpdBlkSiz      (ParSct *, TypSct *);
-static void       SetBndBox      (LplSct *);
-static void       SetMidCrd      (int , int *, LplSct *, double *);
-static int        CmpFnc         (const void *, const void *);
-static void       RenVer         (int, int, int, LplSct *);
-static void       RenEle         (int, int, int, LplSct *);
-static void       SetVerDeg      (LplSct *);
-static void       SetMatSlc      (LplSct *);
-static int        SetDeg         (LplSct *, int *);
-static uint64_t   GetHilCod      (double *, double *, int, int);
-
+static int        SetBit            (int *, int);
+static int        GetBit            (int *, int);
+static void       ClrBit            (int *, int);
+static int        AndWrd            (int, int *, int *);
+static void       AddWrd            (int, int *, int *);
+static void       SubWrd            (int, int *, int *);
+static void       ClrWrd            (int, int *);
+static void       CpyWrd            (int, int *, int *);
+int               CmpWrk            (const void *, const void *);
+static void      *PipHdl            (void *);
+static void      *PthHdl            (void *);
+static WrkSct    *NexWrk            (ParSct *, int);
+static WrkSct    *NexGrn            (ParSct *, int);
+static void       CalVarArgPip      (PipSct *, void *);
+static void       CalVarArgPrc      (itg, itg, int, ParSct *);
+static int64_t    IniPar            (int, size_t, void *);
+static void       SetItlBlk         (ParSct *, TypSct *);
+static int        SetGrp            (ParSct *, TypSct *);
+static void      *LPL_malloc        (void *, int64_t);
+static void      *LPL_calloc        (void *, int64_t, int64_t);
+static void       LPL_free          (void *, void *);
+static void       UpdBlkSiz         (ParSct *, TypSct *);
+static void       SetBndBox         (LplSct *);
+static void       SetMidCrd         (int , int *, LplSct *, double *);
+static int        CmpFnc            (const void *, const void *);
+static void       RenVer            (int, int, int, LplSct *);
+static void       RenEle            (int, int, int, LplSct *);
+static void       SetVerDeg         (LplSct *);
+static void       SetMatSlc         (LplSct *);
+static int        SetDeg            (LplSct *, int *);
+static uint64_t   GetHilCod         (double *, double *, int, int);
+static void       ChkColGrn         (LplSct *);
+static int        SetColors         (int64_t, int, int (*)[2], int);
+static int        SetGrains         (int64_t, int, int, int (*)[2]);
+static void       SetGrnDep         (ParSct *, LplSct *);
+static void       SetV2VBal         (LplSct *);
+static void       SetRk2Bal         (LplSct *);
+static int       *ColorPointImplicit(int, uint64_t *, int *);
+static void       AddHeapListCol    (int1d, int1d *, int1d *, int1d *, int2d *);
+static int1d      RemoveHeapListCol (int1d *, int1d *, int1d *, int2d *);
+static void       UpdateHeapListCol (int1d, int1d *, int1d *, int2d *);
 #ifdef WITH_METIS
-static void       ChkColGrn      (LplSct *);
-static int        SetColors      (int64_t, int, int (*)[2], int);
-static int        SetGrains      (int64_t, int, int, int (*)[2]);
-static void       SetGrnDep      (ParSct *, LplSct *);
-static void       SetV2VBal      (LplSct *);
-static void       SetRk2Bal      (LplSct *);
 static void       BuildMetisGraph   (LplSct *, MtsSct *);
 static int        MetisPartitioning (LplSct *, int);
 static int       *ColorPartImplicit (int, int, int, uint64_t *, int *,
@@ -2783,7 +2787,7 @@ int RadixSort( int64_t ParIdx, size_t NmbItm, void *UsrIdx, int IdxTyp,
             BucCntLng[PtrSrcLng[i][j]]++;
             memcpy(PtrDstLng[ NewPosLng ], PtrSrcLng[i], 16);
          }
-      
+
          // Swap the buffers pointers to avoid a useless copy
          PtrTmpLng = PtrSrcLng;
          PtrSrcLng = PtrDstLng;
@@ -3552,11 +3556,9 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    LplSct   *msh;
    va_list  VarArg;
    char     *SchStr[4] = {"Hilbert", "Z-curve", "random", "initial"};
-#ifdef WITH_METIS
    int      grn, *NewGrn, *ColTab, CurCol, CurGrn;
    int      NmbCol, (*ColPar)[3], (*VerGrnPar)[4];
    ParSct   *par = (ParSct *)ParIdx;
-#endif
 
 
    // ---------------------------------------------------------------
@@ -3686,6 +3688,48 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       msh->GrnLft = 64 - msh->ColBit - msh->GrnBit;
    }
 #endif
+
+   if(RenTyp == LplColoredPoints)
+   {
+      msh->ColPntMod = 1;
+
+      // Allocate a color and a grain table for each mesh entities
+      msh->VerCol = calloc(msh->NmbVer + 1, sizeof(int));
+      assert(msh->VerCol);
+
+      for(t=LplEdg; t<LplMax; t++)
+      {
+         if(!msh->NmbEle[t])
+            continue;
+
+         msh->EleCol[t] = calloc(msh->NmbEle[t] + 1, sizeof(int));
+         assert(msh->EleCol[t]);
+      }
+
+      // Allocate and setup rank 1 vertex balls
+      SetV2VBal(msh);
+
+      // Give a color to each grain
+      ColTab = ColorPointImplicit(msh->NmbVer, msh->AdrBalRk1, msh->LstBalRk1);
+
+      for(t=LplEdg; t<LplMax; t++)
+      {
+         if(!msh->NmbEle[t])
+            continue;
+
+         for(i=1;i<=msh->NmbEle[t];i++)
+            msh->EleCol[t][i] = msh->VerCol[ msh->EleTab[t][ i * EleSiz[t] ] ];
+      }
+
+      // Look for the number a color and grains and define the required
+      // number of bits needed to store these information
+      msh->NmbCol = ColTab[0];
+
+      // Set the bit field size, maks and left shift to store the color value
+      msh->ColBit = ceil(log(msh->NmbCol) / log(2));
+      msh->ColMsk = (1ULL << msh->ColBit) - 1ULL;
+      msh->ColLft = 64 - msh->ColBit;
+   }
 
 
    // ----------------------------------------------------------------------
@@ -4017,7 +4061,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    for(i=1;i<=msh->NmbVer;i++)
       msh->VerCod[ msh->VerCod[i][0] ][1] = i;
 
-#ifdef WITH_METIS
    if(NmbGrn)
    {
       // As the vertices renumbered, their colors and grains tables must be rebuilt
@@ -4033,7 +4076,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
       for(i=1;i<=msh->NmbVer;i++)
          msh->VerCol[i] = ColTab[ msh->VerGrn[i] ];
    }
-#endif
 
 
    // --------------------
@@ -4106,7 +4148,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
    // Color-grain mode: setup global colouring and each entities grains
    // -----------------------------------------------------------------
 
-#ifdef WITH_METIS
    if(NmbGrn)
    {
       CurCol = msh->VerCol[1];
@@ -4312,7 +4353,6 @@ LplSct *MeshRenumbering(int64_t ParIdx, int NmbGrn,
          free(msh->EleGrnPar[t]);
          
       }
-#endif
 
    // Store renumbering tables for further index translations
    msh->RenTab[ LplVer ] = msh->VerCod;
@@ -4608,7 +4648,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
    char     *BytPtr;
    int      i, j, ref, t = msh->TypIdx, siz = EleSiz[t];
    double   crd[3];
-   uint64_t ColCod = 0, GrnCod = 0, RefCod = 0, SchCod = 0;
+   uint64_t MinIdx, ColCod = 0, GrnCod = 0, RefCod = 0, SchCod = 0;
 
    // Set the elements SFC code from their barycenter
    for(i=BegIdx; i<=EndIdx; i++)
@@ -4636,7 +4676,12 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
          SchCod = i;
       else if(msh->mod == LplBfsColor || msh->mod == LplBfsXmin)
       {
-         SchCod = msh->VerCod[ msh->EleTab[t][ i * siz ] ][1];
+         MinIdx = msh->EleTab[t][ i * siz ];
+
+         for(j=1;j<siz;j++)
+            MinIdx = MIN(MinIdx, msh->EleTab[t][ i * siz +j ]);
+
+         SchCod = msh->VerCod[ MinIdx ][1];
       }
       else
       {
@@ -4880,9 +4925,6 @@ static int SetDeg(LplSct *msh, int *DegTab)
 }
 
 
-#ifdef WITH_METIS
-
-
 /*----------------------------------------------------------------------------*/
 /* Provide the LPlib with color and grain index for each entities             */
 /*----------------------------------------------------------------------------*/
@@ -4972,7 +5014,24 @@ static void SetGrnDep(ParSct *par, LplSct *msh)
             SetBit(&par->GrnMat[ g1 * par->NmbDepWrd ], g2);
       }
    }
+   /*
+   puts("");
+   for(i=1;i<=msh->NmbGrn;i++)
+   {
+      if(i % 10 == 1)
+         puts("");
 
+      for(j=1;j<=msh->NmbGrn;j++)
+      {
+         printf("%d,", GetBit(&par->GrnMat[ i * par->NmbDepWrd ], j) ? 1:0);
+         
+         if(j % 10 == 0)
+            printf(" ");
+      }
+      puts("");
+   }
+   exit(0);
+*/
    free(VerGrn);
 }
 
@@ -5035,6 +5094,25 @@ static void ChkColGrn(LplSct *msh)
 
    free(VerColTab);
    free(VerGrnTab);
+}
+
+
+#ifdef WITH_METIS
+
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+static int1d CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
+{
+   int1d k;
+
+   for (k = 0; k < nbv; k++)
+   {
+      if (verLst[k] == iVer) return k;
+   }
+
+   return -1;
 }
 
 
@@ -5105,6 +5183,265 @@ static void BuildMetisGraph(LplSct *msh, MtsSct *mts)
 
    mts->xadj[ msh->NmbVer ] = TotDeg;
 }
+
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+static int *ColorPartImplicit(int NmbPth, int nbrPar, int NmbVer,
+                              uint64_t *AdrBalRk1, int *LstBalRk1,
+                              uint64_t *AdrBalRk2, int *LstBalRk2,
+                              int *VidPar, int VrbLvl)
+{
+   int1d   NbrCol, i, flag1, flag = 0;
+   int1d   iVer, iCol, jCol, iPar, jPar, iVoi, idx, idxPar, jdxPar;
+   int1d   jVer, nbrVoi;
+   int1d   idxCol, jdxCol, NbrHepLst, NbrParTgt, IteBck, test, colRef;
+   int1d  *cntPar = NULL, *colPar = NULL;
+   int1d  *LstCol = NULL;
+   int1d  *HepLst, *Pos, *GphColPar;
+   int2d  *ColVer2Ver;
+   int56d  CntCol;
+   int11d  BackUpCol;
+   NbrParTgt = NmbPth;
+
+   for (i = 0; i < 30; i++)
+      CntCol[i] = 0;
+
+   HepLst     = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
+   Pos        = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
+   ColVer2Ver = (int2d *)malloc((nbrPar + 1) * sizeof(int2d));
+   cntPar     = (int1d *)calloc(nbrPar + 1, sizeof(int1d));
+   colPar     = (int1d *)calloc((nbrPar + 1) * 1000, sizeof(int1d));
+   GphColPar  = (int1d *)calloc((nbrPar + 1), sizeof(int1d));
+   // use to order the partition according to their increasing degree, second int stock the idPar after ordering
+
+   // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
+
+   for (iVer = 1; iVer <= NmbVer; iVer++)
+   {
+      nbrVoi = AdrBalRk2[iVer+1] - AdrBalRk2[iVer];
+      idxPar = VidPar[iVer];
+
+      for (iVoi =  AdrBalRk2[iVer]; iVoi < AdrBalRk2[iVer+1]; iVoi++)
+      {
+         jVer   = LstBalRk2[iVoi];
+         jdxPar = VidPar[jVer];
+
+         if (idxPar == jdxPar)
+            continue;
+
+         else
+         {
+            flag1 = CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000 * idxPar]);
+            // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+
+            if (cntPar[idxPar] > 1000 || cntPar[jdxPar] > 1000)
+            {
+               printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
+               exit(1);
+            }
+
+            if (flag1 == -1)
+            {
+               colPar[1000 * idxPar + cntPar[idxPar]] = jdxPar;
+               cntPar[idxPar]++;
+            }
+
+            else
+            {
+               continue;
+            }
+         }
+      }
+   }
+
+   LstCol       = (int1d *)calloc(100, sizeof(int1d));
+
+   NbrHepLst = 0;
+   idx       = 0;
+   NbrCol    = 0;
+
+   for (iPar = 1; iPar <= nbrPar; iPar++)
+   {
+      nbrVoi              = cntPar[iPar];
+      ColVer2Ver[iPar][0] = 0;        // Nbr Voisins coloriés
+      ColVer2Ver[iPar][1] = nbrVoi;   // Personne n'est colorié
+      Pos[iPar]           = 0;
+
+      if (nbrVoi > idx)
+      {
+         flag = iPar;
+         idx  = nbrVoi;
+      }
+   }
+
+   AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+   for (iPar = 1; iPar <= nbrPar; iPar++)
+   {
+      iCol = 0;
+      jPar = HepLst[1];
+
+      RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+      nbrVoi = cntPar[jPar];
+
+      if (nbrVoi > 500)
+      {
+         printf("Maillage de merde \n");
+         exit(1);
+      }
+
+      for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+      {
+         idxPar = colPar[1000 * jPar + iVoi];
+         ColVer2Ver[idxPar][0]++;
+         ColVer2Ver[idxPar][1]--;
+
+         if (ColVer2Ver[idxPar][1] < 0)
+         {
+            printf("ON A COLORIÉ TROP DE VOISINS A idxPar = %d\n", idxPar);
+            exit(1);
+         }
+
+         if (ColVer2Ver[idxPar][0] == 1)
+            AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+
+         if (ColVer2Ver[idxPar][0] > 1 && GphColPar[idxPar] == 0)
+            UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
+
+         LstCol[iVoi] = GphColPar[idxPar];
+      }
+
+      int1d nbrMin = nbrPar * 2;
+      for (i = 1; i < 30; i++)
+      {
+         if ((CntCol[i] != 0) || i <= 10)
+         {
+            // if ( i<=9) {
+            iVoi = 0;
+            jCol = i;
+
+            while (iVoi < nbrVoi)
+            {
+               if (LstCol[iVoi] == jCol)   // On skip la boucle car 'jCol est déja pris
+                  goto nexCol;
+
+               iVoi++;
+            }
+
+            // this color is available
+            if (iCol == 0)
+            {
+               iCol   = jCol;
+               nbrMin = CntCol[i];
+            }
+            else
+            {
+               if (CntCol[i] < nbrMin)
+               {
+                  iCol   = jCol;
+                  nbrMin = CntCol[i];
+               }
+            }
+         }
+
+      nexCol:
+         continue;
+      }
+
+      // On a fait tous les voisins et toutes les couleurs consécutives sont données
+      if (iCol == 0)
+         iCol = LstCol[nbrVoi - 1] + 1;
+
+      GphColPar[jPar] = iCol;
+
+      CntCol[iCol]++;
+
+      if (iCol > NbrCol)
+         NbrCol = iCol;
+   }
+
+   //---- Check up of evrything
+   flag   = 0;
+   colRef = 0;
+   for (iCol = 1; iCol <= NbrCol; iCol++)
+   {
+      BackUpCol[iCol] = CntCol[iCol] - NbrParTgt;
+      if (BackUpCol[iCol] != 0)
+      {
+         flag++;   // Coutn for the number of problem (must be even)
+         if(VrbLvl >= 1)
+            printf("  Color %d has a wrong number of partition %d (Target = %d)\n", iCol, CntCol[iCol], NbrParTgt);
+      }
+   }
+
+   // printf("flag = %d so we have %d partitions to transfer \n", flag, flag/2);
+   if (flag == 0)
+      IteBck = 0;
+   else
+      IteBck = 5;
+
+   while (flag > 0 && IteBck > 0)
+   {
+      idxCol = 0;
+      jdxCol = 0;
+      for (iCol = 1; iCol <= NbrCol; iCol++)
+      {
+         //--- find idxCol such that idxCol has to less and jdxCol to much partitions for a transfer
+         if (BackUpCol[iCol] < 0 && idxCol == 0 && iCol != colRef) idxCol = iCol;
+
+         if (BackUpCol[iCol] > 0 && jdxCol == 0) jdxCol = iCol;
+      }
+      //--if we find a couple of color for transfer lets try
+      if (idxCol != 0 && jdxCol != 0)
+      {
+         colRef = idxCol;   //-- to prevent from treating the same color again and again
+         //-- Looking for a partition for the transfer
+         for (iPar = 1; iPar <= nbrPar; iPar++)
+         {
+            test   = 0;
+            nbrVoi = cntPar[iPar];
+            iCol   = GphColPar[iPar];
+
+
+            if (iCol == jdxCol)
+            {   //-- iPar is a partition that is in color with to many partition:
+                // it is candidate for transfer, test for jdxCol
+               // printf("Voisins de %d : ",iPar);
+               for (iVoi = 0; iVoi < nbrVoi; iVoi++)
+               {
+                  jPar = colPar[1000 * (iPar) + iVoi];
+                  jCol = GphColPar[jPar];
+                  // printf("\t%% %d col : %d", jPar, jCol);
+                  if (jCol == idxCol) test = 1;
+               }
+               // printf("\n");
+               if (test == 0)
+               {   // Test is good iPar is a champion !!!
+                  CntCol[idxCol]++;
+                  CntCol[jdxCol]--;
+                  GphColPar[iPar] = idxCol;
+
+                  BackUpCol[idxCol]++;
+                  BackUpCol[jdxCol]--;
+
+                  flag = flag - 2;
+                  goto end;
+               }
+            }
+         }
+      }
+   end:
+      IteBck--;
+   }
+
+   if (VrbLvl >= 1 && flag != 0) printf("Balance is not good\n");
+
+   return (GphColPar);
+}
+
+#endif
 
 
 /*----------------------------------------------------------------------------*/
@@ -5216,22 +5553,6 @@ static void SetRk2Bal(LplSct *msh)
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 
-static int1d Wlf2_CheckIfVertexIsInTheList(int1d iVer, int1d nbv, int1d *verLst)
-{
-   int1d k;
-
-   for (k = 0; k < nbv; k++)
-   {
-      if (verLst[k] == iVer) return k;
-   }
-
-   return -1;
-}
-
-
-/*----------------------------------------------------------------------------*/
-/*----------------------------------------------------------------------------*/
-
 static void AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
    int1d son, fat, jVer;
@@ -5273,14 +5594,13 @@ static void AddHeapListCol(int1d iVer, int1d *NbrHepLst, int1d *HepLst, int1d *P
 }
 
 
-/*
-
-  Remove the top vertex from the list
+/*----------------------------------------------------------------------------*/
+/*  Remove the top vertex from the list
    - First, remove the top vertex
    - Second, position the last vertex at the top of the list
-   - Third, traverse the list from top downwards to reposition the first element
+   - Third, traverse the list from top downwards to reposition the first element */
+/*----------------------------------------------------------------------------*/
 
-*/
 static int1d RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
    int1d iVer, jVer, lVer, son1, son2, fat;
@@ -5345,11 +5665,10 @@ static int1d RemoveHeapListCol(int1d *NbrHepLst, int1d *HepLst, int1d *Pos, int2
 }
 
 
-/*
+/*----------------------------------------------------------------------------*/
+/* Update the position of a vertex in the heap list if its distance is modified */
+/*----------------------------------------------------------------------------*/
 
-  Update the position of a vertex in the heap list if its distance is modified
-
-*/
 static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColVer2Ver)
 {
    int1d jVer, son, fat;
@@ -5389,274 +5708,147 @@ static void UpdateHeapListCol(int1d iVer, int1d *HepLst, int1d *Pos, int2d *ColV
 }
 
 
-static int *ColorPartImplicit(int NmbPth, int nbrPar, int NmbVer,
-                              uint64_t *AdrBalRk1, int *LstBalRk1,
-                              uint64_t *AdrBalRk2, int *LstBalRk2,
-                              int *VidPar, int VrbLvl)
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+int ComparVer1d(const void *v1, const void *v2)
 {
-   int1d   NbrCol, i, flag1, flag = 0;
-   int1d   iVer, iCol, jCol, iPar, jPar, iVoi, idx, idxPar, jdxPar;
-   int1d   jVer, nbrVoi;
-   int1d   idxCol, jdxCol, NbrHepLst, NbrParTgt, IteBck, test, colRef;
-   int1d  *cntPar = NULL, *colPar = NULL;
-   int1d  *LstCol = NULL;
-   int1d  *HepLst, *Pos, *GphColPar;
-   int2d  *ColVer2Ver;
-   int56d  CntCol;
-   int11d  BackUpCol;
-   NbrParTgt = NmbPth;
+  int *r1 = ( int *)v1;
+  int *r2 = ( int *)v2;
 
-   for (i = 0; i < 30; i++)
-   {
-      CntCol[i] = 0;
-   }
+	int rank1 = (*r1);
+	int rank2 = (*r2);
 
-   HepLst     = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
-   Pos        = (int1d *)malloc((nbrPar + 1) * sizeof(int1d));
-   ColVer2Ver = (int2d *)malloc((nbrPar + 1) * sizeof(int2d));
-   cntPar     = (int1d *)calloc(nbrPar + 1, sizeof(int1d));
-   colPar     = (int1d *)calloc((nbrPar + 1) * 1000, sizeof(int1d));
-   GphColPar  = (int1d *)calloc((nbrPar + 1), sizeof(int1d));
-   // use to order the partition according to their increasing degree, second int stock the idPar after ordering
+	if ( rank1 > rank2 )
+		return 1;
+	else
+		return -1;
+}
 
-   // Treat the Sub domains like Vertex in the point implicit then give the color to each vertex of each partition
 
-   for (iVer = 1; iVer <= NmbVer; iVer++)
-   {
-      nbrVoi = AdrBalRk2[iVer+1] - AdrBalRk2[iVer];
-      idxPar = VidPar[iVer];
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
 
-      for (iVoi =  AdrBalRk2[iVer]; iVoi < AdrBalRk2[iVer+1]; iVoi++)
-      {
-         jVer   = LstBalRk2[iVoi];
-         jdxPar = VidPar[jVer];
+static itg *ColorPointImplicit(int NmbVer, uint64_t *Ver2Ver, int *PtrVer2Ver)
+{
+   int1d    i, iVer, iCol, NbrHepLst, nbrVoi, jVer, kVer, iVoi, flg = 0, jCol;
+   int1d   *VerCol, NbrMin, idx, NmbCol, NmbColTgt, *HepLst, *Pos, *LstCol;
+   int2d    *ColVer2Ver;
+   int56d   CntCol;
 
-         if (idxPar == jdxPar)
-            continue;
+   //  On alloue tous les tableaux pour ce qu'on fait
+   HepLst      = calloc((NmbVer+1), sizeof(int1d));
+   Pos         = calloc((NmbVer+1), sizeof(int1d));
+   ColVer2Ver  = malloc((NmbVer+1)*sizeof(int2d));
+   LstCol      = calloc(500, sizeof(int1d));
+   VerCol      = calloc((NmbVer+1), sizeof(int1d));
 
-         else
-         {
-            flag1 = Wlf2_CheckIfVertexIsInTheList(jdxPar, cntPar[idxPar], &colPar[1000 * idxPar]);
-            // flag1 = -1 if jdxPar is not in &colPar[1000*idxPar] ()
+   NbrMin = NmbVer * 2;
 
-            if (cntPar[idxPar] > 1000 || cntPar[jdxPar] > 1000)
-            {
-               printf("MESH IS TO COARSE TO BE PARTITIONNED AND COLORED PROPERLY \n");
-               exit(1);
-            }
-
-            if (flag1 == -1)
-            {
-               colPar[1000 * idxPar + cntPar[idxPar]] = jdxPar;
-               cntPar[idxPar]++;
-            }
-
-            else
-            {
-               continue;
-            }
-         }
-      }
-   }
-
-   LstCol       = (int1d *)calloc(100, sizeof(int1d));
-
+   // On get les voisins et on initialise la heaplist, Pos et ColVer2Ver (rien n'est colorié au début)
+   NmbColTgt = 9;
+   NmbCol    = 1;
    NbrHepLst = 0;
    idx       = 0;
-   NbrCol    = 0;
+   flg       = 0;
 
-   for (iPar = 1; iPar <= nbrPar; iPar++)
+   memset(CntCol, 0, sizeof(int56d));
+
+   for (iVer=1; iVer<=NmbVer; iVer++)
    {
-      nbrVoi              = cntPar[iPar];
-      ColVer2Ver[iPar][0] = 0;        // Nbr Voisins coloriés
-      ColVer2Ver[iPar][1] = nbrVoi;   // Personne n'est colorié
-      Pos[iPar]           = 0;
+      nbrVoi = PtrVer2Ver[iVer+1] - PtrVer2Ver[iVer];
+      ColVer2Ver[iVer][0] = 0;       // Number of colored neighbors
+      ColVer2Ver[iVer][1] = nbrVoi;  // Nobody is colored
 
-      if (nbrVoi > idx)
+      if ( nbrVoi > idx )
       {
-         flag = iPar;
-         idx  = nbrVoi;
+         flg = iVer;
+         idx = nbrVoi;
       }
    }
 
-   AddHeapListCol(flag, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+   if ( flg == 0 )
+     return(NULL);
 
-   for (iPar = 1; iPar <= nbrPar; iPar++)
+   AddHeapListCol(flg, &NbrHepLst, HepLst, Pos, ColVer2Ver); // INIT pour le premier point
+
+   for (iVer=1; iVer<=NmbVer; iVer++)
    {
       iCol = 0;
-      jPar = HepLst[1];
+      jVer = HepLst[1];
 
       RemoveHeapListCol(&NbrHepLst, HepLst, Pos, ColVer2Ver);
 
-      nbrVoi = cntPar[jPar];
+      nbrVoi = PtrVer2Ver[jVer+1] - PtrVer2Ver[jVer];
 
-      if (nbrVoi > 500)
+      if (nbrVoi > 500 )
       {
-         printf("Maillage de merde \n");
-         exit(1);
+         printf("A VERTEX HAS TOO MANY NEIGHBORS TO USE COLOR IMPLICIT\n");
+         return(NULL);
       }
 
-      for (iVoi = 0; iVoi < nbrVoi; iVoi++)
-      {
-         idxPar = colPar[1000 * jPar + iVoi];
-         ColVer2Ver[idxPar][0]++;
-         // ColVer2Ver[kVer][0]++;
-         ColVer2Ver[idxPar][1]--;
+      // On met a jour ColVer2Ver pour tous les voisins de jVer qui est colored, on trouve la couleur de jVer au passage
+      for ( iVoi = 0 ; iVoi < nbrVoi ; iVoi++)
+      { 
+         idx  = PtrVer2Ver[jVer] + iVoi; 
+         kVer = Ver2Ver[idx];
+         ColVer2Ver[kVer][0]++;
+         ColVer2Ver[kVer][1]--;
 
-         if (ColVer2Ver[idxPar][1] < 0)
-         {
-            printf("ON A COLORIÉ TROP DE VOISINS A idxPar = %d\n", idxPar);
-            exit(1);
-         }
-         // printf(" \t iVoi = %d kVer = %d",iVoi, kVer);
-         if (ColVer2Ver[idxPar][0] == 1)
-         {
-            AddHeapListCol(idxPar, &NbrHepLst, HepLst, Pos, ColVer2Ver);
-         }
-         if (ColVer2Ver[idxPar][0] > 1 && GphColPar[idxPar] == 0)
-         {
-            UpdateHeapListCol(idxPar, HepLst, Pos, ColVer2Ver);
-         }
+         if (ColVer2Ver[kVer][1] < 0)
+            return(NULL);
 
-         LstCol[iVoi] = GphColPar[idxPar];
+         if (ColVer2Ver[kVer][0] == 1 )
+            AddHeapListCol(kVer, &NbrHepLst, HepLst, Pos, ColVer2Ver);
+         else if (ColVer2Ver[kVer][0] > 1 && VerCol[kVer] == 0)
+            UpdateHeapListCol(kVer, HepLst, Pos, ColVer2Ver);
+
+         LstCol[iVoi] = VerCol[kVer];
       }
 
-      int1d nbrMin = nbrPar * 2;
-      for (i = 1; i < 30; i++)
-      {
-         if ((CntCol[i] != 0) || i <= 10)
-         {
-            // if ( i<=9) {
-            iVoi = 0;
-            jCol = i;
+      qsort((void *)LstCol, nbrVoi, sizeof(int), ComparVer1d);
 
-            while (iVoi < nbrVoi)
-            {
-               if (LstCol[iVoi] == jCol)   // On skip la boucle car 'jCol est déja pris
-                  goto nexCol;
-               // else if ( LstCol[iVoi] < jCol && LstCol[iVoi+1] > jCol ) // On a trouvé que la couleur 'flag' c'est
-               // bon
-               //   iCol = jCol;
-               // else
-               iVoi++;
+      for (i = 1; i<30; i++){
+        if ( (CntCol[i] != 0 || i<=NmbColTgt) ) {
+          iVoi = 0;
+          jCol = i;
+          while ( iVoi < nbrVoi-1 && iCol == 0) {
+            if ( LstCol[iVoi] == jCol) // On skip la boucle car 'jCol est deja pris
+              goto nexCol;
+            iVoi++;
+          }
+      
+          if ( iCol == 0 ) {
+            iCol = jCol;
+            NbrMin = CntCol[i];
+          } 
+          else {
+            if ( CntCol[i] < NbrMin ) {
+              iCol   = jCol;
+              NbrMin = CntCol[i];
             }
-
-            // this color is available
-            if (iCol == 0)
-            {
-               iCol   = jCol;
-               nbrMin = CntCol[i];
-            }
-            else
-            {
-               if (CntCol[i] < nbrMin)
-               {
-                  iCol   = jCol;
-                  nbrMin = CntCol[i];
-               }
-            }
-         }
-
-      nexCol:
-         continue;
+          }
+        }
+      
+        nexCol:
+        continue;
       }
 
-
+      // On a fait tous les voisins et toutes les couleurs consécutives sont données
       if (iCol == 0)
-      {   // On a fait tous les voisins et toutes les couleurs consécutives sont données
-         iCol = LstCol[nbrVoi - 1] + 1;
-      }
+         iCol = LstCol[nbrVoi-1] + 1;
 
-      GphColPar[jPar] = iCol;
-
+      VerCol[jVer] = iCol;
       CntCol[iCol]++;
 
-      if (iCol > NbrCol)
-      {
-         NbrCol = iCol;
-      }
+      if (iCol > NmbCol)
+         NmbCol = iCol;
    }
 
-   //---- Check up of evrything
-   flag   = 0;
-   colRef = 0;
-   for (iCol = 1; iCol <= NbrCol; iCol++)
-   {
-      BackUpCol[iCol] = CntCol[iCol] - NbrParTgt;
-      if (BackUpCol[iCol] != 0)
-      {
-         flag++;   // Coutn for the number of problem (must be even)
-         if(VrbLvl >= 1)
-            printf("  Color %d has a wrong number of partition %d (Target = %d)\n", iCol, CntCol[iCol], NbrParTgt);
-      }
-   }
+   VerCol[0] = NmbCol;
 
-   // printf("flag = %d so we have %d partitions to transfer \n", flag, flag/2);
-   if (flag == 0)
-      IteBck = 0;
-   else
-      IteBck = 5;
-
-   while (flag > 0 && IteBck > 0)
-   {
-      idxCol = 0;
-      jdxCol = 0;
-      for (iCol = 1; iCol <= NbrCol; iCol++)
-      {
-         //--- find idxCol such that idxCol has to less and jdxCol to much partitions for a transfer
-         if (BackUpCol[iCol] < 0 && idxCol == 0 && iCol != colRef) idxCol = iCol;
-
-         if (BackUpCol[iCol] > 0 && jdxCol == 0) jdxCol = iCol;
-      }
-      //--if we find a couple of color for transfer lets try
-      if (idxCol != 0 && jdxCol != 0)
-      {
-         colRef = idxCol;   //-- to prevent from treating the same color again and again
-         //-- Looking for a partition for the transfer
-         for (iPar = 1; iPar <= nbrPar; iPar++)
-         {
-            test   = 0;
-            nbrVoi = cntPar[iPar];
-            iCol   = GphColPar[iPar];
-
-
-            if (iCol == jdxCol)
-            {   //-- iPar is a partition that is in color with to many partition:
-                // it is candidate for transfer, test for jdxCol
-               // printf("Voisins de %d : ",iPar);
-               for (iVoi = 0; iVoi < nbrVoi; iVoi++)
-               {
-                  jPar = colPar[1000 * (iPar) + iVoi];
-                  jCol = GphColPar[jPar];
-                  // printf("\t%% %d col : %d", jPar, jCol);
-                  if (jCol == idxCol) test = 1;
-               }
-               // printf("\n");
-               if (test == 0)
-               {   // Test is good iPar is a champion !!!
-                  CntCol[idxCol]++;
-                  CntCol[jdxCol]--;
-                  GphColPar[iPar] = idxCol;
-
-                  BackUpCol[idxCol]++;
-                  BackUpCol[jdxCol]--;
-
-                  flag = flag - 2;
-                  goto end;
-               }
-            }
-         }
-      }
-   end:
-      IteBck--;
-   }
-
-   if (VrbLvl >= 1 && flag != 0) printf("Balance is not good\n");
-
-   return (GphColPar);
+   return(VerCol);
 }
-
-#endif
 
 
 #if ( __STDC_VERSION__ > 201100L )

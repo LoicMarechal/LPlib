@@ -11,7 +11,7 @@
 /*   Description:       Handles threads, scheduling, pipelines & dependencies */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jun 30 2026                                           */
+/*   Last modification: jul 09 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -51,7 +51,8 @@ enum LplTyp {  LplVer, LplEdg, LplTri, LplQad, LplTet, LplPyr, LplPri, LplHex,
                LplEdgP2, LplTriP2, LplQadQ2, LplTetP2, LplPyrP2, LplPriP2,
                LplHexQ2, LplCrn, LplMax };
 
-enum RenTyp {LplNoRenum, LplHilbert, LplZcurve, LplRandom, LplBfsXmin, LplBfsColor};
+enum RenTyp {  LplNoRenum, LplHilbert, LplZcurve, LplRandom, LplBfsXmin,
+               LplBfsColor, LplColoredPoints};
 
 
 /*----------------------------------------------------------------------------*/
@@ -60,7 +61,7 @@ enum RenTyp {LplNoRenum, LplHilbert, LplZcurve, LplRandom, LplBfsXmin, LplBfsCol
 
 typedef struct
 {
-   int      MshVer, dim, mod, TypIdx, VerTyp, VrbLvl;
+   int      MshVer, dim, mod, TypIdx, VerTyp, VrbLvl, ColPntMod;
    int      EleTyp[ LplMax ], GmlMod, *EleTab[ LplMax ];
    int      MaxDeg[ LplMax ], DegVec[ LplMax ], HghDeg, OvrDeg;
    int      ColGrnFlg, ColGrnMod, NmbCol, NmbGrn, *VerGrn, *VerCol;
@@ -120,6 +121,8 @@ int      ChkBlkDep                  (int64_t, int, int, int);
 int      SetExtendedAttributes      (int64_t , ...);
 int      HalveSmallBlocks           (int64_t, int, int);
 int      HalveDependencyBlocks      (int64_t, int, int);
+float    LaunchColorPoints          (int64_t, int, void *, void *);
+float    LaunchColorPointsMultiArg  (int64_t, int, void *, int, ...);
 float    LaunchColorGrains          (int64_t, int, void *, void *);
 float    LaunchColorGrainsMultiArg  (int64_t, int, void *, int, ...);
 LplSct  *MeshRenumbering            (int64_t, int, int, int, int, ...);
