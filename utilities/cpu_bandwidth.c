@@ -2,7 +2,7 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.00                                  */
+/*                               LPlib V4.01                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
@@ -12,7 +12,7 @@
 /*                      direct and indirect memory reads                      */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     mar 20 2025                                           */
-/*   Last modification: jun 03 2025                                           */
+/*   Last modification: oct 02 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -42,10 +42,10 @@ typedef int   v4i   __attribute__ ((vector_size (16)));
 
 typedef struct
 {
-   int      TetTyp, VerTyp, NmbVer, NmbTet, *VerBal, *VerDeg, *VerAdr;
+   int      TetTyp, VerTyp, NmbVer, NmbTet, *VerBal, *VerDeg;
    v4i      *TetVer, *TetInt;
    v4f      *VerCrd, *VerDat, *TetDat;
-   int64_t  ParIdx;
+   int64_t  ParIdx, *VerAdr;
 }MshSct;
 
 
@@ -107,8 +107,9 @@ void IndMem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 
 void RagMem(int BegIdx, int EndIdx, int PthIdx, MshSct *msh)
 {
-   int i, j, adr, deg;
+   int i, j, deg;
    v4f dat;
+   int64_t adr;
 
    for(i=BegIdx;i<=EndIdx;i++)
    {
@@ -132,7 +133,7 @@ int main(int ArgCnt, char **ArgVec)
 {
    int      i, j, k, ver, dim, ref, NmbCpu, NmbItr;
    int64_t  InpMsh, NmbBal = 0;
-   double   tim;
+   double   tim, TotTim;
    char     *MshNam;
    MshSct   msh = {0};
 
@@ -226,7 +227,7 @@ int main(int ArgCnt, char **ArgVec)
 
    // Build the balls table
    msh.VerDeg = calloc(msh.NmbVer + 1, sizeof(int));
-   msh.VerAdr = malloc((int64_t)(msh.NmbVer + 1) * sizeof(int));
+   msh.VerAdr = malloc((int64_t)(msh.NmbVer + 1) * sizeof(int64_t));
 
    if(!msh.VerDeg || !msh.VerAdr )
    {
@@ -276,6 +277,7 @@ int main(int ArgCnt, char **ArgVec)
    }
 
    tim = GetWallClock() - tim;
+   TotTim = tim;
 
    printf("Direct reads   : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s\n",
             NmbItr, tim, (NmbItr * (32LL * msh.NmbVer + 32LL * msh.NmbTet)) / (tim * 1E9) );
@@ -292,6 +294,7 @@ int main(int ArgCnt, char **ArgVec)
       LaunchParallel(msh.ParIdx, msh.TetTyp, 0, (void *)IndMem, (void *)&msh);
 
    tim = GetWallClock() - tim;
+   TotTim += tim;
 
    printf("Indirect reads : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
             NmbItr, tim, (NmbItr * 96LL * msh.NmbTet) / (tim * 1E9),
@@ -309,6 +312,7 @@ int main(int ArgCnt, char **ArgVec)
       LaunchParallel(msh.ParIdx, msh.VerTyp, 0, (void *)RagMem, (void *)&msh);
 
    tim = GetWallClock() - tim;
+   TotTim += tim;
 
    printf("Ragged reads   : %d steps, run time = %7.3fs, bandwidth = %6.1f GB/s (unique reads = %6.1f GB/s)\n",
             NmbItr, tim, (NmbItr * (20LL * NmbBal + 24LL * msh.NmbVer)) / (tim * 1E9),
@@ -318,6 +322,8 @@ int main(int ArgCnt, char **ArgVec)
    // -------
    // CLEANUP
    // -------
+
+   printf("\nTotal benchmark runtime = %7.3fs\n\n", TotTim);
 
    StopParallel(msh.ParIdx);
 

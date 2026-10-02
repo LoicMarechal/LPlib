@@ -417,13 +417,13 @@ int main(int ArgCnt, char **ArgVec)
    //LaunchColorGrains(msh.ParIdx, LplTri, SetTriRef, &msh);
    LaunchColorGrains(msh.ParIdx, LplTet, SetTetRef, &msh);
    LaunchColorGrainsMultiArg(msh.ParIdx, LplVer, ClrVer, 2, msh.VerDeg, msh.VerSol);
-
+   /*
    if(!(OutMsh = GmfOpenMesh("col.meshb", GmfWrite, ver, dim)))
    {
       puts("Cannot open the file col.meshb");
       exit(10);
    }
-
+*/
    GmfSetKwd(OutMsh, GmfVertices, msh.NmbVer);
    GmfSetBlock(OutMsh, GmfVertices, 1, msh.NmbVer, 0, NULL, NULL,
                GmfDoubleVec, 3, msh.VerCrd[1], msh.VerCrd[ msh.NmbVer ],

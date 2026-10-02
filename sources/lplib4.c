@@ -2,14 +2,14 @@
 
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
-/*                               LPlib V4.36                                  */
+/*                               LPlib V4.37                                  */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*   Description:       Handles threads, scheduling & dependencies            */
 /*   Author:            Loic MARECHAL                                         */
 /*   Creation date:     feb 25 2008                                           */
-/*   Last modification: jul 09 2026                                           */
+/*   Last modification: oct 01 2026                                           */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 
@@ -4676,6 +4676,7 @@ static void RenEle(int BegIdx, int EndIdx, int PthIdx, LplSct *msh)
          SchCod = i;
       else if(msh->mod == LplBfsColor || msh->mod == LplBfsXmin)
       {
+         // Wolf element numbering: inherit the lowest index vertex Hiblert code
          MinIdx = msh->EleTab[t][ i * siz ];
 
          for(j=1;j<siz;j++)
